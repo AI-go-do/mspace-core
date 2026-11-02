@@ -1,6 +1,21 @@
 spring:
   application:
     name: mspace-core
+  # 값은 .env(로컬은 compose.yaml 기본값)에서. 비밀번호를 여기 적지 않는다
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/mspace}
+    username: ${DB_USERNAME:mspace}
+    password: ${DB_PASSWORD:mspace}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate   # 테이블은 Flyway만 만든다. JPA는 엔티티와 테이블이 맞는지 검사만
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: Asia/Seoul   # 7일·자정 계산이 서울 기준이 되게 (schema-v2.sql 끝 주석 0번)
+  flyway:
+    locations: classpath:db/migration
 
 server:
   port: ${SERVER_PORT:8080}
