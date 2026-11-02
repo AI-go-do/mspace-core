@@ -1,0 +1,22 @@
+package kr.ac.chosun.mspace;
+
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Bean;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
+
+/**
+ * 테스트용 진짜 PostgreSQL 16.
+ * {@code @ServiceConnection}이 컨테이너 주소·계정을 datasource 설정에 자동으로 넣어 준다.
+ * 테스트 클래스에 {@code @Import(TestcontainersConfiguration.class)}를 붙여 쓴다.
+ */
+@TestConfiguration(proxyBeanMethods = false)
+public class TestcontainersConfiguration {
+
+    @Bean
+    @ServiceConnection
+    PostgreSQLContainer postgres() {
+        return new PostgreSQLContainer(DockerImageName.parse("postgres:16"));
+    }
+}
