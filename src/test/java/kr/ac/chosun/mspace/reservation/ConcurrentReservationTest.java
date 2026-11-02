@@ -44,8 +44,10 @@ class ConcurrentReservationTest {
 
     static final int N = 100;
 
+    /** "지금"을 2026-11-03 10:10(서울)으로 고정한다. 테스트 날짜가 지나도 7일 규칙에 걸리지 않게 */
     @TestConfiguration
     static class FixedClock {
+        /** 서비스가 쓰는 Clock을 고정 시계로 바꾼다 */
         @Bean
         @Primary
         Clock fixedClock() {
@@ -61,6 +63,7 @@ class ConcurrentReservationTest {
 
     RestClient client;
 
+    /** 매 테스트 전: 예약·회원을 비우고, 학생 인증을 마친 회원 300명을 넣는다 */
     @BeforeEach
     void setUp() {
         client = RestClient.create("http://localhost:" + port);
@@ -73,11 +76,17 @@ class ConcurrentReservationTest {
                 """).update();
     }
 
+    /** 테스트 회원 번호 → 학번 (setUp에서 넣은 규칙과 같다) */
     static String sid(int userId) {
         return String.valueOf(2024000000 + userId);
     }
 
-    /** 100건을 동시에 보내고 응답 코드별 개수를 센다 */
+    /**
+     * 요청들을 동시에 보내고 응답 코드별 개수를 센다.
+     * 모든 스레드가 ready에서 준비를 마친 뒤 go 신호로 한꺼번에 출발한다.
+     *
+     * @return 상태 코드 → 개수 (예: {201=1, 409=99})
+     */
     Map<Integer, Integer> fire(List<Callable<Integer>> requests) throws Exception {
         ExecutorService pool = Executors.newFixedThreadPool(requests.size());
         CountDownLatch ready = new CountDownLatch(requests.size());
@@ -100,6 +109,7 @@ class ConcurrentReservationTest {
         return counts;
     }
 
+    /** 예약 만들기 요청 한 건을 보내고 HTTP 상태 코드를 돌려준다 (대표자 + 참여자 2명 = 3명) */
     int post(long ownerId, int roomId, String start, String end, String p1, String p2) {
         String body = """
                 {"roomId":%d,"startAt":"%s","endAt":"%s","participantStudentIds":["%s","%s"]}

@@ -38,6 +38,10 @@ class NaiveCheckThenInsertMeasure {
     @Autowired
     TransactionTemplate tx;
 
+    /**
+     * 실험용 테이블에서 "조회 후 저장"을 동시 100건씩 ROUNDS번 돌리고, 라운드마다 저장된 건수를 찍는다.
+     * 1건보다 많으면 중복 예약이 생긴 것이다.
+     */
     @Test
     @DisplayName("제약 없는 조회 후 저장: 같은 방·시간 동시 100건 → 몇 건이 저장되나")
     void measure() throws Exception {
