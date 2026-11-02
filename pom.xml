@@ -13,7 +13,10 @@
 
     <groupId>kr.ac.chosun</groupId>
     <artifactId>mspace-core</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <!-- 팀 일정 버전(v0.1·v0.2·v0.3)과 맞춘다. SonarQube가 이 값을 버전으로 쓰고,
+         새 코드 기준이 '이전 버전'이라 버전이 바뀐 뒤 고친 코드만 80% 게이트로 본다.
+         main에 버전을 낸 뒤 develop에서 다음 버전으로 올린다 (README '버전 올리기') -->
+    <version>0.1.0-SNAPSHOT</version>
     <name>mspace-core</name>
     <description>M-SPACE 예약 코어 (예약, 출입, 회원 API)</description>
 
