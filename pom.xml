@@ -19,6 +19,12 @@
 
     <properties>
         <java.version>21</java.version>
+        <!-- SonarQube Cloud: 조직·프로젝트 키는 sonarcloud.io에서 프로젝트를 만든 뒤 나온 값 -->
+        <sonar.organization>ai-go-do</sonar.organization>
+        <sonar.projectKey>AI-go-do_mspace-core</sonar.projectKey>
+        <sonar.host.url>https://sonarcloud.io</sonar.host.url>
+        <!-- JaCoCo가 만든 커버리지 보고서를 SonarQube가 읽는다 -->
+        <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
     </properties>
 
     <dependencies>
@@ -75,6 +81,27 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <!-- 커버리지: 테스트가 실행한 코드 줄을 기록해서 verify 때 target/site/jacoco/에 보고서를 만든다 -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.14</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

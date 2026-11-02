@@ -21,10 +21,14 @@ jobs:
     name: build
     runs-on: ubuntu-latest   # Docker가 깔려 있어서 Testcontainers가 그대로 돈다
     timeout-minutes: 15
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # 단계의 if에서 읽으려면 job 단계에 둬야 한다
 
     steps:
       - name: 코드 받기
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # SonarQube가 "새 코드"를 가리려면 커밋 기록 전체가 필요
 
       - name: JDK 21 설치
         uses: actions/setup-java@v4
@@ -34,4 +38,10 @@ jobs:
           cache: maven       # ~/.m2를 캐시해서 두 번째부터 빨라진다
 
       - name: 빌드 + 테스트
-        run: ./mvnw -B verify   # -B: 로그를 CI용으로 간결하게
+        run: ./mvnw -B verify   # -B: 로그를 CI용으로 간결하게 (JaCoCo 커버리지 보고서도 여기서 만든다)
+
+      # SonarQube Cloud에 결과(커버리지·코드 냄새)를 보낸다. PR에 결과 댓글과 검사가 붙는다
+      # SONAR_TOKEN 비밀값이 없으면(설정 전) 건너뛴다. 80% 품질 게이트는 main에 합칠 때만 필수 검사로 건다
+      - name: SonarQube Cloud 분석
+        if: env.SONAR_TOKEN != ''
+        run: ./mvnw -B org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
