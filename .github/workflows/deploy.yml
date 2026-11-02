@@ -1,0 +1,59 @@
+# develop/main에 합쳐지면 core 이미지를 만들어 GHCR(GitHub 이미지 저장소)에 올린다.
+# 다음 단계(5)에서 여기에 "학교 서버에 배포" job을 이어 붙인다.
+name: Deploy
+
+on:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:          # Actions 탭에서 손으로도 돌릴 수 있게
+
+# 같은 브랜치 배포가 겹치면 앞의 것은 취소하고 최신 것만
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # GHCR 이미지 이름은 소문자만 된다 → ghcr.io/ai-go-do/mspace-core
+  IMAGE: ghcr.io/ai-go-do/mspace-core
+
+jobs:
+  image:
+    name: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write         # GHCR에 이미지를 올릴 권한 (별도 토큰 필요 없음)
+
+    steps:
+      - name: 코드 받기
+        uses: actions/checkout@v4
+
+      - name: GHCR 로그인
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}   # Actions가 자동으로 주는 토큰
+
+      - name: 태그 정하기
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch     # develop 또는 main
+            type=sha,prefix=sha-      # sha-ab12cd3 (되돌릴 때 이 태그로)
+
+      - name: Buildx 준비
+        uses: docker/setup-buildx-action@v3
+
+      - name: 이미지 빌드 + 올리기
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha       # 지난 빌드 층을 재사용해서 빨라진다
+          cache-to: type=gha,mode=max
