@@ -210,5 +210,9 @@ class CreateReservationApiTest {
         assertThat(mvc.post().uri("/api/reservations").header("X-User-Id", "1")
                 .contentType(MediaType.APPLICATION_JSON).content("{\"roomId\":1,\"startAt\":\"내일\"}"))
                 .hasStatus(400).bodyJson().extractingPath("$.code").isEqualTo("INVALID_REQUEST");
+        // 문법이 깨진 JSON(닫는 괄호 없음)도 500이 아니라 400
+        assertThat(mvc.post().uri("/api/reservations").header("X-User-Id", "1")
+                .contentType(MediaType.APPLICATION_JSON).content("{\"roomId\":1"))
+                .hasStatus(400).bodyJson().extractingPath("$.code").isEqualTo("INVALID_REQUEST");
     }
 }
