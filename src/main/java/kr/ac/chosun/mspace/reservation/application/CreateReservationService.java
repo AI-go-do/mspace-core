@@ -41,6 +41,14 @@ public class CreateReservationService {
         this.clock = clock;
     }
 
+    /**
+     * 미리 예약을 만든다. 서버 검사(시각 → 방 → 대표자 → 참여자 → 인원)를 통과하면 DB에 저장한다.
+     *
+     * @param ownerId 대표자 회원 id (로그인 사용자)
+     * @param command 방·시각·참여자 학번 (대표자 학번은 빼고)
+     * @return 만든 예약과 키패드 번호
+     * @throws BusinessException 규칙 위반이면 400·404, DB 제약(겹침 등)에 걸리면 409
+     */
     @Transactional
     public Created create(long ownerId, Command command) {
         Instant start = command.startAt();
@@ -83,6 +91,10 @@ public class CreateReservationService {
         return new Created(id, room.id(), start.atZone(SEOUL), end.atZone(SEOUL), "BOOKED", headcount, accessCode);
     }
 
+    /**
+     * 시각 규칙: 30분 칸에 맞는지, 길이가 0보다 크고 최대(2시간) 이하인지, 지난 시각이 아닌지, 시작이 7일 안인지.
+     * 숫자는 {@link ReservationPolicy} 설정값을 쓴다.
+     */
     private void checkTimes(Instant start, Instant end) {
         long slotSeconds = policy.slotMinutes() * 60L;
         if (!onSlot(start, slotSeconds) || !onSlot(end, slotSeconds)) {
@@ -108,9 +120,11 @@ public class CreateReservationService {
         return t.getNano() == 0 && t.getEpochSecond() % slotSeconds == 0;
     }
 
+    /** 예약 만들기 입력. 시각은 Instant(UTC 기준 한 순간)로 받는다 */
     public record Command(int roomId, Instant startAt, Instant endAt, List<String> participantStudentIds) {
     }
 
+    /** 예약 만들기 결과. 시각은 서울 시간대로 돌려준다 */
     public record Created(long id, int roomId, ZonedDateTime startAt, ZonedDateTime endAt,
                           String status, int headcount, String accessCode) {
     }

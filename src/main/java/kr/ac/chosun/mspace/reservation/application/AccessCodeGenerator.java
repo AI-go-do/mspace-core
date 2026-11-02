@@ -12,6 +12,7 @@ public class AccessCodeGenerator {
 
     private final SecureRandom random = new SecureRandom();
 
+    /** 000000~999999 중 하나를 앞자리 0을 살려 6자리 문자열로 돌려준다 */
     public String next() {
         return String.format("%06d", random.nextInt(1_000_000));
     }

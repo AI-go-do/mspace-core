@@ -25,11 +25,18 @@ class LoginUserArgumentResolver implements HandlerMethodArgumentResolver {
         this.devHeaderEnabled = devHeaderEnabled;
     }
 
+    /** 컨트롤러 메서드 인자 중 {@link LoginUser} 타입만 이 리졸버가 채운다 */
     @Override
     public boolean supportsParameter(MethodParameter parameter) {
         return parameter.getParameterType() == LoginUser.class;
     }
 
+    /**
+     * X-User-Id 헤더를 읽어 {@link LoginUser}를 만든다.
+     *
+     * @return 헤더 값(회원 id)을 담은 LoginUser
+     * @throws BusinessException 임시 헤더가 꺼져 있거나, 헤더가 없거나, 숫자가 아니면 401(UNAUTHORIZED)
+     */
     @Override
     public Object resolveArgument(MethodParameter parameter, ModelAndViewContainer mav,
                                   NativeWebRequest request, WebDataBinderFactory binderFactory) {
