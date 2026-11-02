@@ -96,7 +96,9 @@ class JdbcReservationAdapter implements ReservationCommandPort {
             jdbc.sql("SET CONSTRAINTS ALL IMMEDIATE").update();
             return id;
         } catch (DataAccessException e) {
-            ErrorCode code = CONSTRAINTS.get(constraintName(e));
+            // Map.of는 get(null)에서 NullPointerException → 제약 이름이 없으면(연결 끊김 등) 원래 오류를 그대로 던진다
+            String constraint = constraintName(e);
+            ErrorCode code = constraint == null ? null : CONSTRAINTS.get(constraint);
             if (code != null) {
                 throw new BusinessException(code);
             }
