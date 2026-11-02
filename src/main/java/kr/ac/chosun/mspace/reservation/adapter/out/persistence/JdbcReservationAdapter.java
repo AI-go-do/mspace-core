@@ -83,6 +83,7 @@ class JdbcReservationAdapter implements ReservationCommandPort {
     @Override
     public long insert(NewReservation r) {
         try {
+            lockInOrder(r);
             long id = jdbc.sql("""
                             INSERT INTO reservation (room_id, owner_id, start_at, end_at, headcount, access_code)
                             VALUES (:room, :owner, :start, :end, :headcount, :code)
@@ -121,6 +122,27 @@ class JdbcReservationAdapter implements ReservationCommandPort {
                 throw new BusinessException(code);
             }
             throw e;
+        }
+    }
+
+    /**
+     * 줄 세우기 잠금. 저장하기 전에 "방 → 사람(id 작은 순)" 순서로 트랜잭션 잠금을 잡는다.
+     * <p>
+     * 왜: 겹칠 수 있는 요청(같은 방, 같은 사람)이 동시에 저장되면 PostgreSQL 겹침(EXCLUDE) 검사끼리 서로 기다리는
+     * 교착(40P01)이 난다. 같은 사람을 넣은 100팀이 서로 다른 방에 동시에 예약하면 69건이 500이었다.
+     * 같은 번호를 잠그는 요청끼리는 한 줄로 서서 하나씩 저장되므로, 뒤 요청은 앞 예약을 보고 바로 409로 끝난다.
+     * 모든 요청이 같은 순서로 잠그니 잠금끼리도 엇갈리지 않는다.
+     * <p>
+     * pg_advisory_xact_lock(칸, 번호): 테이블이 아니라 번호만 잠그고, 커밋·롤백 때 저절로 풀린다.
+     * 칸 1 = 방 id, 칸 2 = 회원 id (대표자 포함, 대표자 1건 규칙도 같이 줄 선다).
+     * 중복을 막는 건 여전히 DB 제약이고, 이 잠금은 교착만 없앤다.
+     */
+    private void lockInOrder(NewReservation r) {
+        jdbc.sql("SELECT pg_advisory_xact_lock(1, :room)").param("room", r.roomId()).query((rs, n) -> 1).list();
+        for (Long userId : r.participantIds().stream().sorted().toList()) {
+            // 두 칸짜리 잠금은 int만 받는다. 회원 id가 int를 넘으면 조용히 잘리지 않고 바로 오류가 나게 한다
+            jdbc.sql("SELECT pg_advisory_xact_lock(2, :user)").param("user", Math.toIntExact(userId))
+                    .query((rs, n) -> 1).list();
         }
     }
 

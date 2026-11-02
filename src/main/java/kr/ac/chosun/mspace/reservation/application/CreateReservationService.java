@@ -17,40 +17,63 @@ import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.reservation.application.ReservationCommandPort.NewReservation;
 import kr.ac.chosun.mspace.reservation.application.ReservationCommandPort.RoomCapacity;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionOperations;
 
 /**
  * 미리 예약 만들기 (FR-RSV-001~005).
  * 서버가 먼저 보는 것: 시각 형식(30분·2시간·지난 시각·7일), 방, 학번, 인원 → 빠르고 친절한 400.
  * DB가 마지막에 막는 것: 겹침, 대표자 1건, 같은 사람 두 방 → 동시에 눌러도 한 건만 성공하는 409.
+ * 교착(40P01)은 저장 전 줄 세우기 잠금(어댑터)으로 막고, 그래도 나면 처음부터 새 트랜잭션으로 다시 한다.
  */
 @Service
 public class CreateReservationService {
+
+    /** 교착이면 몇 번까지 해 보나 (처음 1번 + 다시 2번). 다 실패하면 503 */
+    static final int MAX_ATTEMPTS = 3;
 
     private final ReservationCommandPort port;
     private final AccessCodeGenerator codes;
     private final ReservationPolicy policy;
     private final Clock clock;
+    private final TransactionOperations tx;
 
     public CreateReservationService(ReservationCommandPort port, AccessCodeGenerator codes,
-                                    ReservationPolicy policy, Clock clock) {
+                                    ReservationPolicy policy, Clock clock, TransactionOperations tx) {
         this.port = port;
         this.codes = codes;
         this.policy = policy;
         this.clock = clock;
+        this.tx = tx;
     }
 
     /**
-     * 미리 예약을 만든다. 서버 검사(시각 → 방 → 대표자 → 참여자 → 인원)를 통과하면 DB에 저장한다.
+     * 미리 예약을 만든다. 한 번 시도가 트랜잭션 하나이고, 교착으로 실패하면 최대 {@value #MAX_ATTEMPTS}번까지 처음부터 다시 한다.
+     * <p>
+     * 왜 처음부터인가: 교착이 나면 PostgreSQL이 그 트랜잭션을 통째로 무효로 만들어서, 그 안에서는 SQL을 더 할 수 없다.
+     * 다시 하면 보통 이긴 쪽 예약이 이미 저장돼 있어 409로 끝난다 (학생은 500 대신 "이미 예약된 시간"을 받는다).
      *
      * @param ownerId 대표자 회원 id (로그인 사용자)
      * @param command 방·시각·참여자 학번 (대표자 학번은 빼고)
      * @return 만든 예약과 키패드 번호
-     * @throws BusinessException 규칙 위반이면 400·404, DB 제약(겹침 등)에 걸리면 409
+     * @throws BusinessException 규칙 위반이면 400·404, DB 제약(겹침 등)에 걸리면 409, 교착이 계속되면 503
      */
-    @Transactional
     public Created create(long ownerId, Command command) {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return tx.execute(status -> createOnce(ownerId, command));
+            } catch (PessimisticLockingFailureException e) {
+                // 40P01(교착)은 Spring이 이 예외로 바꿔 준다. 트랜잭션은 이미 되돌려졌다
+                if (attempt >= MAX_ATTEMPTS) {
+                    throw new BusinessException(ErrorCode.RESERVATION_BUSY);
+                }
+            }
+        }
+    }
+
+    /** 한 번 시도: 서버 검사(시각 → 방 → 대표자 → 참여자 → 인원)를 통과하면 DB에 저장한다. 트랜잭션 안에서 불린다 */
+    private Created createOnce(long ownerId, Command command) {
         Instant start = command.startAt();
         Instant end = command.endAt();
         checkTimes(start, end);
