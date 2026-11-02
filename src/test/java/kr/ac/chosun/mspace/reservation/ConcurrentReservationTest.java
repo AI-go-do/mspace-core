@@ -103,10 +103,13 @@ class ConcurrentReservationTest {
             }
             ready.await();
             go.countDown();   // 출발
+            // 요청이 멈춰도 끝없이 기다리지 않게, 전체 묶음에 30초 마감 하나를 둔다
+            // (요청마다 30초씩 주면 늦은 응답이 이어질 때 최대 100 × 30초를 기다리게 된다)
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
             Map<Integer, Integer> counts = new ConcurrentHashMap<>();
             for (Future<Integer> f : results) {
-                // 요청 하나가 멈춰도 테스트가 끝없이 기다리지 않게 30초 제한
-                counts.merge(f.get(30, TimeUnit.SECONDS), 1, Integer::sum);
+                long left = Math.max(0, deadline - System.nanoTime());
+                counts.merge(f.get(left, TimeUnit.NANOSECONDS), 1, Integer::sum);
             }
             return counts;
         } finally {
