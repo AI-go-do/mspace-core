@@ -14,6 +14,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import kr.ac.chosun.mspace.TestcontainersConfiguration;
 import org.junit.jupiter.api.BeforeEach;
@@ -89,24 +90,28 @@ class ConcurrentReservationTest {
      */
     Map<Integer, Integer> fire(List<Callable<Integer>> requests) throws Exception {
         ExecutorService pool = Executors.newFixedThreadPool(requests.size());
-        CountDownLatch ready = new CountDownLatch(requests.size());
-        CountDownLatch go = new CountDownLatch(1);
-        List<Future<Integer>> results = new ArrayList<>();
-        for (Callable<Integer> r : requests) {
-            results.add(pool.submit(() -> {
-                ready.countDown();
-                go.await();
-                return r.call();
-            }));
+        try {
+            CountDownLatch ready = new CountDownLatch(requests.size());
+            CountDownLatch go = new CountDownLatch(1);
+            List<Future<Integer>> results = new ArrayList<>();
+            for (Callable<Integer> r : requests) {
+                results.add(pool.submit(() -> {
+                    ready.countDown();
+                    go.await();
+                    return r.call();
+                }));
+            }
+            ready.await();
+            go.countDown();   // 출발
+            Map<Integer, Integer> counts = new ConcurrentHashMap<>();
+            for (Future<Integer> f : results) {
+                // 요청 하나가 멈춰도 테스트가 끝없이 기다리지 않게 30초 제한
+                counts.merge(f.get(30, TimeUnit.SECONDS), 1, Integer::sum);
+            }
+            return counts;
+        } finally {
+            pool.shutdownNow();   // 실패·시간 초과여도 스레드를 남기지 않는다
         }
-        ready.await();
-        go.countDown();   // 출발
-        Map<Integer, Integer> counts = new ConcurrentHashMap<>();
-        for (Future<Integer> f : results) {
-            counts.merge(f.get(), 1, Integer::sum);
-        }
-        pool.shutdown();
-        return counts;
     }
 
     /** 예약 만들기 요청 한 건을 보내고 HTTP 상태 코드를 돌려준다 (대표자 + 참여자 2명 = 3명) */
