@@ -25,7 +25,7 @@ import org.springframework.transaction.support.TransactionOperations;
  * 미리 예약 만들기 (FR-RSV-001~005).
  * 서버가 먼저 보는 것: 시각 형식(30분·2시간·지난 시각·7일), 방, 학번, 인원 → 빠르고 친절한 400.
  * DB가 마지막에 막는 것: 겹침, 대표자 1건, 같은 사람 두 방 → 동시에 눌러도 한 건만 성공하는 409.
- * 동시 요청끼리 겹침 검사에서 서로 기다리는 교착(40P01)이 나면 처음부터 새 트랜잭션으로 다시 한다.
+ * 교착(40P01)은 저장 전 줄 세우기 잠금(어댑터)으로 막고, 그래도 나면 처음부터 새 트랜잭션으로 다시 한다.
  */
 @Service
 public class CreateReservationService {
