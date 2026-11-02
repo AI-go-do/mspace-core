@@ -159,6 +159,32 @@ class ConcurrentReservationTest {
      * 대표자 1건 제약(one_active_per_owner) 확인: 한 대표자가 서로 다른 방·시간으로 100건을 동시에 요청한다.
      * 시간이 겹치지 않아도 끝나지 않은 예약은 1건만 가질 수 있다.
      */
+    /**
+     * 같은 사람 두 방 금지(no_person_overlap) 확인: 대표자는 모두 다르고, 참여자 2명은 모든 팀이 같다.
+     * 방이 1~4번으로 나뉘어 있어 방 겹침보다 사람 겹침이 먼저 걸린다.
+     * 이 경우 PostgreSQL 겹침 검사끼리 서로 기다리는 교착(40P01)이 드물게 생기는데, 서버가 다시 시도해서 500이 나가지 않아야 한다.
+     */
+    @Test
+    @DisplayName("같은 참여자 2명을 넣은 100팀이 서로 다른 방·같은 시간을 동시에 예약해도 1건만 201, 99건 409, 500은 0건")
+    void sameParticipantsDifferentRooms() throws Exception {
+        List<Callable<Integer>> requests = new ArrayList<>();
+        for (int team = 0; team < N; team++) {
+            int owner = team + 1;          // 대표자 1~100, 모두 다름
+            int room = team % 4 + 1;       // 1~4번 방 (3~5명 방)
+            requests.add(() -> post(owner, room, "2026-11-04T14:00:00+09:00", "2026-11-04T16:00:00+09:00",
+                    sid(299), sid(300)));
+        }
+
+        Map<Integer, Integer> counts = fire(requests);
+
+        int saved = jdbc.sql("SELECT count(*) FROM reservation WHERE status = 'BOOKED'")
+                .query(Integer.class).single();
+        System.out.printf("[동시 100건] 같은 참여자·다른 방: %s, DB 저장 %d건%n", counts, saved);
+
+        assertThat(counts).containsExactlyInAnyOrderEntriesOf(Map.of(201, 1, 409, N - 1));
+        assertThat(saved).isEqualTo(1);
+    }
+
     @Test
     @DisplayName("같은 대표자가 서로 다른 방·시간으로 100건을 동시에 보내도 1건만 201 (대표자 1건)")
     void sameOwnerManyRequests() throws Exception {
