@@ -133,17 +133,21 @@ class JdbcReservationAdapter implements ReservationCommandPort {
      * 같은 번호를 잠그는 요청끼리는 한 줄로 서서 하나씩 저장되므로, 뒤 요청은 앞 예약을 보고 바로 409로 끝난다.
      * 모든 요청이 같은 순서로 잠그니 잠금끼리도 엇갈리지 않는다.
      * <p>
-     * pg_advisory_xact_lock(칸, 번호): 테이블이 아니라 번호만 잠그고, 커밋·롤백 때 저절로 풀린다.
-     * 칸 1 = 방 id, 칸 2 = 회원 id (대표자 포함, 대표자 1건 규칙도 같이 줄 선다).
+     * pg_advisory_xact_lock(번호): 테이블이 아니라 bigint 번호 하나만 잠그고, 커밋·롤백 때 저절로 풀린다.
+     * 방은 음수(-방 id), 회원은 양수(회원 id, bigint 그대로)로 써서 둘이 섞이지 않게 한다.
+     * 회원에는 대표자도 들어 있어서 대표자 1건 규칙도 같이 줄 선다.
      * 중복을 막는 건 여전히 DB 제약이고, 이 잠금은 교착만 없앤다.
      */
     private void lockInOrder(NewReservation r) {
-        jdbc.sql("SELECT pg_advisory_xact_lock(1, :room)").param("room", r.roomId()).query((rs, n) -> 1).list();
+        lock(-(long) r.roomId());
         for (Long userId : r.participantIds().stream().sorted().toList()) {
-            // 두 칸짜리 잠금은 int만 받는다. 회원 id가 int를 넘으면 조용히 잘리지 않고 바로 오류가 나게 한다
-            jdbc.sql("SELECT pg_advisory_xact_lock(2, :user)").param("user", Math.toIntExact(userId))
-                    .query((rs, n) -> 1).list();
+            lock(userId);
         }
+    }
+
+    /** 번호 하나를 이 트랜잭션이 끝날 때까지 잠근다. 다른 트랜잭션이 쥐고 있으면 풀릴 때까지 기다린다 */
+    private void lock(long key) {
+        jdbc.sql("SELECT pg_advisory_xact_lock(:key)").param("key", key).query((rs, n) -> 1).list();
     }
 
     /** PostgreSQL이 알려 준 위반 제약 이름. 없으면 null */
