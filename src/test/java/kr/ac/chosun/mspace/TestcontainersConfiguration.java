@@ -14,6 +14,7 @@ import org.testcontainers.utility.DockerImageName;
 @TestConfiguration(proxyBeanMethods = false)
 public class TestcontainersConfiguration {
 
+    /** 테스트마다 공유하는 PostgreSQL 16 컨테이너. 연결 한도를 200으로 늘려 띄운다 */
     @Bean
     @ServiceConnection
     PostgreSQLContainer postgres() {

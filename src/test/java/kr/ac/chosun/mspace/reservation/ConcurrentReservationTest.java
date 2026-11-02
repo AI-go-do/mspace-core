@@ -126,6 +126,10 @@ class ConcurrentReservationTest {
                 .exchange((req, res) -> res.getStatusCode().value());
     }
 
+    /**
+     * 겹침 제약(no_room_overlap) 확인: 대표자가 모두 다른 100건이 같은 방·같은 시간을 동시에 요청한다.
+     * 서버 검사는 모두 통과하므로, 1건만 남는 건 DB 제약 덕분이다.
+     */
     @Test
     @DisplayName("서로 다른 100팀이 같은 방·같은 시간을 동시에 예약하면 1건만 201, 99건 409, DB에는 1건")
     void sameRoomSameTime() throws Exception {
@@ -148,6 +152,10 @@ class ConcurrentReservationTest {
         assertThat(saved).isEqualTo(1);
     }
 
+    /**
+     * 대표자 1건 제약(one_active_per_owner) 확인: 한 대표자가 서로 다른 방·시간으로 100건을 동시에 요청한다.
+     * 시간이 겹치지 않아도 끝나지 않은 예약은 1건만 가질 수 있다.
+     */
     @Test
     @DisplayName("같은 대표자가 서로 다른 방·시간으로 100건을 동시에 보내도 1건만 201 (대표자 1건)")
     void sameOwnerManyRequests() throws Exception {
