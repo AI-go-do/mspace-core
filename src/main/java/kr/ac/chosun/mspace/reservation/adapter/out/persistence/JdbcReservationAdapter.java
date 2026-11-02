@@ -96,7 +96,10 @@ class JdbcReservationAdapter implements ReservationCommandPort {
                     .param("code", r.accessCode())
                     .query(Long.class)
                     .single();
-            for (Long userId : r.participantIds()) {
+            // 참여자는 id 순서로 넣는다. 두 예약이 같은 사람들을 다른 순서로 넣으면
+            // 서로 상대가 넣은 줄을 기다리는 교착(deadlock, 40P01 → 500)이 생길 수 있어서,
+            // 순서를 맞춰 한쪽이 기다렸다가 no_person_overlap(409)으로 끝나게 한다
+            for (Long userId : r.participantIds().stream().sorted().toList()) {
                 // 시간·활성 여부는 트리거(participant_copy_times)가 예약에서 복사한다. 여기 값은 자리만 채움
                 jdbc.sql("""
                                 INSERT INTO reservation_participant (reservation_id, user_id, start_at, end_at)
