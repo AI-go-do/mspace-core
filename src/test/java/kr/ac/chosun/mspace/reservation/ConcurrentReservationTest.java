@@ -167,7 +167,7 @@ class ConcurrentReservationTest {
         System.out.printf("[동시 100건] 같은 대표자: %s, DB 저장 %d건%n", counts, saved);
 
         assertThat(i.get()).isEqualTo(N);
-        assertThat(counts.get(201)).isEqualTo(1);
+        assertThat(counts).containsExactlyInAnyOrderEntriesOf(Map.of(201, 1, 409, N - 1));
         assertThat(saved).isEqualTo(1);
     }
 }
