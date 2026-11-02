@@ -23,6 +23,7 @@ jobs:
     timeout-minutes: 15
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # 단계의 if에서 읽으려면 job 단계에 둬야 한다
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}   # 팀 SonarQube 서버 주소 (스캐너가 이 환경변수를 읽는다)
 
     steps:
       - name: 코드 받기
@@ -40,10 +41,10 @@ jobs:
       - name: 빌드 + 테스트
         run: ./mvnw -B verify   # -B: 로그를 CI용으로 간결하게 (JaCoCo 커버리지 보고서도 여기서 만든다)
 
-      # SonarQube Cloud에 결과(커버리지·코드 냄새)를 보낸다. PR에 결과 댓글과 검사가 붙는다
-      # SONAR_TOKEN 비밀값이 없으면(설정 전) 건너뛴다. 80% 품질 게이트는 main에 합칠 때만 필수 검사로 건다
-      - name: SonarQube Cloud 분석
+      # 팀 SonarQube 서버에 결과(커버리지·코드 냄새)를 보낸다
+      # SONAR_TOKEN 비밀값이 없으면(설정 전) 건너뛴다. 80% 품질 게이트는 main에 합칠 때만 건다
+      - name: SonarQube 분석
         if: env.SONAR_TOKEN != ''
-        # Sonar 서버·토큰 문제로 build 검사(develop 필수)가 빨개지지 않게. main 80% 게이트는 SonarCloud 검사로 따로 건다
+        # Sonar 서버·토큰 문제로 build 검사(develop 필수)가 빨개지지 않게. main 80% 게이트는 따로 건다
         continue-on-error: true
         run: ./mvnw -B org.sonarsource.scanner.maven:sonar-maven-plugin:sonar

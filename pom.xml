@@ -19,10 +19,8 @@
 
     <properties>
         <java.version>21</java.version>
-        <!-- SonarQube Cloud: 조직·프로젝트 키는 sonarcloud.io에서 프로젝트를 만든 뒤 나온 값 -->
-        <sonar.organization>ai-go-do</sonar.organization>
-        <sonar.projectKey>AI-go-do_mspace-core</sonar.projectKey>
-        <sonar.host.url>https://sonarcloud.io</sonar.host.url>
+        <!-- 팀 SonarQube 서버. 서버 주소는 CI의 SONAR_HOST_URL 비밀값으로 넘긴다 (저장소에 주소를 박지 않음) -->
+        <sonar.projectKey>mspace-core</sonar.projectKey>
         <!-- JaCoCo가 만든 커버리지 보고서를 SonarQube가 읽는다 -->
         <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
     </properties>
