@@ -25,3 +25,9 @@ management:
     web:
       exposure:
         include: health
+
+# 예약 규칙 숫자 (요구사항 FR-RSV-001: 설정값으로 둔다)
+mspace:
+  reservation:
+    booking-window-days: 7   # 오늘 포함 7일 (오늘 ~ 오늘+6일)
+    slot-minutes: 30
