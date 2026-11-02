@@ -1,0 +1,117 @@
+package kr.ac.chosun.mspace.reservation.application;
+
+import static kr.ac.chosun.mspace.common.config.TimeConfig.SEOUL;
+
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import kr.ac.chosun.mspace.common.config.ReservationPolicy;
+import kr.ac.chosun.mspace.common.error.BusinessException;
+import kr.ac.chosun.mspace.common.error.ErrorCode;
+import kr.ac.chosun.mspace.reservation.application.ReservationCommandPort.NewReservation;
+import kr.ac.chosun.mspace.reservation.application.ReservationCommandPort.RoomCapacity;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * 미리 예약 만들기 (FR-RSV-001~005).
+ * 서버가 먼저 보는 것: 시각 형식(30분·2시간·지난 시각·7일), 방, 학번, 인원 → 빠르고 친절한 400.
+ * DB가 마지막에 막는 것: 겹침, 대표자 1건, 같은 사람 두 방 → 동시에 눌러도 한 건만 성공하는 409.
+ */
+@Service
+public class CreateReservationService {
+
+    private final ReservationCommandPort port;
+    private final AccessCodeGenerator codes;
+    private final ReservationPolicy policy;
+    private final Clock clock;
+
+    public CreateReservationService(ReservationCommandPort port, AccessCodeGenerator codes,
+                                    ReservationPolicy policy, Clock clock) {
+        this.port = port;
+        this.codes = codes;
+        this.policy = policy;
+        this.clock = clock;
+    }
+
+    @Transactional
+    public Created create(long ownerId, Command command) {
+        Instant start = command.startAt();
+        Instant end = command.endAt();
+        checkTimes(start, end);
+
+        RoomCapacity room = port.findActiveRoom(command.roomId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.ROOM_NOT_FOUND));
+        String ownerStudentId = port.findVerifiedStudentId(ownerId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
+
+        // 대표자는 서버가 넣는다. 목록에 대표자 학번이 또 있으면 같은 사람 두 번 → 400
+        List<String> others = command.participantStudentIds();
+        Set<String> seen = new HashSet<>();
+        seen.add(ownerStudentId);
+        for (String studentId : others) {
+            if (!seen.add(studentId)) {
+                throw new BusinessException(ErrorCode.PARTICIPANT_DUPLICATE);
+            }
+        }
+
+        Map<String, Long> ids = port.findVerifiedUserIds(others);
+        if (ids.size() != others.size()) {
+            throw new BusinessException(ErrorCode.PARTICIPANT_NOT_FOUND);
+        }
+
+        int headcount = others.size() + 1;
+        if (headcount < room.minPeople() || headcount > room.maxPeople()) {
+            throw new BusinessException(ErrorCode.HEADCOUNT_OUT_OF_RANGE,
+                    "%s은 %d명 이상 %d명 이하입니다 (입력: %d명)"
+                            .formatted(room.name(), room.minPeople(), room.maxPeople(), headcount));
+        }
+
+        List<Long> participantIds = new ArrayList<>();
+        participantIds.add(ownerId);
+        others.forEach(s -> participantIds.add(ids.get(s)));
+
+        String accessCode = codes.next();
+        long id = port.insert(new NewReservation(room.id(), ownerId, start, end, accessCode, participantIds));
+        return new Created(id, room.id(), start.atZone(SEOUL), end.atZone(SEOUL), "BOOKED", headcount, accessCode);
+    }
+
+    private void checkTimes(Instant start, Instant end) {
+        long slotSeconds = policy.slotMinutes() * 60L;
+        if (!onSlot(start, slotSeconds) || !onSlot(end, slotSeconds)) {
+            throw new BusinessException(ErrorCode.RESERVATION_NOT_ON_SLOT);
+        }
+        Duration length = Duration.between(start, end);
+        if (length.isNegative() || length.isZero() || length.toMinutes() > policy.maxMinutes()) {
+            throw new BusinessException(ErrorCode.RESERVATION_INVALID_LENGTH);
+        }
+        Instant now = clock.instant();
+        if (!start.isAfter(now)) {
+            throw new BusinessException(ErrorCode.RESERVATION_IN_PAST);
+        }
+        // 시작 시각만 본다: 7일째 23:00–다음 날 01:00은 된다 (자정 넘김 허용)
+        LocalDate today = LocalDate.ofInstant(now, SEOUL);
+        if (!LocalDate.ofInstant(start, SEOUL).isBefore(today.plusDays(policy.bookingWindowDays()))) {
+            throw new BusinessException(ErrorCode.RESERVATION_OUT_OF_RANGE);
+        }
+    }
+
+    /** 서울은 UTC+9라 UTC로 30분 단위면 서울로도 30분 단위 */
+    private static boolean onSlot(Instant t, long slotSeconds) {
+        return t.getNano() == 0 && t.getEpochSecond() % slotSeconds == 0;
+    }
+
+    public record Command(int roomId, Instant startAt, Instant endAt, List<String> participantStudentIds) {
+    }
+
+    public record Created(long id, int roomId, ZonedDateTime startAt, ZonedDateTime endAt,
+                          String status, int headcount, String accessCode) {
+    }
+}

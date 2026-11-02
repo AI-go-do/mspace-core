@@ -31,3 +31,7 @@ mspace:
   reservation:
     booking-window-days: 7   # 오늘 포함 7일 (오늘 ~ 오늘+6일)
     slot-minutes: 30
+    max-minutes: 120         # 1회 최대 2시간
+  auth:
+    # 임시: 로그인이 붙기 전까지 X-User-Id 헤더로 회원을 받는다. 운영에서는 꼭 false
+    dev-header: ${MSPACE_DEV_HEADER:false}

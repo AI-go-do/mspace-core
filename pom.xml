@@ -48,8 +48,8 @@
         </dependency>
         <dependency>
             <groupId>org.postgresql</groupId>
+            <!-- compile: 위반한 DB 제약 이름을 PSQLException에서 읽는다 (예약 어댑터) -->
             <artifactId>postgresql</artifactId>
-            <scope>runtime</scope>
         </dependency>
 
         <dependency>
