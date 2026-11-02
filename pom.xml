@@ -20,7 +20,7 @@
     <properties>
         <java.version>21</java.version>
         <!-- 팀 SonarQube 서버. 서버 주소는 CI의 SONAR_HOST_URL 비밀값으로 넘긴다 (저장소에 주소를 박지 않음) -->
-        <sonar.projectKey>ai-go-do-mspace-core</sonar.projectKey>
+        <sonar.projectKey>mspace-core</sonar.projectKey>
         <!-- JaCoCo가 만든 커버리지 보고서를 SonarQube가 읽는다 -->
         <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
     </properties>
