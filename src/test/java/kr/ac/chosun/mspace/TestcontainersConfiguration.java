@@ -17,6 +17,8 @@ public class TestcontainersConfiguration {
     @Bean
     @ServiceConnection
     PostgreSQLContainer postgres() {
-        return new PostgreSQLContainer(DockerImageName.parse("postgres:16"));
+        // 동시 100건 측정에서 연결 풀을 100개 이상 쓰므로 기본 연결 한도(100)를 늘린다
+        return new PostgreSQLContainer(DockerImageName.parse("postgres:16"))
+                .withCommand("postgres", "-c", "max_connections=200");
     }
 }

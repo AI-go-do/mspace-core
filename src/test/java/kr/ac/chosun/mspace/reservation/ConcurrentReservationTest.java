@@ -36,7 +36,9 @@ import org.springframework.web.client.RestClient;
  * 진짜 서버(RANDOM_PORT)에 HTTP로 100건을 "같은 순간"에 보낸다.
  * CountDownLatch로 100개 스레드를 모두 출발선에 세운 뒤 한꺼번에 출발시킨다.
  */
-@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT, properties = "mspace.auth.dev-header=true")
+// 연결 풀을 요청 수(100)보다 크게: 기본값 10이면 DB에는 10개씩만 동시에 들어간다
+@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT, properties = {
+        "mspace.auth.dev-header=true", "spring.datasource.hikari.maximum-pool-size=110"})
 @Import({TestcontainersConfiguration.class, ConcurrentReservationTest.FixedClock.class})
 class ConcurrentReservationTest {
 

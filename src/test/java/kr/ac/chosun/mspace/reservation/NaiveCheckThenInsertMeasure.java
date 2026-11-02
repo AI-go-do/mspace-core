@@ -24,7 +24,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * ./mvnw test -Dtest=NaiveCheckThenInsertMeasure -Dmeasure=true
  */
 @EnabledIfSystemProperty(named = "measure", matches = "true")
-@SpringBootTest
+// 연결 풀 기본값(10)이면 동시에 10개 트랜잭션만 겹쳐서 측정이 줄어든다 → 요청 수보다 크게
+@SpringBootTest(properties = "spring.datasource.hikari.maximum-pool-size=110")
 @Import(TestcontainersConfiguration.class)
 class NaiveCheckThenInsertMeasure {
 
