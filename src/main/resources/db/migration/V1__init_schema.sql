@@ -1,4 +1,5 @@
--- M-SPACE 예약 스키마 초안 v2 (PostgreSQL 16)
+-- M-SPACE 예약 스키마 V1 (PostgreSQL 16)
+-- 테이블·컬럼·상태 이름은 요구사항 명세 v0.4(7.4 데이터) 기준. 제약·트리거는 검증한 schema-v2.sql 그대로
 -- 근거: 예약 규칙 v2 문서 https://claude.ai/artifact/YRBrmtUaA2YP2yVY2BSaui
 -- DB가 직접 막는 것: 같은 방 시간 겹침, 대표자당 끝나지 않은 예약 1건,
 --   같은 사람 같은 시간 두 방, 1회 최대 2시간·30분 단위, 방별 인원, 상태 전이 순서
@@ -6,30 +7,32 @@
 
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 
--- 회원: 학교메일로만 가입 ('user'는 PostgreSQL 예약어라 app_user)
-CREATE TABLE app_user (
+-- 회원: 학교메일로만 가입
+CREATE TABLE users (
     id                bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     email             varchar(100) NOT NULL UNIQUE
                       CHECK (email ~* '^[^@\s]+@chosun\.ac\.kr$'),
-    student_no        varchar(20)  NOT NULL UNIQUE,
+    student_id        varchar(20)  NOT NULL UNIQUE,
     name              varchar(50)  NOT NULL,
-    email_verified_at timestamptz,
+    verified_at       timestamptz,
+    rules_agreed_version integer,  -- 동의한 이용 수칙 버전 (FR-WEB-001)
     created_at        timestamptz  NOT NULL DEFAULT now()
 );
 
 -- 방: 방마다 이용 인원 범위가 다름 (1~4번 3~5명, 5번 5~8명)
-CREATE TABLE room (
+CREATE TABLE rooms (
     id         smallint PRIMARY KEY,
     name       varchar(30) NOT NULL UNIQUE,
     min_people smallint    NOT NULL,
     max_people smallint    NOT NULL,
+    is_active  boolean     NOT NULL DEFAULT true,  -- 수리 중 등 사용 불가면 false (FR-ROOM-001)
     CHECK (min_people >= 1 AND max_people >= min_people)
 );
 
 -- 옆 방 관계 (신고 권한 판단용). 양방향 모두 넣는다
 CREATE TABLE room_adjacency (
-    room_id          smallint NOT NULL REFERENCES room(id),
-    adjacent_room_id smallint NOT NULL REFERENCES room(id),
+    room_id          smallint NOT NULL REFERENCES rooms(id),
+    adjacent_room_id smallint NOT NULL REFERENCES rooms(id),
     PRIMARY KEY (room_id, adjacent_room_id),
     CHECK (room_id <> adjacent_room_id)
 );
@@ -37,26 +40,27 @@ CREATE TABLE room_adjacency (
 -- 예약
 CREATE TABLE reservation (
     id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    room_id       smallint    NOT NULL REFERENCES room(id),
-    owner_id      bigint      NOT NULL REFERENCES app_user(id),
+    room_id       smallint    NOT NULL REFERENCES rooms(id),
+    owner_id      bigint      NOT NULL REFERENCES users(id),
     start_at      timestamptz NOT NULL,
     end_at        timestamptz NOT NULL,
     headcount     smallint    NOT NULL,
     status        varchar(20) NOT NULL DEFAULT 'BOOKED'
-                  CHECK (status IN ('BOOKED', 'IN_USE', 'CHECKED_OUT', 'NO_SHOW', 'CANCELLED')),
+                  CHECK (status IN ('BOOKED', 'IN_USE', 'CHECKED_OUT', 'AUTO_CHECKED_OUT', 'NO_SHOW', 'CANCELED')),
     is_instant    boolean     NOT NULL DEFAULT false,  -- 즉시 시작(빈 방 바로 사용)
-    door_code     char(6)     NOT NULL CHECK (door_code ~ '^[0-9]{6}$'),  -- 대표자에게만 보여 줌
+    access_code   char(6)     NOT NULL CHECK (access_code ~ '^[0-9]{6}$'),  -- 키패드 6자리, 대표자에게만 보여 줌
     checkin_deadline timestamptz NOT NULL,  -- 노쇼 기준: max(시작 시각, 예약한 시각) + 15분 (트리거가 채움)
     checked_in_at timestamptz,
     checked_out_at   timestamptz,
-    checkout_type   varchar(10) CHECK (checkout_type IN ('MANUAL', 'AUTO')),
-    cancelled_at  timestamptz,
+    canceled_at   timestamptz,
+    created_via   varchar(10) NOT NULL DEFAULT 'WEB'
+                  CHECK (created_via IN ('WEB', 'AGENT', 'DEVICE')),  -- 누가 만들었나 (NFR-COM-008)
     created_at    timestamptz NOT NULL DEFAULT now(),
 
     -- 끝은 항상 30분 단위 (KST는 UTC+9라 UTC 기준 30분 단위와 같음)
     -- 미리 예약: 시작도 30분 단위, 최대 2시간
     -- 즉시 시작: 시작은 누른 시각 그대로, 끝은 (시작+2시간)을 30분 칸으로 올림 (2:17 → 최대 4:30)
-    CONSTRAINT valid_slot CHECK (
+    CONSTRAINT valid_length CHECK (
         start_at < end_at
         AND extract(epoch FROM end_at)::bigint % 1800 = 0
         AND (
@@ -66,11 +70,11 @@ CREATE TABLE reservation (
         )
     ),
     CONSTRAINT checked_out_has_time CHECK (
-        (status = 'CHECKED_OUT') = (checked_out_at IS NOT NULL AND checkout_type IS NOT NULL)
+        (status IN ('CHECKED_OUT', 'AUTO_CHECKED_OUT')) = (checked_out_at IS NOT NULL)
     ),
-    CONSTRAINT cancelled_has_time CHECK ((status = 'CANCELLED') = (cancelled_at IS NOT NULL)),
+    CONSTRAINT canceled_has_time CHECK ((status = 'CANCELED') = (canceled_at IS NOT NULL)),
     CONSTRAINT in_use_has_checkin CHECK (
-        status NOT IN ('IN_USE', 'CHECKED_OUT') OR checked_in_at IS NOT NULL
+        status NOT IN ('IN_USE', 'CHECKED_OUT', 'AUTO_CHECKED_OUT') OR checked_in_at IS NOT NULL
     ),
     -- 같은 방 시간 겹침 금지. 퇴실·노쇼가 되면 빠지므로 방이 바로 풀림
     CONSTRAINT no_room_overlap EXCLUDE USING gist (
@@ -85,17 +89,18 @@ CREATE UNIQUE INDEX one_active_per_owner
 CREATE INDEX reservation_room_time ON reservation (room_id, start_at);
 
 -- 이용자(대표자 포함). 학번으로 입력받아 가입한 회원의 id로 저장
--- period, active는 예약에서 복사해 두고 트리거로 맞춘다 (EXCLUDE는 한 테이블 안에서만 걸 수 있어서)
+-- start_at, end_at, active는 예약에서 복사해 두고 트리거로 맞춘다 (EXCLUDE는 한 테이블 안에서만 걸 수 있어서)
 CREATE TABLE reservation_participant (
     reservation_id bigint    NOT NULL REFERENCES reservation(id) ON DELETE CASCADE,
-    user_id        bigint    NOT NULL REFERENCES app_user(id),
-    is_owner       boolean   NOT NULL DEFAULT false,
-    period         tstzrange NOT NULL,
-    active         boolean   NOT NULL DEFAULT true,
+    user_id        bigint    NOT NULL REFERENCES users(id),
+    is_owner       boolean     NOT NULL DEFAULT false,
+    start_at       timestamptz NOT NULL,
+    end_at         timestamptz NOT NULL,
+    active         boolean     NOT NULL DEFAULT true,
     PRIMARY KEY (reservation_id, user_id),
     -- 같은 사람이 같은 시간에 두 방 금지
     CONSTRAINT no_person_overlap EXCLUDE USING gist (
-        user_id WITH =, period WITH &&
+        user_id WITH =, tstzrange(start_at, end_at) WITH &&
     ) WHERE (active)
 );
 
@@ -107,7 +112,7 @@ CREATE TABLE reservation_photo (
     reservation_id bigint       NOT NULL REFERENCES reservation(id),
     kind           varchar(10)  NOT NULL CHECK (kind IN ('CHECK_IN', 'CHECK_OUT')),
     url            varchar(500) NOT NULL,
-    uploaded_by    bigint       NOT NULL REFERENCES app_user(id),
+    uploaded_by    bigint       NOT NULL REFERENCES users(id),
     created_at     timestamptz  NOT NULL DEFAULT now(),
     UNIQUE (reservation_id, kind)
 );
@@ -115,8 +120,8 @@ CREATE TABLE reservation_photo (
 -- 신고: 그 방 예약자 또는 옆 방 예약자만 (권한은 서버에서 확인)
 CREATE TABLE report (
     id                      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    room_id                 smallint     NOT NULL REFERENCES room(id),         -- 신고 대상 방
-    reporter_id             bigint       NOT NULL REFERENCES app_user(id),
+    room_id                 smallint     NOT NULL REFERENCES rooms(id),         -- 신고 대상 방
+    reporter_id             bigint       NOT NULL REFERENCES users(id),
     reporter_reservation_id bigint       NOT NULL REFERENCES reservation(id),  -- 신고 권한 근거 예약
     category                varchar(12)  NOT NULL CHECK (category IN ('BROKEN', 'WINDOW_OPEN', 'MESSY', 'NOISE')),
     content                 text,
@@ -125,7 +130,7 @@ CREATE TABLE report (
     -- 관리자 판정: OPEN(대기) / CONFIRMED(사실) / UNVERIFIED(확인 불가, 벌칙 없음) / FALSE(허위, 경고)
     verdict                 varchar(12)  NOT NULL DEFAULT 'OPEN'
                             CHECK (verdict IN ('OPEN', 'CONFIRMED', 'UNVERIFIED', 'FALSE')),
-    judged_by               bigint       REFERENCES app_user(id),
+    judged_by               bigint       REFERENCES users(id),
     judged_at               timestamptz,
     -- 소음은 증명할 수 없으므로 허위 판정 대상이 아님 (비품 고장·창문 열림·어질러짐만)
     CONSTRAINT noise_not_false CHECK (NOT (category = 'NOISE' AND verdict = 'FALSE')),
@@ -135,7 +140,7 @@ CREATE TABLE report (
 -- 알림 발송 기록: 예약·사람·종류별로 한 번만 보냄 (스케줄러가 두 번 돌아도 중복 발송 없음)
 CREATE TABLE notification_log (
     reservation_id bigint      NOT NULL REFERENCES reservation(id) ON DELETE CASCADE,
-    user_id        bigint      NOT NULL REFERENCES app_user(id),
+    user_id        bigint      NOT NULL REFERENCES users(id),
     kind           varchar(20) NOT NULL CHECK (kind IN ('START_SOON', 'END_SOON')),
     sent_at        timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (reservation_id, user_id, kind)
@@ -158,29 +163,31 @@ CREATE TRIGGER reservation_set_deadline
     FOR EACH ROW EXECUTE FUNCTION reservation_set_deadline();
 
 -- 트리거 1: 이용자 행에 예약의 시간·상태를 복사
-CREATE FUNCTION participant_copy_period() RETURNS trigger AS $$
+CREATE FUNCTION participant_copy_times() RETURNS trigger AS $$
 DECLARE r reservation%ROWTYPE;
 BEGIN
     SELECT * INTO r FROM reservation WHERE id = NEW.reservation_id;
     -- 학생 인증(학교메일 인증)을 마친 회원만 이용자 목록에 들어갈 수 있음
-    IF NOT EXISTS (SELECT 1 FROM app_user WHERE id = NEW.user_id AND email_verified_at IS NOT NULL) THEN
+    IF NOT EXISTS (SELECT 1 FROM users WHERE id = NEW.user_id AND verified_at IS NOT NULL) THEN
         RAISE EXCEPTION '학생 인증을 마친 회원만 참여자로 넣을 수 있습니다' USING ERRCODE = 'check_violation';
     END IF;
-    NEW.period   := tstzrange(r.start_at, r.end_at);
+    NEW.start_at := r.start_at;
+    NEW.end_at   := r.end_at;
     NEW.active   := r.status IN ('BOOKED', 'IN_USE');
     NEW.is_owner := (NEW.user_id = r.owner_id);
     RETURN NEW;
 END $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER participant_copy_period
+CREATE TRIGGER participant_copy_times
     BEFORE INSERT OR UPDATE ON reservation_participant
-    FOR EACH ROW EXECUTE FUNCTION participant_copy_period();
+    FOR EACH ROW EXECUTE FUNCTION participant_copy_times();
 
 -- 트리거 2: 예약 상태·시간이 바뀌면 이용자 행도 맞춤 (퇴실·노쇼 → 이용자도 바로 풀림)
 CREATE FUNCTION reservation_sync_participants() RETURNS trigger AS $$
 BEGIN
     UPDATE reservation_participant
-       SET period = tstzrange(NEW.start_at, NEW.end_at),
+       SET start_at = NEW.start_at,
+           end_at = NEW.end_at,
            active = NEW.status IN ('BOOKED', 'IN_USE')
      WHERE reservation_id = NEW.id;
     RETURN NEW;
@@ -191,14 +198,14 @@ CREATE TRIGGER reservation_sync_participants
     FOR EACH ROW EXECUTE FUNCTION reservation_sync_participants();
 
 -- 트리거 3: 상태는 정해진 순서로만 바뀜
---   BOOKED → IN_USE(체크인) / NO_SHOW / CANCELLED(시작 전에만),  IN_USE → CHECKED_OUT(퇴실·자동 퇴실)
+--   BOOKED → IN_USE(체크인) / NO_SHOW / CANCELED(시작 전에만),  IN_USE → CHECKED_OUT(퇴실) / AUTO_CHECKED_OUT(자동 퇴실)
 CREATE FUNCTION reservation_status_guard() RETURNS trigger AS $$
 BEGIN
     IF NEW.status = OLD.status THEN RETURN NEW; END IF;
-    IF OLD.status = 'BOOKED' AND NEW.status = 'CANCELLED' AND now() >= OLD.start_at THEN
+    IF OLD.status = 'BOOKED' AND NEW.status = 'CANCELED' AND now() >= OLD.start_at THEN
         RAISE EXCEPTION '시작한 예약은 취소할 수 없습니다' USING ERRCODE = 'check_violation';
     END IF;
-    IF (OLD.status, NEW.status) IN (('BOOKED', 'IN_USE'), ('BOOKED', 'NO_SHOW'), ('BOOKED', 'CANCELLED'), ('IN_USE', 'CHECKED_OUT')) THEN
+    IF (OLD.status, NEW.status) IN (('BOOKED', 'IN_USE'), ('BOOKED', 'NO_SHOW'), ('BOOKED', 'CANCELED'), ('IN_USE', 'CHECKED_OUT'), ('IN_USE', 'AUTO_CHECKED_OUT')) THEN
         RETURN NEW;
     END IF;
     RAISE EXCEPTION '허용되지 않는 상태 변경: % → %', OLD.status, NEW.status
@@ -214,13 +221,13 @@ CREATE TRIGGER reservation_status_guard
 CREATE FUNCTION check_people(rid bigint) RETURNS void AS $$
 DECLARE
     r   reservation%ROWTYPE;
-    rm  room%ROWTYPE;
+    rm  rooms%ROWTYPE;
     cnt int;
     has_owner boolean;
 BEGIN
     SELECT * INTO r FROM reservation WHERE id = rid;
     IF NOT FOUND THEN RETURN; END IF;  -- 예약이 지워진 경우
-    SELECT * INTO rm FROM room WHERE id = r.room_id;
+    SELECT * INTO rm FROM rooms WHERE id = r.room_id;
     SELECT count(*), bool_or(user_id = r.owner_id) INTO cnt, has_owner
       FROM reservation_participant WHERE reservation_id = rid;
 
@@ -260,7 +267,7 @@ CREATE CONSTRAINT TRIGGER participant_check_people
     FOR EACH ROW EXECUTE FUNCTION participant_check_people();
 
 -- 방 초기 데이터
-INSERT INTO room (id, name, min_people, max_people) VALUES
+INSERT INTO rooms (id, name, min_people, max_people) VALUES
     (1, '1번 방', 3, 5),
     (2, '2번 방', 3, 5),
     (3, '3번 방', 3, 5),
@@ -282,15 +289,15 @@ INSERT INTO room (id, name, min_people, max_people) VALUES
     (인원 확인 트리거가 커밋 때 돌기 때문)
  5. 상태 변경은 조건부 UPDATE로. 예)
       체크인: UPDATE reservation SET status='IN_USE', checked_in_at=now()
-              WHERE id=? AND status='BOOKED' AND door_code=? AND now() >= start_at AND now() <= checkin_deadline
-      퇴실:   UPDATE reservation SET status='CHECKED_OUT', checked_out_at=now(), checkout_type='MANUAL'
+              WHERE id=? AND status='BOOKED' AND access_code=? AND now() >= start_at - interval '10 minutes' AND now() <= checkin_deadline
+      퇴실:   UPDATE reservation SET status='CHECKED_OUT', checked_out_at=now()
               WHERE id=? AND owner_id=? AND status='IN_USE'
-      취소:   UPDATE reservation SET status='CANCELLED', cancelled_at=now()
+      취소:   UPDATE reservation SET status='CANCELED', canceled_at=now()
               WHERE id=? AND owner_id=? AND status='BOOKED' AND now() < start_at
     → 영향받은 행이 0이면 "이미 처리됨"으로 응답
  6. 스케줄러(1분 주기):
       노쇼:     status='BOOKED' AND now() > checkin_deadline → NO_SHOW
-      자동 퇴실: status='IN_USE' AND now() >= end_at → CHECKED_OUT, checkout_type='AUTO', checked_out_at=end_at
+      자동 퇴실: status='IN_USE' AND now() >= end_at → AUTO_CHECKED_OUT, checked_out_at=end_at
  7. 키패드 번호(6자리 난수) 발급, 대표자 화면에만 노출
  8. 소음 신고는 "정말 소란인가요?" 체크박스를 체크해야 접수. 허위 판정(FALSE)은 관리자만, 비품 고장·창문 열림·어질러짐만.
  8-1. 신고 권한: 신고자가 그 방 또는 옆 방(room_adjacency)의 IN_USE 예약 이용자인지

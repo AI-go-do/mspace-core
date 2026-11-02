@@ -41,13 +41,13 @@ class MspaceCoreApplicationTests {
     void reservationConstraintsExist() {
         // when
         List<String> constraints = jdbc.queryForList(
-                "SELECT conname FROM pg_constraint WHERE conname IN ('no_room_overlap', 'no_person_overlap', 'valid_slot')",
+                "SELECT conname FROM pg_constraint WHERE conname IN ('no_room_overlap', 'no_person_overlap', 'valid_length')",
                 String.class);
         Integer ownerIndex = jdbc.queryForObject(
                 "SELECT count(*) FROM pg_indexes WHERE indexname = 'one_active_per_owner'", Integer.class);
 
         // then
-        assertThat(constraints).containsExactlyInAnyOrder("no_room_overlap", "no_person_overlap", "valid_slot");
+        assertThat(constraints).containsExactlyInAnyOrder("no_room_overlap", "no_person_overlap", "valid_length");
         assertThat(ownerIndex).isEqualTo(1);
     }
 
@@ -55,8 +55,8 @@ class MspaceCoreApplicationTests {
     @DisplayName("방 초기 데이터 5개가 들어간다 (1~4번 3~5명, 5번 5~8명)")
     void roomsSeeded() {
         // when
-        Integer rooms = jdbc.queryForObject("SELECT count(*) FROM room", Integer.class);
-        Integer bigRoomMax = jdbc.queryForObject("SELECT max_people FROM room WHERE id = 5", Integer.class);
+        Integer rooms = jdbc.queryForObject("SELECT count(*) FROM rooms", Integer.class);
+        Integer bigRoomMax = jdbc.queryForObject("SELECT max_people FROM rooms WHERE id = 5", Integer.class);
 
         // then
         assertThat(rooms).isEqualTo(5);
