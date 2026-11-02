@@ -43,6 +43,9 @@ jobs:
       # 팀 SonarQube 서버에 결과(커버리지·코드 냄새)를 보낸다
       # SONAR_TOKEN 비밀값이 없으면(설정 전) 건너뛴다
       - name: SonarQube 분석
+        # Community Build는 브랜치·PR을 나눠 담지 못하고 프로젝트 하나에 덮어쓴다
+        # PR(합치기 전 코드)이 결과를 덮지 않게, develop/main에 합쳐진 뒤(push)에만 보낸다
+        if: github.event_name == 'push'
         # 토큰은 이 단계에만 넘긴다. 빌드·테스트 단계(테스트 코드·의존성)가 토큰을 볼 수 없게
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
