@@ -7,11 +7,6 @@ on:
     branches: [develop, main]
   workflow_dispatch:          # Actions 탭에서 손으로도 돌릴 수 있게
 
-# 같은 브랜치 배포가 겹치면 앞의 것은 취소하고 최신 것만
-concurrency:
-  group: deploy-${{ github.ref }}
-  cancel-in-progress: true
-
 env:
   # GHCR 이미지 이름은 소문자만 된다 → ghcr.io/ai-go-do/mspace-core
   IMAGE: ghcr.io/ai-go-do/mspace-core
@@ -26,6 +21,11 @@ jobs:
     permissions:
       contents: read
       packages: write         # GHCR에 이미지를 올릴 권한 (별도 토큰 필요 없음)
+    # 같은 브랜치 이미지 빌드가 겹치면 앞의 것은 취소하고 최신 것만.
+    # (워크플로 전체가 아니라 이 job에만 걸어서, 서버 교체 중인 server job은 취소되지 않게)
+    concurrency:
+      group: image-${{ github.ref }}
+      cancel-in-progress: true
 
     steps:
       - name: 코드 받기
@@ -70,7 +70,8 @@ jobs:
   server:
     name: server
     needs: image                       # 이미지가 GHCR에 올라간 다음에
-    if: vars.DEPLOY_ENABLED == 'true'
+    # 서버 준비가 끝나 DEPLOY_ENABLED를 켰을 때만, develop·main에서만 (손으로 다른 브랜치를 돌려도 배포 안 함)
+    if: vars.DEPLOY_ENABLED == 'true' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
