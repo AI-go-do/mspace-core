@@ -34,6 +34,7 @@ class JdbcReservationAdapter implements ReservationCommandPort {
         this.jdbc = jdbc;
     }
 
+    /** 사용 중지되지 않은(is_active) 방의 이름과 정원. 없으면 빈 값 */
     @Override
     public Optional<RoomCapacity> findActiveRoom(int roomId) {
         return jdbc.sql("SELECT id, name, min_people, max_people FROM rooms WHERE id = :id AND is_active")
@@ -43,6 +44,7 @@ class JdbcReservationAdapter implements ReservationCommandPort {
                 .optional();
     }
 
+    /** 학생 인증을 마친 회원의 학번. 인증 전이거나 없는 회원이면 빈 값 */
     @Override
     public Optional<String> findVerifiedStudentId(long userId) {
         return jdbc.sql("SELECT student_id FROM users WHERE id = :id AND verified_at IS NOT NULL")
@@ -51,6 +53,12 @@ class JdbcReservationAdapter implements ReservationCommandPort {
                 .optional();
     }
 
+    /**
+     * 학번 목록을 회원 id로 바꾼다. 인증을 마친 회원만 담기므로, 결과 크기가 입력보다 작으면 못 찾은 학번이 있다는 뜻이다.
+     *
+     * @param studentIds 참여자 학번 (비어 있으면 DB를 부르지 않는다)
+     * @return 학번 → 회원 id
+     */
     @Override
     public Map<String, Long> findVerifiedUserIds(Collection<String> studentIds) {
         Map<String, Long> result = new HashMap<>();
@@ -65,6 +73,13 @@ class JdbcReservationAdapter implements ReservationCommandPort {
         return result;
     }
 
+    /**
+     * 예약 한 줄과 참여자 줄들을 저장하고, 미뤄 둔 제약·트리거를 바로 확인한다.
+     *
+     * @param r 저장할 예약 (참여자 id에 대표자 포함)
+     * @return 새 예약 id
+     * @throws BusinessException 겹침·대표자 1건·같은 사람 두 방 제약에 걸리면 409
+     */
     @Override
     public long insert(NewReservation r) {
         try {

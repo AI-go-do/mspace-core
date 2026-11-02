@@ -7,9 +7,11 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
+/** 모든 컨트롤러의 오류를 팀 형식 {"code": "...", "message": "..."}으로 바꾼다 */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    /** 업무 규칙 오류 → ErrorCode에 정한 상태 코드(400·401·404·409)와 본문 */
     @ExceptionHandler(BusinessException.class)
     ResponseEntity<ErrorResponse> handleBusiness(BusinessException e) {
         return ResponseEntity.status(e.errorCode().status()).body(ErrorResponse.of(e));
