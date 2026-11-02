@@ -16,7 +16,8 @@ target/
 .classpath
 .project
 .settings/
-/out/          # IntelliJ 빌드 폴더(루트만). adapter/out 패키지는 무시하면 안 됨
+# IntelliJ 빌드 폴더는 루트만 (adapter/out 패키지까지 무시하면 안 됨)
+/out/
 
 # OS
 .DS_Store
