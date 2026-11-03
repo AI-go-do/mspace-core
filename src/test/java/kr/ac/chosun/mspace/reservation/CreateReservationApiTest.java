@@ -20,6 +20,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.assertj.MvcTestResult;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
+import org.springframework.transaction.support.TransactionOperations;
 
 /**
  * 예약 생성 API (FR-RSV-001~005). 지금 = 2026-11-03(화) 10:10 서울로 고정.
@@ -45,6 +46,9 @@ class CreateReservationApiTest {
 
     @Autowired
     JdbcClient jdbc;
+
+    @Autowired
+    TransactionOperations tx;
 
     @BeforeEach
     void members() {
@@ -140,8 +144,20 @@ class CreateReservationApiTest {
     @Test
     @DisplayName("수용 기준: 취소된 예약 시간은 다시 잡을 수 있다")
     void canceledFreesRoom() {
-        assertThat(reserve(1, 1, at("03T14:00"), at("03T16:00"), "20230002", "20230003")).hasStatus(201);
-        jdbc.sql("UPDATE reservation SET status = 'CANCELED', canceled_at = now() WHERE id = 1").update();
+        // 취소된 예약을 바로 넣는다. BOOKED를 UPDATE로 취소하면 상태 트리거가 DB의 실제 시각(now())으로
+        // "시작 전"인지 보기 때문에, 실제 날짜가 11/3 14:00을 지나면 테스트가 깨진다 (고정 Clock과 무관)
+        tx.executeWithoutResult(s -> {
+            jdbc.sql("""
+                    INSERT INTO reservation (room_id, owner_id, start_at, end_at, headcount, access_code, status, canceled_at)
+                    VALUES (1, 1, '2026-11-03 14:00+09', '2026-11-03 16:00+09', 3, '123456', 'CANCELED', '2026-11-03 10:00+09')
+                    """).update();
+            for (int uid = 1; uid <= 3; uid++) {
+                jdbc.sql("""
+                        INSERT INTO reservation_participant (reservation_id, user_id, is_owner, start_at, end_at)
+                        VALUES (1, :uid, :owner, now(), now())
+                        """).param("uid", uid).param("owner", uid == 1).update();
+            }
+        });
 
         assertThat(reserve(4, 1, at("03T14:00"), at("03T16:00"), "20230005", "20230006")).hasStatus(201);
     }
