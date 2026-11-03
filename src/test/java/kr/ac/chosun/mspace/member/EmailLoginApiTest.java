@@ -309,14 +309,19 @@ class EmailLoginApiTest {
                 return sendCode(EMAIL).getResponse().getStatus();
             }));
         }
-        start.countDown();
         int ok = 0;
-        for (var f : results) {
-            if (f.get() == 204) {
-                ok++;
+        try {
+            start.countDown();
+            for (var f : results) {
+                int status = f.get();
+                assertThat(status).isIn(204, 429);   // 나머지는 "1분 안에 또" 429여야 한다 (500이면 실패)
+                if (status == 204) {
+                    ok++;
+                }
             }
+        } finally {
+            pool.shutdown();
         }
-        pool.shutdown();
 
         assertThat(ok).isEqualTo(1);
         assertThat(jdbc.sql("SELECT count(*) FROM email_verification").query(Integer.class).single()).isEqualTo(1);
