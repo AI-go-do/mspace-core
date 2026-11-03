@@ -32,6 +32,7 @@ mspace:
     booking-window-days: 7   # 오늘 포함 7일 (오늘 ~ 오늘+6일)
     slot-minutes: 30
     max-minutes: 120         # 1회 최대 2시간
+    lock-timeout: 3s         # 예약 저장 때 잠금(advisory lock) 최대 대기. 넘으면 다시 하고, 3번 다 넘으면 503
   auth:
     # 임시: 로그인이 붙기 전까지 X-User-Id 헤더로 회원을 받는다. 운영에서는 꼭 false
     dev-header: ${MSPACE_DEV_HEADER:false}

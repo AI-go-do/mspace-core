@@ -2,6 +2,7 @@ package kr.ac.chosun.mspace.reservation.adapter.out.persistence;
 
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
@@ -11,6 +12,8 @@ import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.reservation.application.ReservationCommandPort;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.ServerErrorMessage;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
@@ -30,8 +33,11 @@ class JdbcReservationAdapter implements ReservationCommandPort {
 
     private final JdbcClient jdbc;
 
-    JdbcReservationAdapter(JdbcClient jdbc) {
+    private final Duration lockTimeout;
+
+    JdbcReservationAdapter(JdbcClient jdbc, @Value("${mspace.reservation.lock-timeout:3s}") Duration lockTimeout) {
         this.jdbc = jdbc;
+        this.lockTimeout = lockTimeout;
     }
 
     /** 학생 인증을 마친 회원의 학번. 인증 전이거나 없는 회원이면 빈 값 */
@@ -105,6 +111,11 @@ class JdbcReservationAdapter implements ReservationCommandPort {
             jdbc.sql("SET CONSTRAINTS ALL IMMEDIATE").update();
             return id;
         } catch (DataAccessException e) {
+            // 잠금 대기 상한(lock_timeout)을 넘음. Spring이 55P03을 분류하지 못해서 직접 잠금 실패로 바꾼다
+            // → 서비스가 교착(40P01)과 똑같이 다시 하고, 3번 다 넘으면 503(RESERVATION_BUSY)
+            if (LOCK_NOT_AVAILABLE.equals(sqlState(e))) {
+                throw new CannotAcquireLockException("예약 잠금 대기 시간 초과", e);
+            }
             // Map.of는 get(null)에서 NullPointerException → 제약 이름이 없으면(연결 끊김 등) 원래 오류를 그대로 던진다
             String constraint = constraintName(e);
             ErrorCode code = constraint == null ? null : CONSTRAINTS.get(constraint);
@@ -129,6 +140,11 @@ class JdbcReservationAdapter implements ReservationCommandPort {
      * 중복을 막는 건 여전히 DB 제약이고, 이 잠금은 교착만 없앤다.
      */
     private void lockInOrder(NewReservation r) {
+        // 잠금을 무한정 기다리지 않게 이 트랜잭션에만 상한을 건다 (SET LOCAL과 같음, 커밋·롤백 때 풀림).
+        // 넘으면 PostgreSQL 55P03 → Spring이 PessimisticLockingFailureException 계열로 바꿔서 서비스의 다시 하기 → 503
+        jdbc.sql("SELECT set_config('lock_timeout', :ms, true)")
+                .param("ms", lockTimeout.toMillis() + "ms")
+                .query((rs, n) -> 1).list();
         lock(-(long) r.roomId());
         for (Long userId : r.participantIds().stream().sorted().toList()) {
             lock(userId);
@@ -141,6 +157,18 @@ class JdbcReservationAdapter implements ReservationCommandPort {
     }
 
     /** PostgreSQL이 알려 준 위반 제약 이름. 없으면 null */
+    /** PostgreSQL 오류 코드: 잠금을 기다리다 lock_timeout을 넘음 */
+    private static final String LOCK_NOT_AVAILABLE = "55P03";
+
+    private static String sqlState(DataAccessException e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof SQLException s && s.getSQLState() != null) {
+                return s.getSQLState();
+            }
+        }
+        return null;
+    }
+
     private static String constraintName(DataAccessException e) {
         for (Throwable t = e; t != null; t = t.getCause()) {
             if (t instanceof PSQLException p) {
