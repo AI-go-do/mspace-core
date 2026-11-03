@@ -40,7 +40,21 @@ public enum ErrorCode {
     // 키패드 (FR-ACC-001)
     DEVICE_UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "장치 토큰이 없거나 맞지 않습니다"),
     // 내부용: 새로 뽑은 번호가 같은 방 다른 예약 번호와 겹침 → 서비스가 새 번호로 다시 한다 (응답으로 나가지 않음)
-    ACCESS_CODE_TAKEN(HttpStatus.CONFLICT, "키패드 번호가 겹쳤습니다");
+    ACCESS_CODE_TAKEN(HttpStatus.CONFLICT, "키패드 번호가 겹쳤습니다"),
+
+    // 로그인 (FR-AUTH-001)
+    SCHOOL_EMAIL_ONLY(HttpStatus.BAD_REQUEST, "학교 메일(@chosun.ac.kr)만 사용할 수 있습니다"),
+    EMAIL_CODE_TOO_SOON(HttpStatus.TOO_MANY_REQUESTS, "인증번호는 1분에 한 번만 보낼 수 있습니다"),
+    EMAIL_CODE_NOT_FOUND(HttpStatus.BAD_REQUEST, "인증번호를 먼저 받아 주세요"),
+    EMAIL_CODE_EXPIRED(HttpStatus.BAD_REQUEST, "인증번호가 만료되었습니다. 다시 받아 주세요"),
+    EMAIL_CODE_MISMATCH(HttpStatus.BAD_REQUEST, "인증번호가 맞지 않습니다"),
+    EMAIL_CODE_TOO_MANY_ATTEMPTS(HttpStatus.BAD_REQUEST, "5번 틀려서 이 인증번호는 더 쓸 수 없습니다. 다시 받아 주세요"),
+    SIGNUP_INFO_REQUIRED(HttpStatus.BAD_REQUEST, "처음 로그인이라 이름과 학번이 필요합니다"),
+    INVALID_SIGNUP_INFO(HttpStatus.BAD_REQUEST, "이름(50자 이내)과 학번(숫자 20자 이내)을 확인해 주세요"),
+    STUDENT_ID_TAKEN(HttpStatus.CONFLICT, "이미 가입된 학번입니다"),
+    EMAIL_ALREADY_SIGNED_UP(HttpStatus.CONFLICT, "이 메일로 방금 가입되었습니다. 인증번호를 다시 받아 로그인해 주세요"),
+    MAIL_SEND_FAILED(HttpStatus.SERVICE_UNAVAILABLE, "인증번호 메일을 보내지 못했습니다. 잠시 후 다시 시도해 주세요"),
+    REFRESH_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "로그인이 만료되었습니다. 다시 로그인해 주세요");
 
     private final HttpStatus status;
     private final String message;

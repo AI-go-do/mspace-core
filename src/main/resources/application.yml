@@ -16,6 +16,20 @@ spring:
           time_zone: Asia/Seoul   # 7일·자정 계산이 서울 기준이 되게 (schema-v2.sql 끝 주석 0번)
   flyway:
     locations: classpath:db/migration
+  # 인증번호 메일 (팀 Gmail + 앱 비밀번호). MAIL_ENABLED=true일 때만 실제로 보낸다
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.starttls.required: true        # TLS로 못 바꾸면 평문으로 보내지 않고 실패
+      mail.smtp.ssl.checkserveridentity: true  # 인증서의 서버 이름 확인
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
 
 server:
   port: ${SERVER_PORT:8080}
@@ -25,6 +39,9 @@ management:
     web:
       exposure:
         include: health
+  health:
+    mail:
+      enabled: false   # Gmail이 잠깐 안 돼도 서버 전체를 DOWN으로 보지 않게 (메일은 로그인 일부일 뿐)
 
 # 예약 규칙 숫자 (요구사항 FR-RSV-001: 설정값으로 둔다)
 mspace:
@@ -42,3 +59,11 @@ mspace:
   auth:
     # 임시: 로그인이 붙기 전까지 X-User-Id 헤더로 회원을 받는다. 운영에서는 꼭 false
     dev-header: ${MSPACE_DEV_HEADER:false}
+    jwt:
+      secret: ${JWT_SECRET:}   # 32바이트 이상. 비우면 실행할 때마다 임시값(로컬 전용)
+      ttl: ${JWT_TTL:1h}       # 액세스 토큰. 짧게 둬서 "중간에 못 끊는" JWT 약점을 줄인다
+      refresh-ttl: ${JWT_REFRESH_TTL:14d}   # 자동 로그인 기간. DB에 해시로 저장돼 로그아웃하면 바로 끊긴다
+      issuer: mspace-core
+  mail:
+    enabled: ${MAIL_ENABLED:false}   # false면 인증번호를 로그에 찍는다
+    from: ${MAIL_FROM:${MAIL_USERNAME:}}
