@@ -265,6 +265,19 @@ class InstantStartApiTest {
     }
 
     @Test
+    @DisplayName("입실 마감보다 끝이 먼저인 지금 바로 쓰기(14:29–14:30)를 안 쓰면 끝 시각에 노쇼, 대표자는 바로 다시 잡을 수 있다")
+    void shortInstantEndsBeforeDeadline() {
+        now("14:29");
+        assertThat(startNow("14:30")).hasStatus(201);
+        assertThat(column(1, "checkin_deadline")).isEqualTo(at("14:39"));
+
+        now("14:30");
+        assertThat(sweeps.sweep()).isEqualTo(new SweepReservationsUseCase.Swept(1, 0));
+        assertThat(status(1)).isEqualTo("NO_SHOW");
+        assertThat(startNow("15:00")).hasStatus(201);
+    }
+
+    @Test
     @DisplayName("끝 시각 빠짐 → 400, 로그인 없음 → 401")
     void badRequests() {
         now("14:17");
