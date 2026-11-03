@@ -135,4 +135,31 @@ class CreateReservationRetryTest {
         assertThatThrownBy(() -> service(port).create(1, command)).isInstanceOf(BusinessException.class);
         assertThat(port.insertCalls).isEqualTo(1);
     }
+
+    @Test
+    @DisplayName("뽑은 키패드 번호가 같은 방 다른 예약과 겹치면 새 번호로 다시 해서 저장한다")
+    void reissuesTakenAccessCode() {
+        // given: 첫 저장은 번호 겹침(one_active_code_per_room), 두 번째는 성공. 번호는 부를 때마다 다르게
+        FakePort port = new FakePort(0) {
+            @Override
+            public long insert(NewReservation reservation) {
+                insertCalls++;
+                if (insertCalls == 1) {
+                    throw new BusinessException(ErrorCode.ACCESS_CODE_TAKEN);
+                }
+                return 42;
+            }
+        };
+        int[] issued = {0};
+        CreateReservationService service = new CreateReservationService(port, new RoomQuery(rooms),
+                () -> "00000" + (++issued[0]), new ReservationPolicy(7, 30, 120), clock,
+                TransactionOperations.withoutTransaction());
+
+        // when
+        CreateReservationUseCase.Created created = service.create(1, command);
+
+        // then
+        assertThat(port.insertCalls).isEqualTo(2);
+        assertThat(created.accessCode()).isEqualTo("000002");
+    }
 }

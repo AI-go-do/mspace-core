@@ -29,7 +29,15 @@ public enum ErrorCode {
     // 없는 예약과 남의 예약(참여자도 아님)은 둘 다 404: 남의 예약이 있는지 없는지 알려 주지 않으려고
     RESERVATION_NOT_FOUND(HttpStatus.NOT_FOUND, "찾을 수 없는 예약입니다"),
     NOT_RESERVATION_OWNER(HttpStatus.FORBIDDEN, "대표자만 할 수 있습니다"),
-    RESERVATION_NOT_CANCELABLE(HttpStatus.CONFLICT, "시작 전인 예약만 취소할 수 있습니다");
+    RESERVATION_NOT_CANCELABLE(HttpStatus.CONFLICT, "시작 전인 예약만 취소할 수 있습니다"),
+
+    // 퇴실 (FR-RSV-008). 이름은 영준 비서(mspace-assistant #30)와 맞춤
+    RESERVATION_NOT_IN_USE(HttpStatus.CONFLICT, "입실한(사용 중) 예약만 퇴실할 수 있습니다"),
+
+    // 키패드 (FR-ACC-001)
+    DEVICE_UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "장치 토큰이 없거나 맞지 않습니다"),
+    // 내부용: 새로 뽑은 번호가 같은 방 다른 예약 번호와 겹침 → 서비스가 새 번호로 다시 한다 (응답으로 나가지 않음)
+    ACCESS_CODE_TAKEN(HttpStatus.CONFLICT, "키패드 번호가 겹쳤습니다");
 
     private final HttpStatus status;
     private final String message;

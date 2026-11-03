@@ -79,6 +79,13 @@ public class CreateReservationService implements CreateReservationUseCase {
                     throw new BusinessException(ErrorCode.RESERVATION_BUSY);
                 }
             } catch (BusinessException e) {
+                // 뽑은 번호가 같은 방의 다른 예약 번호와 같으면(100만분의 1 정도) 새 번호로 다시 한다
+                if (e.errorCode() == ErrorCode.ACCESS_CODE_TAKEN) {
+                    if (attempt >= MAX_ATTEMPTS) {
+                        throw new BusinessException(ErrorCode.RESERVATION_BUSY);
+                    }
+                    continue;
+                }
                 // 같은 키 요청 두 개가 동시에 오면 둘 다 위 replay에서 "없음"을 본다. 늦은 쪽은 저장에서 409(대표자 1건 또는
                 // 키 유일 제약)를 받는데, 그 사이 앞 요청이 커밋됐으니 다시 찾으면 처음 예약이 나온다 → 409 대신 그 예약을 200으로
                 if (e.errorCode().status() == HttpStatus.CONFLICT) {

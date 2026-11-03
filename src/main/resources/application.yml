@@ -32,6 +32,12 @@ mspace:
     booking-window-days: 7   # 오늘 포함 7일 (오늘 ~ 오늘+6일)
     slot-minutes: 30
     max-minutes: 120         # 1회 최대 2시간
+  access:
+    open-before-minutes: 10  # 번호는 시작 10분 전부터 끝나기 전까지 (FR-ACC-001)
+    lock-after-failures: 5   # 5번 연속 틀리면
+    lock-seconds: 60         # 그 방 키패드 1분 잠금
+    # 키패드가 Authorization: Bearer 로 보내는 토큰. 비어 있으면 장치 요청을 모두 401로 막는다. 값은 .env에만
+    device-token: ${MSPACE_DEVICE_TOKEN:}
   auth:
     # 임시: 로그인이 붙기 전까지 X-User-Id 헤더로 회원을 받는다. 운영에서는 꼭 false
     dev-header: ${MSPACE_DEV_HEADER:false}

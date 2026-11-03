@@ -17,6 +17,15 @@ public interface ReservationQueryPort {
      */
     Optional<Access> findAccess(long reservationId, long userId);
 
+    /**
+     * 이 방에서 이 번호를 가진 끝나지 않은(BOOKED·IN_USE) 예약. 번호는 방 안에서 겹치지 않아서(one_active_code_per_room)
+     * 많아야 한 건이다.
+     */
+    Optional<CodeMatch> findActiveByCode(int roomId, String accessCode);
+
+    record CodeMatch(long id, ReservationStatus status, Instant startAt, Instant endAt) {
+    }
+
     /** 참여자 이름은 실명 그대로. 가리는 건 서비스가 한다 */
     record Row(long id, int roomId, String roomName, Instant startAt, Instant endAt, ReservationStatus status,
                long ownerId, String accessCode, List<ParticipantRow> participants) {

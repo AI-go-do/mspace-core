@@ -8,6 +8,8 @@ import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.reservation.application.CancelReservationUseCase;
 import kr.ac.chosun.mspace.reservation.application.CancelReservationUseCase.Canceled;
+import kr.ac.chosun.mspace.reservation.application.CheckoutReservationUseCase;
+import kr.ac.chosun.mspace.reservation.application.CheckoutReservationUseCase.CheckedOut;
 import kr.ac.chosun.mspace.reservation.application.CreateReservationUseCase;
 import kr.ac.chosun.mspace.reservation.application.CreateReservationUseCase.Command;
 import kr.ac.chosun.mspace.reservation.application.CreateReservationUseCase.Created;
@@ -27,12 +29,14 @@ class ReservationController {
     private final CreateReservationUseCase service;
     private final MyReservationsUseCase myReservations;
     private final CancelReservationUseCase cancels;
+    private final CheckoutReservationUseCase checkouts;
 
     ReservationController(CreateReservationUseCase service, MyReservationsUseCase myReservations,
-                          CancelReservationUseCase cancels) {
+                          CancelReservationUseCase cancels, CheckoutReservationUseCase checkouts) {
         this.service = service;
         this.myReservations = myReservations;
         this.cancels = cancels;
+        this.checkouts = checkouts;
     }
 
     /**
@@ -87,6 +91,16 @@ class ReservationController {
     @PostMapping("/api/reservations/{id}/cancel")
     StatusChangeResponse cancel(LoginUser user, @PathVariable long id) {
         Canceled c = cancels.cancel(id, user.id());
+        return new StatusChangeResponse(c.id(), c.status().name());
+    }
+
+    /**
+     * 퇴실 (FR-RSV-008). 대표자만, 입실한(IN_USE) 예약만. 방이 바로 빈다. 조기 퇴실 확인은 화면이 한다.
+     * 200 {"id":12,"status":"CHECKED_OUT"} / 404 없거나 내 예약 아님 / 403 참여자 / 409 입실 전·이미 끝남
+     */
+    @PostMapping("/api/reservations/{id}/checkout")
+    StatusChangeResponse checkout(LoginUser user, @PathVariable long id) {
+        CheckedOut c = checkouts.checkout(id, user.id());
         return new StatusChangeResponse(c.id(), c.status().name());
     }
 
