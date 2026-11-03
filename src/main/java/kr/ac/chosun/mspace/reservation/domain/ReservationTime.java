@@ -59,7 +59,8 @@ public record ReservationTime(Instant start, Instant end) {
     public static ReservationTime instant(Instant now, Instant end, ReservationPolicy policy) {
         long slotSeconds = policy.slotMinutes() * 60L;
         if (!onSlot(end, slotSeconds)) {
-            throw new BusinessException(ErrorCode.RESERVATION_NOT_ON_SLOT);
+            // 즉시 시작은 시작을 서버가 정하므로 "시작·종료 시각은…"이 아니라 끝 시각만 말한다
+            throw new BusinessException(ErrorCode.RESERVATION_NOT_ON_SLOT, "끝 시각은 정각 또는 30분이어야 합니다");
         }
         Instant start = now.truncatedTo(ChronoUnit.SECONDS);
         Instant latest = ceilToSlot(start.plus(Duration.ofMinutes(policy.maxMinutes())), slotSeconds);

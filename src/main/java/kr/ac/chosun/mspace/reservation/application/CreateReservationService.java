@@ -18,6 +18,9 @@ import kr.ac.chosun.mspace.reservation.domain.ReservationStatus;
 import kr.ac.chosun.mspace.reservation.domain.ReservationTime;
 import kr.ac.chosun.mspace.room.application.RoomQuery;
 import kr.ac.chosun.mspace.room.application.RoomQuery.ActiveRoom;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -36,6 +39,8 @@ import org.springframework.transaction.support.TransactionOperations;
  */
 @Service
 public class CreateReservationService implements CreateReservationUseCase {
+
+    private static final Logger log = LoggerFactory.getLogger(CreateReservationService.class);
 
     /** 교착이면 몇 번까지 해 보나 (처음 1번 + 다시 2번). 다 실패하면 503 */
     static final int MAX_ATTEMPTS = 3;
@@ -81,12 +86,25 @@ public class CreateReservationService implements CreateReservationUseCase {
         return make(ownerId, command, true);
     }
 
+    /**
+     * 만들기 전에 지난 예약(노쇼·자동 퇴실)을 먼저 정리해서 1분 주기를 기다리지 않게 한다.
+     * 정리는 부가 작업이라 DB 오류가 나도 예약 만들기는 계속 간다 (잠금 충돌은 정리 안에서 이미 건너뜀).
+     * 정리가 못 돈 탓에 남은 예약이 막으면 409가 나고, 1분 주기 정리가 다시 한다
+     */
+    private void sweepQuietly() {
+        try {
+            sweeps.sweep();
+        } catch (DataAccessException e) {
+            log.warn("예약 만들기 전 정리 실패({}), 그대로 진행", e.getClass().getSimpleName());
+        }
+    }
+
     private Created make(long ownerId, Command command, boolean instant) {
         Optional<Created> earlier = replay(ownerId, command, instant);
         if (earlier.isPresent()) {
             return earlier.get();
         }
-        sweeps.sweep();
+        sweepQuietly();
         for (int attempt = 1; ; attempt++) {
             try {
                 return tx.execute(status -> createOnce(ownerId, command, instant));

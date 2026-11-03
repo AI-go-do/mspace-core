@@ -89,6 +89,9 @@ class ReservationTimeTest {
         assertThat(instantErrorOf("2026-11-03T14:00", "2026-11-03T16:30")).isEqualTo(ErrorCode.RESERVATION_INVALID_LENGTH);
         assertThat(instantErrorOf("2026-11-03T14:00", "2026-11-03T14:00")).isEqualTo(ErrorCode.RESERVATION_INVALID_LENGTH);
         assertThat(instantErrorOf("2026-11-03T14:17", "2026-11-03T15:15")).isEqualTo(ErrorCode.RESERVATION_NOT_ON_SLOT);
+        // 즉시 시작은 끝만 고르니 문장도 끝 시각만 말한다
+        assertThatThrownBy(() -> ReservationTime.instant(at("2026-11-03T14:17"), at("2026-11-03T15:15"), policy))
+                .hasMessage("끝 시각은 정각 또는 30분이어야 합니다");
     }
 
     @Test
