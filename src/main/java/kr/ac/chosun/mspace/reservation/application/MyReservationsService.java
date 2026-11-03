@@ -4,9 +4,9 @@ import static kr.ac.chosun.mspace.common.config.TimeConfig.SEOUL;
 
 import java.util.Comparator;
 import java.util.List;
-import kr.ac.chosun.mspace.reservation.domain.ReservationStatus;
-import kr.ac.chosun.mspace.reservation.application.ReservationQueryPort.Row;
 import kr.ac.chosun.mspace.common.privacy.MaskedName;
+import kr.ac.chosun.mspace.reservation.application.ReservationQueryPort.Row;
+import kr.ac.chosun.mspace.reservation.domain.ReservationStatus;
 import org.springframework.stereotype.Service;
 
 /** 내 예약 보기 (FR-RSV-006). 번호는 대표자에게만, 참여자 이름은 가려서 */
