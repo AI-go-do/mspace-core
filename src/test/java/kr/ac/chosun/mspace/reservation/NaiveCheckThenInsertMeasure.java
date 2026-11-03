@@ -8,6 +8,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import kr.ac.chosun.mspace.TestcontainersConfiguration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -51,42 +52,52 @@ class NaiveCheckThenInsertMeasure {
         Timestamp start = Timestamp.from(Instant.parse("2026-11-04T05:00:00Z"));
         Timestamp end = Timestamp.from(Instant.parse("2026-11-04T07:00:00Z"));
 
-        for (int round = 1; round <= ROUNDS; round++) {
-            jdbc.sql("TRUNCATE reservation_naive").update();
-            ExecutorService pool = Executors.newFixedThreadPool(N);
-            CountDownLatch ready = new CountDownLatch(N);
-            CountDownLatch go = new CountDownLatch(1);
-            List<Future<Boolean>> results = new ArrayList<>();
-            for (int i = 0; i < N; i++) {
-                results.add(pool.submit(() -> {
-                    ready.countDown();
-                    go.await();
-                    return tx.execute(status -> {
-                        // 1) 조회: 겹치는 예약이 있나
-                        int overlap = jdbc.sql("SELECT count(*) FROM reservation_naive WHERE room_id = 1 "
-                                        + "AND start_at < :end AND end_at > :start")
-                                .param("start", start).param("end", end)
-                                .query(Integer.class).single();
-                        if (overlap > 0) {
-                            return false;
-                        }
-                        // 2) 저장: 조회와 저장 사이에 다른 요청도 "없음"을 봤을 수 있다
-                        jdbc.sql("INSERT INTO reservation_naive (room_id, start_at, end_at) VALUES (1, :start, :end)")
-                                .param("start", start).param("end", end).update();
-                        return true;
-                    });
-                }));
+        try {
+            for (int round = 1; round <= ROUNDS; round++) {
+                jdbc.sql("TRUNCATE reservation_naive").update();
+                ExecutorService pool = Executors.newFixedThreadPool(N);
+                CountDownLatch ready = new CountDownLatch(N);
+                CountDownLatch go = new CountDownLatch(1);
+                List<Future<Boolean>> results = new ArrayList<>();
+                for (int i = 0; i < N; i++) {
+                    results.add(pool.submit(() -> {
+                        ready.countDown();
+                        go.await();
+                        return tx.execute(status -> {
+                            // 1) 조회: 겹치는 예약이 있나
+                            int overlap = jdbc.sql("SELECT count(*) FROM reservation_naive WHERE room_id = 1 "
+                                            + "AND start_at < :end AND end_at > :start")
+                                    .param("start", start).param("end", end)
+                                    .query(Integer.class).single();
+                            if (overlap > 0) {
+                                return false;
+                            }
+                            // 2) 저장: 조회와 저장 사이에 다른 요청도 "없음"을 봤을 수 있다
+                            jdbc.sql("INSERT INTO reservation_naive (room_id, start_at, end_at) VALUES (1, :start, :end)")
+                                    .param("start", start).param("end", end).update();
+                            return true;
+                        });
+                    }));
+                }
+                try {
+                    ready.await();
+                    go.countDown();
+                    for (Future<Boolean> f : results) {
+                        f.get();
+                    }
+                } finally {
+                    // 하나가 실패해도 남은 작업을 끝내고 스레드를 닫는다 (실험용 테이블을 지우기 전에)
+                    go.countDown();
+                    pool.shutdownNow();
+                    pool.awaitTermination(30, TimeUnit.SECONDS);
+                }
+                int saved = jdbc.sql("SELECT count(*) FROM reservation_naive").query(Integer.class).single();
+                System.out.printf("[비교 측정] 제약 없는 조회 후 저장 %d회차: 같은 방·시간 %d건 저장 (중복 %d건)%n",
+                        round, saved, saved - 1);
             }
-            ready.await();
-            go.countDown();
-            for (Future<Boolean> f : results) {
-                f.get();
-            }
-            pool.shutdown();
-            int saved = jdbc.sql("SELECT count(*) FROM reservation_naive").query(Integer.class).single();
-            System.out.printf("[비교 측정] 제약 없는 조회 후 저장 %d회차: 같은 방·시간 %d건 저장 (중복 %d건)%n",
-                    round, saved, saved - 1);
+        } finally {
+            // 측정이 중간에 실패해도 실험용 테이블은 남기지 않는다
+            jdbc.sql("DROP TABLE IF EXISTS reservation_naive").update();
         }
-        jdbc.sql("DROP TABLE reservation_naive").update();
     }
 }
