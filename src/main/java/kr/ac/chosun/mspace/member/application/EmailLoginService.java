@@ -18,18 +18,21 @@ import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.member.application.EmailVerificationPort.Verification;
 import kr.ac.chosun.mspace.member.domain.EmailCodeRule;
 import kr.ac.chosun.mspace.member.domain.SchoolEmail;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionOperations;
 
 /**
  * 학교 메일 인증 로그인 (FR-AUTH-001).
  * <p>
- * 일부러 메서드 전체를 트랜잭션으로 묶지 않는다. 번호가 틀렸을 때 "틀린 횟수 +1"은
+ * 일부러 메서드 전체를 트랜잭션으로 묶지 않는다. 시도 횟수(+1)는
  * 예외를 던져도 저장돼야 하기 때문이다. 성공했을 때만 "번호 사용 처리 + 회원 저장"을 한 트랜잭션으로 묶는다.
  */
 @Service
 class EmailLoginService implements EmailLoginUseCase {
 
+    private static final Logger log = LoggerFactory.getLogger(EmailLoginService.class);
     private static final Pattern STUDENT_ID = Pattern.compile("^\\d{1,20}$");
     private static final int MAX_NAME_LENGTH = 50;
 
@@ -62,8 +65,15 @@ class EmailLoginService implements EmailLoginUseCase {
                 });
 
         String code = newCode();
-        verifications.save(email, hash(email, code), now, now.plus(EmailCodeRule.VALID_FOR));
-        sender.send(email, code);
+        long id = verifications.save(email, hash(email, code), now, now.plus(EmailCodeRule.VALID_FOR));
+        try {
+            sender.send(email, code);
+        } catch (RuntimeException e) {
+            // 못 보낸 번호가 남아 있으면 1분 동안 다시 받을 수 없으니 지운다
+            verifications.delete(id);
+            log.warn("인증번호 메일 발송 실패: {}", e.toString());
+            throw new BusinessException(ErrorCode.MAIL_SEND_FAILED);
+        }
     }
 
     @Override
@@ -76,18 +86,20 @@ class EmailLoginService implements EmailLoginUseCase {
         if (v.used()) {
             throw new BusinessException(ErrorCode.EMAIL_CODE_NOT_FOUND);
         }
-        if (v.failedAttempts() >= EmailCodeRule.MAX_FAILED_ATTEMPTS) {
-            throw new BusinessException(ErrorCode.EMAIL_CODE_TOO_MANY_ATTEMPTS);
-        }
         if (!now.isBefore(v.expiresAt())) {
             throw new BusinessException(ErrorCode.EMAIL_CODE_EXPIRED);
+        }
+        // 비교 전에 시도 1번을 먼저 쓴다. 동시에 여러 번 보내도 5번까지만 비교된다
+        if (!verifications.tryAttempt(v.id(), EmailCodeRule.MAX_FAILED_ATTEMPTS)) {
+            throw new BusinessException(ErrorCode.EMAIL_CODE_TOO_MANY_ATTEMPTS);
         }
         String code = command.code() == null ? "" : command.code().strip();
         if (!MessageDigest.isEqual(hash(email, code).getBytes(StandardCharsets.US_ASCII),
                 v.codeHash().getBytes(StandardCharsets.US_ASCII))) {
-            verifications.addFailedAttempt(v.id());
             throw new BusinessException(ErrorCode.EMAIL_CODE_MISMATCH);
         }
+        // 맞았으면 틀린 횟수로 세지 않는다
+        verifications.refundAttempt(v.id());
 
         // 번호는 맞음. 처음이면 가입 정보가 있어야 한다 (이때 번호는 아직 쓰지 않은 상태로 남겨 다시 보낼 수 있게)
         Optional<Long> existing = members.findIdByEmail(email);

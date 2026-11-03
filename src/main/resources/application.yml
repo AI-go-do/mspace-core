@@ -25,6 +25,8 @@ spring:
     properties:
       mail.smtp.auth: true
       mail.smtp.starttls.enable: true
+      mail.smtp.starttls.required: true        # TLS로 못 바꾸면 평문으로 보내지 않고 실패
+      mail.smtp.ssl.checkserveridentity: true  # 인증서의 서버 이름 확인
       mail.smtp.connectiontimeout: 5000
       mail.smtp.timeout: 5000
       mail.smtp.writetimeout: 5000

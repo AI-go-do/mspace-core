@@ -43,8 +43,13 @@ class JdbcMemberAdapter implements MemberPort {
                     .query(Long.class)
                     .single();
         } catch (DuplicateKeyException e) {
-            // 메일은 바로 앞에서 없는 걸 확인했으니, 겹친 건 학번이다 (동시에 같은 메일로 가입하는 경우도 409로 충분)
-            throw new BusinessException(ErrorCode.STUDENT_ID_TAKEN);
+            // users에는 UNIQUE가 둘(email, student_id). PostgreSQL 기본 제약 이름으로 어느 쪽인지 가린다
+            String detail = String.valueOf(e.getMostSpecificCause().getMessage());
+            if (detail.contains("users_student_id_key")) {
+                throw new BusinessException(ErrorCode.STUDENT_ID_TAKEN);
+            }
+            // 같은 메일로 거의 동시에 두 번 가입한 경우의 늦은 쪽
+            throw new BusinessException(ErrorCode.EMAIL_ALREADY_SIGNED_UP);
         }
     }
 

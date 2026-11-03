@@ -16,7 +16,9 @@ public enum ErrorCode {
     EMAIL_CODE_TOO_MANY_ATTEMPTS(HttpStatus.BAD_REQUEST, "5번 틀려서 이 인증번호는 더 쓸 수 없습니다. 다시 받아 주세요"),
     SIGNUP_INFO_REQUIRED(HttpStatus.BAD_REQUEST, "처음 로그인이라 이름과 학번이 필요합니다"),
     INVALID_SIGNUP_INFO(HttpStatus.BAD_REQUEST, "이름(50자 이내)과 학번(숫자 20자 이내)을 확인해 주세요"),
-    STUDENT_ID_TAKEN(HttpStatus.CONFLICT, "이미 가입된 학번입니다");
+    STUDENT_ID_TAKEN(HttpStatus.CONFLICT, "이미 가입된 학번입니다"),
+    EMAIL_ALREADY_SIGNED_UP(HttpStatus.CONFLICT, "이 메일로 방금 가입되었습니다. 인증번호를 다시 받아 로그인해 주세요"),
+    MAIL_SEND_FAILED(HttpStatus.SERVICE_UNAVAILABLE, "인증번호 메일을 보내지 못했습니다. 잠시 후 다시 시도해 주세요");
 
     private final HttpStatus status;
     private final String message;

@@ -18,16 +18,23 @@ class JdbcEmailVerificationAdapter implements EmailVerificationPort {
     }
 
     @Override
-    public void save(String email, String codeHash, Instant createdAt, Instant expiresAt) {
-        jdbc.sql("""
+    public long save(String email, String codeHash, Instant createdAt, Instant expiresAt) {
+        return jdbc.sql("""
                         INSERT INTO email_verification (email, code_hash, created_at, expires_at)
                         VALUES (:email, :hash, :created, :expires)
+                        RETURNING id
                         """)
                 .param("email", email)
                 .param("hash", codeHash)
                 .param("created", Timestamp.from(createdAt))
                 .param("expires", Timestamp.from(expiresAt))
-                .update();
+                .query(Long.class)
+                .single();
+    }
+
+    @Override
+    public void delete(long id) {
+        jdbc.sql("DELETE FROM email_verification WHERE id = :id").param("id", id).update();
     }
 
     @Override
@@ -51,8 +58,19 @@ class JdbcEmailVerificationAdapter implements EmailVerificationPort {
     }
 
     @Override
-    public void addFailedAttempt(long id) {
-        jdbc.sql("UPDATE email_verification SET failed_attempts = failed_attempts + 1 WHERE id = :id")
+    public boolean tryAttempt(long id, int maxAttempts) {
+        return jdbc.sql("""
+                        UPDATE email_verification SET failed_attempts = failed_attempts + 1
+                         WHERE id = :id AND failed_attempts < :max AND used_at IS NULL
+                        """)
+                .param("id", id)
+                .param("max", maxAttempts)
+                .update() == 1;
+    }
+
+    @Override
+    public void refundAttempt(long id) {
+        jdbc.sql("UPDATE email_verification SET failed_attempts = failed_attempts - 1 WHERE id = :id AND failed_attempts > 0")
                 .param("id", id)
                 .update();
     }

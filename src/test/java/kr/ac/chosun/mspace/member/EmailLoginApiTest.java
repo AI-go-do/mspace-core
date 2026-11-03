@@ -1,6 +1,7 @@
 package kr.ac.chosun.mspace.member;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -10,6 +11,9 @@ import java.util.HashMap;
 import java.util.Map;
 import kr.ac.chosun.mspace.TestcontainersConfiguration;
 import kr.ac.chosun.mspace.common.auth.JwtTokens;
+import kr.ac.chosun.mspace.common.error.BusinessException;
+import kr.ac.chosun.mspace.common.error.ErrorCode;
+import kr.ac.chosun.mspace.member.application.MemberPort;
 import kr.ac.chosun.mspace.member.application.VerificationCodeSender;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -66,9 +70,13 @@ class EmailLoginApiTest {
     /** 보낸 번호를 기억하는 가짜 메일 */
     static class CapturingSender implements VerificationCodeSender {
         final Map<String, String> last = new HashMap<>();
+        boolean broken;
 
         @Override
         public void send(String email, String code) {
+            if (broken) {
+                throw new IllegalStateException("SMTP 연결 실패 (테스트)");
+            }
             last.put(email, code);
         }
     }
@@ -103,12 +111,16 @@ class EmailLoginApiTest {
     @Autowired
     JwtTokens tokens;
 
+    @Autowired
+    MemberPort members;
+
     @BeforeEach
     @AfterEach
     void clean() {
         jdbc.sql("TRUNCATE email_verification, users RESTART IDENTITY CASCADE").update();
         clock.now = START;
         mail.last.clear();
+        mail.broken = false;
     }
 
     MvcTestResult sendCode(String email) {
@@ -249,5 +261,39 @@ class EmailLoginApiTest {
         sendCode(other);
         assertThat(login(other, mail.last.get(other), "김철수", "20230001")).hasStatus(409).bodyJson()
                 .extractingPath("$.code").isEqualTo("STUDENT_ID_TAKEN");
+    }
+
+    @Test
+    @DisplayName("메일을 못 보내면 503, 기록이 남지 않아 바로 다시 받을 수 있다")
+    void mailFailure() {
+        mail.broken = true;
+        assertThat(sendCode(EMAIL)).hasStatus(503).bodyJson()
+                .extractingPath("$.code").isEqualTo("MAIL_SEND_FAILED");
+        assertThat(jdbc.sql("SELECT count(*) FROM email_verification").query(Integer.class).single()).isZero();
+
+        mail.broken = false;
+        assertThat(sendCode(EMAIL)).hasStatus(204);
+    }
+
+    @Test
+    @DisplayName("같은 메일로 거의 동시에 가입하면 늦은 쪽은 학번이 아니라 메일 중복으로 409")
+    void sameEmailRace() {
+        members.insertVerified(EMAIL, "20230001", "홍길동", START);
+        assertThatThrownBy(() -> members.insertVerified(EMAIL, "20239999", "홍길동", START))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.errorCode()).isEqualTo(ErrorCode.EMAIL_ALREADY_SIGNED_UP));
+    }
+
+    @Test
+    @DisplayName("번호가 맞으면 틀린 횟수로 세지 않는다: 4번 틀리고 가입 정보만 빠뜨려도 같은 번호로 가입된다")
+    void correctCodeIsNotCounted() {
+        sendCode(EMAIL);
+        String code = mail.last.get(EMAIL);
+        for (int i = 0; i < 4; i++) {
+            login(EMAIL, wrong(code), null, null);
+        }
+        assertThat(login(EMAIL, code, null, null)).hasStatus(400).bodyJson()
+                .extractingPath("$.code").isEqualTo("SIGNUP_INFO_REQUIRED");
+        assertThat(login(EMAIL, code, "홍길동", "20230001")).hasStatusOk();
     }
 }
