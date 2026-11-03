@@ -86,10 +86,14 @@ class NaiveCheckThenInsertMeasure {
                         f.get();
                     }
                 } finally {
-                    // 하나가 실패해도 남은 작업을 끝내고 스레드를 닫는다 (실험용 테이블을 지우기 전에)
+                    // 하나가 실패해도 남은 작업이 끝나길 기다린 뒤 스레드를 닫는다 (실험용 테이블을 지우기 전에)
                     go.countDown();
-                    pool.shutdownNow();
-                    pool.awaitTermination(30, TimeUnit.SECONDS);
+                    pool.shutdown();
+                    if (!pool.awaitTermination(30, TimeUnit.SECONDS)) {
+                        // 30초 안에 안 끝난 작업만 끊는다
+                        pool.shutdownNow();
+                        pool.awaitTermination(10, TimeUnit.SECONDS);
+                    }
                 }
                 int saved = jdbc.sql("SELECT count(*) FROM reservation_naive").query(Integer.class).single();
                 System.out.printf("[비교 측정] 제약 없는 조회 후 저장 %d회차: 같은 방·시간 %d건 저장 (중복 %d건)%n",
