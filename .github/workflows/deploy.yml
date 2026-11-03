@@ -106,7 +106,9 @@ jobs:
           C="docker compose -p mspace-$T --env-file .env.$T"
           $C pull core
           $C up -d --no-deps core                    # 다른 서비스(DB 등)는 건드리지 않는다
-          set -a; . ./.env.$T; set +a
+          # .env는 compose 문법이라 bash로 통째로 읽으면(source) 비밀번호의 ; 같은 글자가 명령으로 실행될 수 있다. PORT 한 줄만 읽는다
+          PORT=$(grep -E '^PORT=' ".env.$T" | tail -n 1 | cut -d= -f2- | tr -d "\"' \r")
+          [[ "$PORT" =~ ^[0-9]+$ ]] || { echo ".env.$T의 PORT 값이 숫자가 아님: '$PORT'"; exit 1; }
           for i in $(seq 1 30); do                             # 최대 60초 동안 살아났는지 확인
             curl -fsS "localhost:$PORT/actuator/health" | grep -q UP && { echo "배포 성공 ($T)"; exit 0; }
             sleep 2
