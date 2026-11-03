@@ -44,7 +44,12 @@ public class KeypadEntryService implements KeypadEntryUseCase {
             return new Entry(Result.NOT_YET, match.id());
         }
         if (!now.isBefore(match.endAt())) {
-            // 끝난 예약 (자동 퇴실·노쇼 처리는 v0.2 스케줄러가 한다)
+            // 끝난 예약 (상태는 1분 정리가 AUTO_CHECKED_OUT·NO_SHOW로 바꾼다)
+            return new Entry(Result.WRONG_CODE, null);
+        }
+        if (match.status() == ReservationStatus.BOOKED && now.isAfter(match.checkinDeadline())) {
+            // 입실 마감(시작 + 15분)이 지났는데 아직 입실 안 함 = 노쇼. 1분 정리가 상태를 바꾸기 전이라도 바로 막는다.
+            // 끝난 예약과 같은 WRONG_CODE라 키패드 쪽은 바꿀 게 없다. 이미 입실한(IN_USE) 사람은 끝나기 전까지 계속 열린다
             return new Entry(Result.WRONG_CODE, null);
         }
         if (match.status() == ReservationStatus.BOOKED

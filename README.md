@@ -61,6 +61,8 @@ curl -X POST localhost:8080/api/access/verify -H 'Authorization: Bearer <장치 
 # → {"result":"OPENED"} 또는 {"result":"DENIED","reason":"WRONG_CODE"|"NOT_YET"|"LOCKED"}
 ```
 
+번호는 시작 10분 전부터 받아요. 아직 입실하지 않았으면 입실 마감(미리 예약은 시작 + 15분)까지만 열리고, 그 뒤에는 `WRONG_CODE`예요. 이미 입실한 사람은 끝나는 시각 전까지 다시 열 수 있어요.
+
 ### 노쇼·자동 퇴실 (1분마다)
 
 서버가 1분마다 시간이 지난 예약을 정리해요. 따로 부를 API는 없어요.

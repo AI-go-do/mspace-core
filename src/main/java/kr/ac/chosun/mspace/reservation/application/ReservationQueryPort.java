@@ -25,7 +25,8 @@ public interface ReservationQueryPort {
      */
     Optional<CodeMatch> findActiveByCode(int roomId, String accessCode);
 
-    record CodeMatch(long id, ReservationStatus status, Instant startAt, Instant endAt) {
+    /** checkinDeadline: 입실 마감 (미리 예약 시작 + 15분, 즉시 시작 + 10분). 지나면 아직 입실 안 한 예약은 문을 안 연다 */
+    record CodeMatch(long id, ReservationStatus status, Instant startAt, Instant endAt, Instant checkinDeadline) {
     }
 
     /** 참여자 이름은 실명 그대로. 가리는 건 서비스가 한다 */

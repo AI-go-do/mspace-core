@@ -208,39 +208,24 @@ class ReservationSweepTest {
     }
 
     @Test
-    @DisplayName("마감 직후 키패드 입력과 노쇼 정리가 동시에 와도 둘 중 하나만 된다 (20번)")
-    void checkInRacesNoShow() throws Exception {
-        ExecutorService pool = Executors.newFixedThreadPool(2);
-        try {
-            for (int round = 0; round < 20; round++) {
-                if (round > 0) {
-                    reservation();
-                }
-                now("10:45:30");   // 마감은 지났지만 아직 정리 전. 번호는 끝나기 전까지 유효해서 입력도 될 수 있다
-                CountDownLatch go = new CountDownLatch(1);
-                Future<MvcTestResult> door = pool.submit(() -> {
-                    go.await();
-                    return press();
-                });
-                Future<Swept> swept = pool.submit(() -> {
-                    go.await();
-                    return sweeps.sweep();
-                });
-                go.countDown();
-                String opened = door.get(10, TimeUnit.SECONDS).getResponse().getContentAsString();
-                int noShows = swept.get(10, TimeUnit.SECONDS).noShows();
+    @DisplayName("수용 기준: 입실 마감 10:45까지는 키패드로 입실, 10:45를 넘기면 정리 전이라도 바로 WRONG_CODE")
+    void keypadClosesAtDeadline() {
+        now("10:45:01");
+        assertThat(press()).bodyJson().extractingPath("$.reason").isEqualTo("WRONG_CODE");
+        assertThat(status()).isEqualTo("BOOKED");   // 상태는 다음 정리에서 바뀐다
+        assertThat(sweeps.sweep()).isEqualTo(new Swept(1, 0));
+    }
 
-                if (noShows == 1) {
-                    assertThat(status()).isEqualTo("NO_SHOW");
-                    assertThat(opened).doesNotContain("OPENED");
-                } else {
-                    assertThat(status()).isEqualTo("IN_USE");
-                    assertThat(opened).contains("OPENED");
-                }
-            }
-        } finally {
-            pool.shutdownNow();
-        }
+    @Test
+    @DisplayName("마감 10:45 정각까지는 열리고, 입실한 사람은 마감 뒤에도 끝나기 전까지 다시 열 수 있다")
+    void deadlineIsInclusiveAndReentryStillOpens() {
+        now("10:45");
+        assertThat(press()).bodyJson().extractingPath("$.result").isEqualTo("OPENED");
+        assertThat(status()).isEqualTo("IN_USE");
+
+        now("11:10");
+        assertThat(press()).bodyJson().extractingPath("$.result").isEqualTo("OPENED");
+        assertThat(sweeps.sweep()).isEqualTo(new Swept(0, 0));
     }
 
     @Test

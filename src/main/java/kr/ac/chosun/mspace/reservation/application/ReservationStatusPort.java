@@ -16,7 +16,8 @@ public interface ReservationStatusPort {
     boolean cancelIfBookedBeforeStart(long reservationId, long ownerId);
 
     /**
-     * BOOKED이고 지금이 번호 유효 시간(시작 openBefore 전 ~ 끝 전) 안일 때만 IN_USE로 바꾼다 (체크인).
+     * BOOKED이고 지금이 번호 유효 시간(시작 openBefore 전 ~ 끝 전) 안이고 입실 마감(checkin_deadline) 전일 때만
+     * IN_USE로 바꾼다 (체크인).
      * 시각은 앱 Clock으로 받는다: V1 트리거는 BOOKED → IN_USE에 시각 조건이 없어서 DB 시계와 어긋날 일이 없다.
      *
      * @return 바꿨으면 true
