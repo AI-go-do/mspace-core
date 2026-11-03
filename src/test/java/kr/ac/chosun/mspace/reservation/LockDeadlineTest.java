@@ -66,7 +66,7 @@ class LockDeadlineTest {
         try {
             assertThat(held.await(10, TimeUnit.SECONDS)).isTrue();
             NewReservation r = new NewReservation(1, 1, Instant.parse("2026-11-04T05:00:00Z"),
-                    Instant.parse("2026-11-04T07:00:00Z"), "123456", List.of(1L, 2L, 3L));
+                    Instant.parse("2026-11-04T07:00:00Z"), "123456", List.of(1L, 2L, 3L), null);
 
             // when: 다시 하기 없이 저장 한 번만
             long started = System.nanoTime();
