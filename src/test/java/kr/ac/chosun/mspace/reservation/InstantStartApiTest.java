@@ -24,7 +24,7 @@ import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.assertj.MvcTestResult;
 
 /**
- * 즉시 시작(FR-RSV-103)과 연장(FR-RSV-104). 날짜는 2030-03-05(화), 1번 방(3–5명).
+ * 즉시 시작(FR-RSV-103)과 끝난 뒤 다시 예약(FR-RSV-104, 연장 버튼은 없음). 날짜는 2030-03-05(화), 1번 방(3–5명).
  * 대표자 1번 + 2·3번(우리 팀), 대표자 4번 + 5·6번(다른 팀).
  */
 @SpringBootTest(properties = {"mspace.auth.dev-header=true", "mspace.access.device-token=test-device-token"})
@@ -193,7 +193,7 @@ class InstantStartApiTest {
     }
 
     @Test
-    @DisplayName("수용 기준(연장): 14:00–15:00을 쓰고 15:00:20에 바로 즉시 시작 → 정리 전이라도 201, 앞 예약은 15:00 자동 퇴실")
+    @DisplayName("수용 기준(끝난 뒤 다시 예약): 14:00–15:00을 쓰고 15:00:20에 바로 즉시 시작 → 정리 전이라도 201, 앞 예약은 15:00 자동 퇴실")
     void extendRightAfterEnd() {
         now("10:00");
         assertThat(book(1, "14:00", "15:00")).hasStatus(201);
