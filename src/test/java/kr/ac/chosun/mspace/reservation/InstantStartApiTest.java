@@ -242,6 +242,29 @@ class InstantStartApiTest {
     }
 
     @Test
+    @DisplayName("미리 예약에 쓴 Idempotency-Key를 지금 바로 쓰기에 다시 쓰면 (방·끝·참여자가 같아도) 409")
+    void keyFromBookingIsNotReplayedAsInstant() {
+        now("13:55");
+        var booked = mvc.post().uri("/api/reservations").header("X-User-Id", "1").header("Idempotency-Key", "k-2")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"roomId":1,"startAt":"2030-03-05T14:00:00+09:00","endAt":"2030-03-05T15:00:00+09:00",
+                         "participantStudentIds":["20230002","20230003"]}""")
+                .exchange();
+        assertThat(booked).hasStatus(201);
+
+        now("13:55:10");
+        var instant = mvc.post().uri("/api/reservations/instant").header("X-User-Id", "1").header("Idempotency-Key", "k-2")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"roomId":1,"endAt":"2030-03-05T15:00:00+09:00","participantStudentIds":["20230002","20230003"]}""")
+                .exchange();
+        assertThat(instant).hasStatus(409);
+        assertThat(instant).bodyJson().extractingPath("$.code").isEqualTo("IDEMPOTENCY_KEY_REUSED");
+        assertThat(jdbc.sql("SELECT count(*) FROM reservation").query(Long.class).single()).isEqualTo(1L);
+    }
+
+    @Test
     @DisplayName("끝 시각 빠짐 → 400, 로그인 없음 → 401")
     void badRequests() {
         now("14:17");

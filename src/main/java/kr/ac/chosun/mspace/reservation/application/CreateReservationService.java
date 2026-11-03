@@ -138,10 +138,11 @@ public class CreateReservationService implements CreateReservationUseCase {
     /**
      * 방·시작·끝·참여자 학번이 모두 같은지. 참여자는 순서만 무시하고 개수는 그대로 비교한다
      * (Set으로 비교하면 [A, B]와 [A, B, B]가 같아져서, 새로 보냈다면 400일 요청이 200으로 재생된다).
-     * 즉시 시작은 시작을 서버가 정하므로(다시 보낸 시각은 다르다) 시작은 비교하지 않는다
+     * 즉시 시작은 시작을 서버가 정하므로(다시 보낸 시각은 다르다) 시작은 비교하지 않는다.
+     * 종류(미리 예약 / 지금 바로 쓰기)도 같아야 한다: 미리 예약에 쓴 키를 /instant로 보내면 다른 요청이다
      */
     private static boolean sameRequest(KeyedReservation k, Command c, boolean instant) {
-        return k.roomId() == c.roomId() && (instant || k.startAt().equals(c.startAt())) && k.endAt().equals(c.endAt())
+        return k.instant() == instant && k.roomId() == c.roomId() && (instant || k.startAt().equals(c.startAt())) && k.endAt().equals(c.endAt())
                 && k.participantStudentIds().stream().sorted().toList()
                         .equals(c.participantStudentIds().stream().sorted().toList());
     }

@@ -5,7 +5,7 @@ import java.time.Instant;
 import java.util.function.ToIntFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
 /**
@@ -41,8 +41,10 @@ class SweepReservationsService implements SweepReservationsUseCase {
     private static int step(String name, ToIntFunction<Instant> update, Instant now) {
         try {
             return update.applyAsInt(now);
-        } catch (CannotAcquireLockException e) {
-            log.warn("예약 정리({}): 다른 작업이 예약을 잡고 있어 이번에는 건너뜀, 다음 번에 다시", name);
+        } catch (PessimisticLockingFailureException e) {
+            // 잠금 대기 상한 초과(55P03 → CannotAcquireLockException)와 교착(40P01 → DeadlockLoserDataAccessException 등)을
+            // 함께 잡는다. 정리는 예약 만들기 전에도 돌기 때문에, 정리가 실패해도 예약 만들기는 계속 가야 한다
+            log.warn("예약 정리({}): 잠금 충돌({})로 이번에는 건너뜀, 다음 번에 다시", name, e.getClass().getSimpleName());
             return 0;
         }
     }

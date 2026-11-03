@@ -180,7 +180,7 @@ class CreateReservationRetryTest {
                     return Optional.empty();
                 }
                 return Optional.of(new KeyedReservation(7, keyed.roomId(), keyed.startAt(), keyed.endAt(),
-                        ReservationStatus.BOOKED, 3, "654321", keyed.participantStudentIds()));
+                        ReservationStatus.BOOKED, 3, "654321", keyed.participantStudentIds(), false));
             }
 
             @Override

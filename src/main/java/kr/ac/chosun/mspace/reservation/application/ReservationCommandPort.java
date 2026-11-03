@@ -44,8 +44,11 @@ public interface ReservationCommandPort {
         }
     }
 
-    /** 멱등 키로 찾은 예약. 다시 온 요청과 내용이 같은지 비교하려고 참여자 학번(대표자 제외)도 담는다 */
+    /**
+     * 멱등 키로 찾은 예약. 다시 온 요청과 내용이 같은지 비교하려고 참여자 학번(대표자 제외)과
+     * 종류(instant: 지금 바로 쓰기인지)도 담는다
+     */
     record KeyedReservation(long id, int roomId, Instant startAt, Instant endAt, ReservationStatus status,
-                            int headcount, String accessCode, List<String> participantStudentIds) {
+                            int headcount, String accessCode, List<String> participantStudentIds, boolean instant) {
     }
 }
