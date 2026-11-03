@@ -27,6 +27,12 @@ curl localhost:8080/actuator/health   # {"status":"UP"}이면 정상
 ./mvnw test                     # 테스트 (Docker로 테스트용 DB를 따로 띄움)
 ```
 
+측정 테스트(`NaiveCheckThenInsertMeasure`, DB 제약 없이 "조회 후 저장"만 하면 중복이 몇 건 생기나)는 오래 걸려서 기본 테스트에서 빠져 있어요. 따로 돌릴 때는 이렇게 해요.
+
+```bash
+./mvnw test -Dtest=NaiveCheckThenInsertMeasure -Dmeasure=true
+```
+
 설정값은 `.env.example`을 `.env`로 복사해서 채워요. `.env`는 커밋하지 않아요.
 
 ### 로그인 붙기 전 임시 방법

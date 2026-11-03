@@ -2,6 +2,7 @@ package kr.ac.chosun.mspace.reservation.adapter.out.persistence;
 
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
@@ -11,6 +12,8 @@ import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.reservation.application.ReservationCommandPort;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.ServerErrorMessage;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
@@ -30,18 +33,15 @@ class JdbcReservationAdapter implements ReservationCommandPort {
 
     private final JdbcClient jdbc;
 
-    JdbcReservationAdapter(JdbcClient jdbc) {
-        this.jdbc = jdbc;
-    }
+    private final Duration lockTimeout;
 
-    /** 사용 중지되지 않은(is_active) 방의 이름과 정원. 없으면 빈 값 */
-    @Override
-    public Optional<RoomCapacity> findActiveRoom(int roomId) {
-        return jdbc.sql("SELECT id, name, min_people, max_people FROM rooms WHERE id = :id AND is_active")
-                .param("id", roomId)
-                .query((rs, n) -> new RoomCapacity(rs.getInt("id"), rs.getString("name"),
-                        rs.getInt("min_people"), rs.getInt("max_people")))
-                .optional();
+    JdbcReservationAdapter(JdbcClient jdbc, @Value("${mspace.reservation.lock-timeout:3s}") Duration lockTimeout) {
+        // PostgreSQL은 lock_timeout 0을 "무제한 대기"로 본다. 1ms 미만(0·음수·500us 등)은 시작할 때 막는다
+        if (lockTimeout.toMillis() < 1) {
+            throw new IllegalArgumentException("mspace.reservation.lock-timeout은 1ms 이상이어야 해요: " + lockTimeout);
+        }
+        this.jdbc = jdbc;
+        this.lockTimeout = lockTimeout;
     }
 
     /** 학생 인증을 마친 회원의 학번. 인증 전이거나 없는 회원이면 빈 값 */
@@ -115,6 +115,11 @@ class JdbcReservationAdapter implements ReservationCommandPort {
             jdbc.sql("SET CONSTRAINTS ALL IMMEDIATE").update();
             return id;
         } catch (DataAccessException e) {
+            // 잠금 대기 상한(lock_timeout)을 넘음. Spring이 55P03을 분류하지 못해서 직접 잠금 실패로 바꾼다
+            // → 서비스가 교착(40P01)과 똑같이 다시 하고, 3번 다 넘으면 503(RESERVATION_BUSY)
+            if (LOCK_NOT_AVAILABLE.equals(sqlState(e))) {
+                throw new CannotAcquireLockException("예약 잠금 대기 시간 초과", e);
+            }
             // Map.of는 get(null)에서 NullPointerException → 제약 이름이 없으면(연결 끊김 등) 원래 오류를 그대로 던진다
             String constraint = constraintName(e);
             ErrorCode code = constraint == null ? null : CONSTRAINTS.get(constraint);
@@ -139,18 +144,46 @@ class JdbcReservationAdapter implements ReservationCommandPort {
      * 중복을 막는 건 여전히 DB 제약이고, 이 잠금은 교착만 없앤다.
      */
     private void lockInOrder(NewReservation r) {
-        lock(-(long) r.roomId());
+        // 잠금을 무한정 기다리지 않게 상한을 건다. lock_timeout은 잠금 "하나"마다 적용되므로,
+        // 방 → 참여자 순으로 여러 개를 잡을 때 매번 "남은 시간"만 다시 걸어 이번 시도 전체가 상한을 넘지 않게 한다.
+        // 넘으면 PostgreSQL 55P03 → insert의 catch가 CannotAcquireLockException으로 바꿔서 서비스의 다시 하기 → 503
+        long deadline = System.nanoTime() + lockTimeout.toNanos();
+        lockWithin(-(long) r.roomId(), deadline);
         for (Long userId : r.participantIds().stream().sorted().toList()) {
-            lock(userId);
+            lockWithin(userId, deadline);
         }
     }
 
-    /** 번호 하나를 이 트랜잭션이 끝날 때까지 잠근다. 다른 트랜잭션이 쥐고 있으면 풀릴 때까지 기다린다 */
+    /** 남은 시간을 이 트랜잭션의 lock_timeout으로 걸고(SET LOCAL과 같음, 커밋·롤백 때 풀림) 잠금을 잡는다 */
+    private void lockWithin(long key, long deadline) {
+        long leftMs = (deadline - System.nanoTime()) / 1_000_000;
+        if (leftMs < 1) {
+            // 0ms는 PostgreSQL에서 "무제한"이라 걸 수 없다. 시간을 다 썼으면 바로 잠금 실패로 끝낸다
+            throw new CannotAcquireLockException("예약 잠금 대기 시간 초과");
+        }
+        jdbc.sql("SELECT set_config('lock_timeout', :ms, true)")
+                .param("ms", leftMs + "ms")
+                .query((rs, n) -> 1).list();
+        lock(key);
+    }
+
     private void lock(long key) {
         jdbc.sql("SELECT pg_advisory_xact_lock(:key)").param("key", key).query((rs, n) -> 1).list();
     }
 
     /** PostgreSQL이 알려 준 위반 제약 이름. 없으면 null */
+    /** PostgreSQL 오류 코드: 잠금을 기다리다 lock_timeout을 넘음 */
+    private static final String LOCK_NOT_AVAILABLE = "55P03";
+
+    private static String sqlState(DataAccessException e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof SQLException s && s.getSQLState() != null) {
+                return s.getSQLState();
+            }
+        }
+        return null;
+    }
+
     private static String constraintName(DataAccessException e) {
         for (Throwable t = e; t != null; t = t.getCause()) {
             if (t instanceof PSQLException p) {
