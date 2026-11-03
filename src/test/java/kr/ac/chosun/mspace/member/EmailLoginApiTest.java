@@ -320,7 +320,12 @@ class EmailLoginApiTest {
                 }
             }
         } finally {
+            // 검증이 중간에 실패해도 남은 요청이 끝난 뒤에 clean()이 테이블을 비우게 기다린다
             pool.shutdown();
+            if (!pool.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS)) {
+                pool.shutdownNow();
+                assertThat(pool.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            }
         }
 
         assertThat(ok).isEqualTo(1);
