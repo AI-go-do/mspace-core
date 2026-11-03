@@ -1,7 +1,8 @@
 # mspace-core 실행 이미지. 두 단계로 나눠서 최종 이미지에는 JRE와 jar만 남긴다.
 
 # ---------- 1단계: 빌드 (JDK + Maven Wrapper) ----------
-FROM eclipse-temurin:21-jdk AS build
+# 빌드 결과(jar·정적 파일)는 CPU와 상관없어서, 빌드는 러너 CPU에서 한 번만 한다 (arm64 이미지도 빠르게)
+FROM --platform=$BUILDPLATFORM eclipse-temurin:21-jdk AS build
 WORKDIR /app
 
 # 의존성 목록(pom.xml)을 먼저 복사해서 받아 둔다.
