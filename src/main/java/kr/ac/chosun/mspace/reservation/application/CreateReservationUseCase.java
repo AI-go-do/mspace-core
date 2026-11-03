@@ -21,6 +21,14 @@ public interface CreateReservationUseCase {
     Created create(long ownerId, Command command);
 
     /**
+     * 즉시 시작 (FR-RSV-103): 지금 빈 방을 버튼 누른 시각부터 쓴다. 끝은 고른 30분 칸(최대 지금 + 2시간을 올린 칸).
+     * 10분 안에 키패드로 입실하지 않으면 노쇼. 인원·참여자 규칙은 미리 예약과 같다.
+     *
+     * @param command startAt은 무시한다 (서버 시계가 시작)
+     */
+    Created startNow(long ownerId, Command command);
+
+    /**
      * 예약 만들기 입력. 시각은 Instant(UTC 기준 한 순간)로 받는다.
      *
      * @param idempotencyKey 멱등 키(Idempotency-Key 헤더, 64자 이하). 없으면 null (웹 화면)

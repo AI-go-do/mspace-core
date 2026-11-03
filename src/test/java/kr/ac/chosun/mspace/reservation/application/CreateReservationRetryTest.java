@@ -20,6 +20,7 @@ import kr.ac.chosun.mspace.room.application.RoomQuery;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.transaction.support.TransactionOperations;
 
 /**
@@ -88,7 +89,8 @@ class CreateReservationRetryTest {
     CreateReservationService service(FakePort port) {
         // 번호 발급은 인터페이스라 테스트에서 고정 번호를 끼운다
         return new CreateReservationService(port, new RoomQuery(rooms), () -> "123456",
-                new ReservationPolicy(7, 30, 120), clock, TransactionOperations.withoutTransaction());
+                new ReservationPolicy(7, 30, 120), clock, TransactionOperations.withoutTransaction(),
+                () -> new SweepReservationsUseCase.Swept(0, 0));
     }
 
     @Test
@@ -104,6 +106,25 @@ class CreateReservationRetryTest {
         assertThat(created.id()).isEqualTo(42);
         assertThat(created.accessCode()).isEqualTo("123456");
         assertThat(port.insertCalls).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("만들기 전 정리가 DB 오류로 실패해도 예약은 만들어진다")
+    void sweepFailureDoesNotBlockCreate() {
+        // given: 정리가 DB 오류를 낸다
+        FakePort port = new FakePort(0);
+        CreateReservationService service = new CreateReservationService(port, new RoomQuery(rooms), () -> "123456",
+                new ReservationPolicy(7, 30, 120), clock, TransactionOperations.withoutTransaction(),
+                () -> {
+                    throw new DataAccessResourceFailureException("DB 연결 끊김");
+                });
+
+        // when
+        CreateReservationUseCase.Created created = service.create(1, command);
+
+        // then
+        assertThat(created.id()).isEqualTo(42);
+        assertThat(port.insertCalls).isEqualTo(1);
     }
 
     @Test
@@ -154,7 +175,7 @@ class CreateReservationRetryTest {
         int[] issued = {0};
         CreateReservationService service = new CreateReservationService(port, new RoomQuery(rooms),
                 () -> "00000" + (++issued[0]), new ReservationPolicy(7, 30, 120), clock,
-                TransactionOperations.withoutTransaction());
+                TransactionOperations.withoutTransaction(), () -> new SweepReservationsUseCase.Swept(0, 0));
 
         // when
         CreateReservationUseCase.Created created = service.create(1, command);
@@ -179,7 +200,7 @@ class CreateReservationRetryTest {
                     return Optional.empty();
                 }
                 return Optional.of(new KeyedReservation(7, keyed.roomId(), keyed.startAt(), keyed.endAt(),
-                        ReservationStatus.BOOKED, 3, "654321", keyed.participantStudentIds()));
+                        ReservationStatus.BOOKED, 3, "654321", keyed.participantStudentIds(), false));
             }
 
             @Override

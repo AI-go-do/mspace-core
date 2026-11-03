@@ -69,4 +69,35 @@ class ReservationTimeTest {
         assertThat(errorOf("2026-11-09T23:00", "2026-11-10T01:00")).isNull();
         assertThat(errorOf("2026-11-10T00:00", "2026-11-10T01:00")).isEqualTo(ErrorCode.RESERVATION_OUT_OF_RANGE);
     }
+
+    ErrorCode instantErrorOf(String now, String end) {
+        try {
+            ReservationTime.instant(at(now), at(end), policy);
+            return null;
+        } catch (BusinessException e) {
+            return e.errorCode();
+        }
+    }
+
+    @Test
+    @DisplayName("즉시 시작: 14:17이면 끝은 14:30–16:30, 정각 14:00이면 14:30–16:00 (2시간 뒤를 30분 칸으로 올림)")
+    void instantLatestEnd() {
+        assertThat(instantErrorOf("2026-11-03T14:17", "2026-11-03T14:30")).isNull();
+        assertThat(instantErrorOf("2026-11-03T14:17", "2026-11-03T16:30")).isNull();
+        assertThat(instantErrorOf("2026-11-03T14:17", "2026-11-03T17:00")).isEqualTo(ErrorCode.RESERVATION_INVALID_LENGTH);
+        assertThat(instantErrorOf("2026-11-03T14:00", "2026-11-03T16:00")).isNull();
+        assertThat(instantErrorOf("2026-11-03T14:00", "2026-11-03T16:30")).isEqualTo(ErrorCode.RESERVATION_INVALID_LENGTH);
+        assertThat(instantErrorOf("2026-11-03T14:00", "2026-11-03T14:00")).isEqualTo(ErrorCode.RESERVATION_INVALID_LENGTH);
+        assertThat(instantErrorOf("2026-11-03T14:17", "2026-11-03T15:15")).isEqualTo(ErrorCode.RESERVATION_NOT_ON_SLOT);
+        // 즉시 시작은 끝만 고르니 문장도 끝 시각만 말한다
+        assertThatThrownBy(() -> ReservationTime.instant(at("2026-11-03T14:17"), at("2026-11-03T15:15"), policy))
+                .hasMessage("끝 시각은 정각 또는 30분이어야 합니다");
+    }
+
+    @Test
+    @DisplayName("즉시 시작: 자정 넘김(23:40 → 다음 날 01:30)도 된다, 시작은 초 아래를 버린다")
+    void instantOverMidnight() {
+        ReservationTime t = ReservationTime.instant(at("2026-11-03T23:40").plusMillis(1500), at("2026-11-04T01:30"), policy);
+        assertThat(t.start()).isEqualTo(at("2026-11-03T23:40").plusSeconds(1));
+    }
 }

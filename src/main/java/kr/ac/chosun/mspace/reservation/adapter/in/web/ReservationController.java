@@ -67,6 +67,25 @@ class ReservationController {
         return ResponseEntity.created(URI.create("/api/reservations/" + created.id())).body(body);
     }
 
+    /**
+     * 지금 바로 쓰기 = 즉시 시작 (FR-RSV-103). 버튼 누른 시각부터, 끝은 고른 30분 칸까지. 10분 안에 키패드로 입실해야 한다.
+     * 예: POST /api/reservations/instant
+     * {"roomId":1,"endAt":"2026-11-03T16:30:00+09:00","participantStudentIds":["20230002","20230003"]}
+     * 201 만든 예약 / 400 끝이 30분 칸 아님·최대 넘음 / 409 지금 다른 예약이 있거나 다음 예약과 겹침, 대표자 1건
+     */
+    @PostMapping("/api/reservations/instant")
+    ResponseEntity<CreateReservationResponse> startNow(LoginUser user,
+                                                       @RequestHeader(name = "Idempotency-Key", required = false)
+                                                       String idempotencyKey,
+                                                       @RequestBody StartNowRequest request) {
+        Created created = service.startNow(user.id(), request.toCommand(checkKey(idempotencyKey)));
+        CreateReservationResponse body = CreateReservationResponse.from(created);
+        if (created.replayed()) {
+            return ResponseEntity.ok(body);
+        }
+        return ResponseEntity.created(URI.create("/api/reservations/" + created.id())).body(body);
+    }
+
     /** 멱등 키는 1~64자 (DB 칸 varchar(64)). 빈 값이나 너무 길면 400 */
     private static String checkKey(String key) {
         if (key != null && (key.isBlank() || key.length() > 64)) {
@@ -102,6 +121,19 @@ class ReservationController {
     StatusChangeResponse checkout(LoginUser user, @PathVariable long id) {
         CheckedOut c = checkouts.checkout(id, user.id());
         return new StatusChangeResponse(c.id(), c.status().name());
+    }
+
+    /** 즉시 시작 요청 본문. 시작은 서버 시계라 받지 않는다 */
+    record StartNowRequest(Integer roomId, OffsetDateTime endAt, List<String> participantStudentIds) {
+
+        Command toCommand(String idempotencyKey) {
+            if (roomId == null || endAt == null || participantStudentIds == null
+                    || participantStudentIds.stream().anyMatch(s -> s == null || s.isBlank())) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            }
+            return new Command(roomId, null, endAt.toInstant(),
+                    participantStudentIds.stream().map(String::trim).toList(), idempotencyKey);
+        }
     }
 
     /** 예약 만들기 요청 본문. 시각은 +09:00 같은 오프셋이 붙은 ISO-8601 */

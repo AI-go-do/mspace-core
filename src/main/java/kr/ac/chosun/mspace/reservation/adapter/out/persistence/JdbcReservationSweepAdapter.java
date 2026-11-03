@@ -34,6 +34,8 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
     @Override
     @Transactional
     public int markNoShows(Instant now) {
+        // 끝 시각이 지난 미입실 예약도 노쇼: 지금 바로 쓰기를 14:29–14:30으로 잡으면 입실 마감(14:39)보다 끝이 먼저 와서,
+        // 마감만 보면 14:39까지 BOOKED로 남아 대표자의 다음 예약을 막는다 (키패드는 끝 시각부터 이미 거절)
         // 다른 트랜잭션이 잡고 있는 줄은 건너뛰고(SKIP LOCKED) 나머지만 바꾼다. 한 줄 때문에 전체 UPDATE가 되돌려지면
         // 상관없는 사람의 지난 예약도 BOOKED로 남아 그 사람의 새 예약(대표자 1건)을 막기 때문. 건너뛴 줄은 다음 번에.
         // 키패드 체크인(BOOKED → IN_USE)과 겹치면: 체크인이 먼저 잡았으면 여기서 건너뛰고,
@@ -41,7 +43,7 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
         return update("""
                 UPDATE reservation SET status = 'NO_SHOW'
                 WHERE id IN (SELECT id FROM reservation
-                             WHERE status = 'BOOKED' AND checkin_deadline < :now
+                             WHERE status = 'BOOKED' AND (checkin_deadline < :now OR end_at <= :now)
                              FOR UPDATE SKIP LOCKED)
                   AND status = 'BOOKED'
                 """, now);

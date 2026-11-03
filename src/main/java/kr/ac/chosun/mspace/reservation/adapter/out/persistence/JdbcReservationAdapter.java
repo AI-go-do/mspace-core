@@ -90,14 +90,15 @@ class JdbcReservationAdapter implements ReservationCommandPort {
             lockInOrder(r);
             long id = jdbc.sql("""
                             INSERT INTO reservation (room_id, owner_id, start_at, end_at, headcount, access_code,
-                                                     idempotency_key)
-                            VALUES (:room, :owner, :start, :end, :headcount, :code, :key)
+                                                     idempotency_key, is_instant)
+                            VALUES (:room, :owner, :start, :end, :headcount, :code, :key, :instant)
                             RETURNING id
                             """)
                     .param("room", r.roomId())
                     .param("owner", r.ownerId())
                     .param("start", Timestamp.from(r.startAt()))
                     .param("end", Timestamp.from(r.endAt()))
+                    .param("instant", r.instant())
                     .param("headcount", r.participantIds().size())
                     .param("code", r.accessCode())
                     .param("key", r.idempotencyKey(), java.sql.Types.VARCHAR)
@@ -140,7 +141,7 @@ class JdbcReservationAdapter implements ReservationCommandPort {
     @Override
     public Optional<KeyedReservation> findByIdempotencyKey(long ownerId, String idempotencyKey) {
         return jdbc.sql("""
-                        SELECT id, room_id, start_at, end_at, status, headcount, access_code
+                        SELECT id, room_id, start_at, end_at, status, headcount, access_code, is_instant
                         FROM reservation WHERE owner_id = :owner AND idempotency_key = :key
                         """)
                 .param("owner", ownerId)
@@ -148,10 +149,10 @@ class JdbcReservationAdapter implements ReservationCommandPort {
                 .query((rs, n) -> new KeyedReservation(rs.getLong("id"), rs.getInt("room_id"),
                         rs.getTimestamp("start_at").toInstant(), rs.getTimestamp("end_at").toInstant(),
                         ReservationStatus.valueOf(rs.getString("status")), rs.getInt("headcount"),
-                        rs.getString("access_code"), List.of()))
+                        rs.getString("access_code"), List.of(), rs.getBoolean("is_instant")))
                 .optional()
                 .map(k -> new KeyedReservation(k.id(), k.roomId(), k.startAt(), k.endAt(), k.status(), k.headcount(),
-                        k.accessCode(), otherStudentIds(k.id())));
+                        k.accessCode(), otherStudentIds(k.id()), k.instant()));
     }
 
     /** 예약의 참여자 학번 (대표자 제외) */
