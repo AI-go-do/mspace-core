@@ -96,6 +96,8 @@ class IdempotencyKeyApiTest {
         assertThat(first).hasStatus(201);
         assertThat(second).hasStatus(200);
         String code = jdbc.sql("SELECT access_code FROM reservation WHERE id = 1").query(String.class).single();
+        // 처음 받은 번호와 다시 받은 번호가 같고, DB 번호도 그대로다 (재요청이 번호를 새로 뽑아 덮어쓰지 않는다)
+        assertThat(first).bodyJson().extractingPath("$.accessCode").isEqualTo(code);
         assertThat(second).bodyJson().satisfies(json -> {
             json.assertThat().extractingPath("$.id").isEqualTo(1);
             json.assertThat().extractingPath("$.status").isEqualTo("BOOKED");
@@ -164,6 +166,7 @@ class IdempotencyKeyApiTest {
         ExecutorService pool = Executors.newFixedThreadPool(n);
         Map<String, Integer> results = new ConcurrentHashMap<>();
         Set<Long> ids = ConcurrentHashMap.newKeySet();
+        Set<String> codes = ConcurrentHashMap.newKeySet();
         try {
             CountDownLatch go = new CountDownLatch(1);
             CountDownLatch done = new CountDownLatch(n);
@@ -173,6 +176,7 @@ class IdempotencyKeyApiTest {
                         go.await();
                         Created c = service.create(1, command);
                         ids.add(c.id());
+                        codes.add(c.accessCode());
                         results.merge(c.replayed() ? "replayed" : "created", 1, Integer::sum);
                     } catch (Exception e) {
                         results.merge(e.getClass().getSimpleName() + ":" + e.getMessage(), 1, Integer::sum);
@@ -189,6 +193,9 @@ class IdempotencyKeyApiTest {
         }
         assertThat(results).isEqualTo(Map.of("created", 1, "replayed", n - 1));
         assertThat(ids).hasSize(1);
+        // 20개 응답의 키패드 번호가 모두 같고 DB에 저장된 번호다
+        assertThat(codes).containsExactly(
+                jdbc.sql("SELECT access_code FROM reservation WHERE id = 1").query(String.class).single());
         assertThat(reservations()).isEqualTo(1);
     }
 }
