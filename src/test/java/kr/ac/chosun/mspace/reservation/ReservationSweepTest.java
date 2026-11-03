@@ -142,6 +142,21 @@ class ReservationSweepTest {
     }
 
     @Test
+    @DisplayName("노쇼가 되면 번호도 끝: 키패드는 WRONG_CODE, 내 예약 화면에도 번호를 보여 주지 않는다")
+    void noShowCodeIsDead() {
+        assertThat(mvc.get().uri("/api/reservations/me").header("X-User-Id", "1").exchange())
+                .bodyJson().extractingPath("$[0].accessCode").isEqualTo(code);
+
+        now("10:46");
+        sweeps.sweep();
+
+        assertThat(press()).bodyJson().extractingPath("$.reason").isEqualTo("WRONG_CODE");
+        var mine = mvc.get().uri("/api/reservations/me").header("X-User-Id", "1").exchange();
+        assertThat(mine).bodyJson().extractingPath("$[0].status").isEqualTo("NO_SHOW");
+        assertThat(mine).bodyJson().extractingPath("$[0].accessCode").isNull();
+    }
+
+    @Test
     @DisplayName("수용 기준: 노쇼가 되면 방·대표자·참여자가 바로 풀린다 (같은 사람들이 같은 방 11:00–12:00 → 409였다가 201)")
     void noShowReleasesRoomOwnerAndParticipants() {
         now("10:46");
