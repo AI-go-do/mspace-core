@@ -13,7 +13,9 @@ import java.util.Optional;
 import kr.ac.chosun.mspace.common.config.ReservationPolicy;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
-import kr.ac.chosun.mspace.reservation.application.CreateReservationService.Command;
+import kr.ac.chosun.mspace.reservation.application.CreateReservationUseCase.Command;
+import kr.ac.chosun.mspace.room.application.RoomAvailabilityPort;
+import kr.ac.chosun.mspace.room.application.RoomQuery;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.PessimisticLockingFailureException;
@@ -32,11 +34,6 @@ class CreateReservationRetryTest {
 
         FakePort(int deadlocks) {
             this.deadlocks = deadlocks;
-        }
-
-        @Override
-        public Optional<RoomCapacity> findActiveRoom(int roomId) {
-            return Optional.of(new RoomCapacity(roomId, "1번 방", 3, 5));
         }
 
         @Override
@@ -64,9 +61,28 @@ class CreateReservationRetryTest {
     final Command command = new Command(1, Instant.parse("2026-11-04T05:00:00Z"), Instant.parse("2026-11-04T07:00:00Z"),
             List.of("2024000002", "2024000003"));
 
+    /** 방은 언제나 1번 방(3~5명)이 있다고 답하는 가짜 */
+    final RoomAvailabilityPort rooms = new RoomAvailabilityPort() {
+        @Override
+        public List<RoomInfo> findActiveRooms() {
+            return List.of(new RoomInfo(1, "1번 방", 3, 5));
+        }
+
+        @Override
+        public Optional<RoomInfo> findActiveRoom(int roomId) {
+            return Optional.of(new RoomInfo(roomId, "1번 방", 3, 5));
+        }
+
+        @Override
+        public List<BookedTime> findActiveReservations(Instant from, Instant to) {
+            return List.of();
+        }
+    };
+
     CreateReservationService service(FakePort port) {
-        return new CreateReservationService(port, new AccessCodeGenerator(), new ReservationPolicy(7, 30, 120),
-                clock, TransactionOperations.withoutTransaction());
+        // 번호 발급은 인터페이스라 테스트에서 고정 번호를 끼운다
+        return new CreateReservationService(port, new RoomQuery(rooms), () -> "123456",
+                new ReservationPolicy(7, 30, 120), clock, TransactionOperations.withoutTransaction());
     }
 
     @Test
@@ -76,10 +92,11 @@ class CreateReservationRetryTest {
         FakePort port = new FakePort(2);
 
         // when
-        CreateReservationService.Created created = service(port).create(1, command);
+        CreateReservationUseCase.Created created = service(port).create(1, command);
 
         // then
         assertThat(created.id()).isEqualTo(42);
+        assertThat(created.accessCode()).isEqualTo("123456");
         assertThat(port.insertCalls).isEqualTo(3);
     }
 

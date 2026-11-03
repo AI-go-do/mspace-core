@@ -34,16 +34,6 @@ class JdbcReservationAdapter implements ReservationCommandPort {
         this.jdbc = jdbc;
     }
 
-    /** 사용 중지되지 않은(is_active) 방의 이름과 정원. 없으면 빈 값 */
-    @Override
-    public Optional<RoomCapacity> findActiveRoom(int roomId) {
-        return jdbc.sql("SELECT id, name, min_people, max_people FROM rooms WHERE id = :id AND is_active")
-                .param("id", roomId)
-                .query((rs, n) -> new RoomCapacity(rs.getInt("id"), rs.getString("name"),
-                        rs.getInt("min_people"), rs.getInt("max_people")))
-                .optional();
-    }
-
     /** 학생 인증을 마친 회원의 학번. 인증 전이거나 없는 회원이면 빈 값 */
     @Override
     public Optional<String> findVerifiedStudentId(long userId) {
