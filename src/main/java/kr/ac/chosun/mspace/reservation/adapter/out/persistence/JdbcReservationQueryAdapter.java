@@ -74,6 +74,7 @@ class JdbcReservationQueryAdapter implements ReservationQueryPort {
         return jdbc.sql("""
                         SELECT id, status, start_at, end_at FROM reservation
                         WHERE room_id = :room AND access_code = :code AND status IN ('BOOKED', 'IN_USE')
+                        FOR UPDATE
                         """)
                 .param("room", roomId)
                 .param("code", accessCode)

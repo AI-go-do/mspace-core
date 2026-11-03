@@ -57,8 +57,8 @@ public class KeypadEntryService implements KeypadEntryUseCase {
     }
 
     /**
-     * 체크인이 0줄을 바꿨을 때 다시 읽는다. 같은 방 입력은 keypad_lock으로 한 줄로 서지만 취소는 그 줄에 서지 않아서,
-     * 0줄의 원인은 "다른 입력이 먼저 체크인"(IN_USE)일 수도, "그 사이 취소"(CANCELED)일 수도 있다
+     * 체크인이 0줄을 바꿨을 때 다시 읽는다. findActiveByCode가 예약 줄을 잠가서 보통은 생기지 않지만,
+     * 잠금 방식이 바뀌어도 취소·퇴실된 예약으로 문이 열리지 않게 한 번 더 막는다
      */
     private boolean stillInUse(int roomId, String code, long reservationId) {
         return queries.findActiveByCode(roomId, code)
