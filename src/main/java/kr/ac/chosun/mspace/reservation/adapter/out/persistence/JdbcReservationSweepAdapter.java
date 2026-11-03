@@ -14,7 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * SQL은 V1__init_schema.sql 끝 "6. 스케줄러(1분 주기)"와 같다.
- * 다른 트랜잭션이 대상 줄을 잡고 오래 안 놓으면 정리가 거기서 멈추지 않게, UPDATE마다 잠금 대기 상한
+ * 다른 트랜잭션이 잡고 있는 예약 줄은 FOR UPDATE SKIP LOCKED로 건너뛰고 나머지는 바로 처리한다.
+ * 그래도 트리거가 건드리는 참여자 줄 등에서 기다릴 수 있어서 UPDATE마다 잠금 대기 상한
  * (mspace.reservation.lock-timeout, 예약 저장과 같은 값)을 건다. 넘으면 CannotAcquireLockException → 서비스가 다음 번에 다시.
  */
 @Component
@@ -33,11 +34,16 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
     @Override
     @Transactional
     public int markNoShows(Instant now) {
-        // 같은 줄을 키패드 체크인(BOOKED → IN_USE)이 동시에 바꾸면 줄 잠금으로 한쪽이 기다렸다가
-        // WHERE를 다시 확인한다. 그래서 둘 중 하나만 바뀐다
+        // 다른 트랜잭션이 잡고 있는 줄은 건너뛰고(SKIP LOCKED) 나머지만 바꾼다. 한 줄 때문에 전체 UPDATE가 되돌려지면
+        // 상관없는 사람의 지난 예약도 BOOKED로 남아 그 사람의 새 예약(대표자 1건)을 막기 때문. 건너뛴 줄은 다음 번에.
+        // 키패드 체크인(BOOKED → IN_USE)과 겹치면: 체크인이 먼저 잡았으면 여기서 건너뛰고,
+        // 여기가 먼저 잡았으면 체크인이 기다렸다가 WHERE(status = 'BOOKED')를 다시 보고 0줄. 둘 중 하나만 바뀐다
         return update("""
                 UPDATE reservation SET status = 'NO_SHOW'
-                WHERE status = 'BOOKED' AND checkin_deadline < :now
+                WHERE id IN (SELECT id FROM reservation
+                             WHERE status = 'BOOKED' AND checkin_deadline < :now
+                             FOR UPDATE SKIP LOCKED)
+                  AND status = 'BOOKED'
                 """, now);
     }
 
@@ -45,9 +51,13 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
     @Transactional
     public int autoCheckout(Instant now) {
         // 퇴실 시각은 정리가 돈 시각이 아니라 끝나는 시각 (최대 1분 늦게 돌아도 기록은 정확하게)
+        // 노쇼와 같은 이유로 잡힌 줄은 건너뛴다 (퇴실 버튼과 겹치면 하나만 바뀐다)
         return update("""
                 UPDATE reservation SET status = 'AUTO_CHECKED_OUT', checked_out_at = end_at
-                WHERE status = 'IN_USE' AND end_at <= :now
+                WHERE id IN (SELECT id FROM reservation
+                             WHERE status = 'IN_USE' AND end_at <= :now
+                             FOR UPDATE SKIP LOCKED)
+                  AND status = 'IN_USE'
                 """, now);
     }
 
