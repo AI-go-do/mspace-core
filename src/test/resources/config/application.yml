@@ -1,0 +1,8 @@
+# 테스트에서만 덧붙는 설정. Spring Boot는 classpath:/application.yml 위에 classpath:/config/application.yml을 겹쳐 읽는다
+# (main 설정을 갈아끼우지 않고 이 값만 바꾼다).
+mspace:
+  reservation:
+    sweep:
+      # 1분 정리가 테스트 도중 끼어들어 예약 상태를 바꾸지 않게 끈다.
+      # 정리는 테스트가 시계를 옮긴 뒤 SweepReservationsUseCase.sweep()을 직접 불러서 본다 (ReservationSweepTest)
+      enabled: false

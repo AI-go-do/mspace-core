@@ -72,7 +72,7 @@ class KeypadEntryServiceTest {
     void canceledBetweenReadAndCheckInIsDenied() {
         // given: 처음엔 BOOKED, 체크인은 0줄, 다시 읽으면 취소돼서 없음
         FakeQueries queries = new FakeQueries();
-        queries.answers.add(Optional.of(new CodeMatch(7, ReservationStatus.BOOKED, start, end)));
+        queries.answers.add(Optional.of(new CodeMatch(7, ReservationStatus.BOOKED, start, end, start.plusSeconds(900))));
         queries.answers.add(Optional.empty());
         KeypadEntryService service = new KeypadEntryService(queries, new FakeStatuses(false), policy, clock);
 
@@ -88,8 +88,8 @@ class KeypadEntryServiceTest {
     void checkedInByOtherEntryStillOpens() {
         // given: 처음엔 BOOKED, 체크인은 0줄, 다시 읽으면 IN_USE
         FakeQueries queries = new FakeQueries();
-        queries.answers.add(Optional.of(new CodeMatch(7, ReservationStatus.BOOKED, start, end)));
-        queries.answers.add(Optional.of(new CodeMatch(7, ReservationStatus.IN_USE, start, end)));
+        queries.answers.add(Optional.of(new CodeMatch(7, ReservationStatus.BOOKED, start, end, start.plusSeconds(900))));
+        queries.answers.add(Optional.of(new CodeMatch(7, ReservationStatus.IN_USE, start, end, start.plusSeconds(900))));
         KeypadEntryService service = new KeypadEntryService(queries, new FakeStatuses(false), policy, clock);
 
         // when

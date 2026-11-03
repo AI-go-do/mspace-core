@@ -34,6 +34,7 @@ class JdbcReservationStatusAdapter implements ReservationStatusPort {
                         UPDATE reservation SET status = 'IN_USE', checked_in_at = :now
                         WHERE id = :id AND status = 'BOOKED'
                           AND :now >= start_at - make_interval(mins => :before) AND :now < end_at
+                          AND :now <= checkin_deadline
                         """)
                 .param("id", reservationId)
                 .param("now", Timestamp.from(now))
