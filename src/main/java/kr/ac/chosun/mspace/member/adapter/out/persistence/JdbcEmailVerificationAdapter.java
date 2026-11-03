@@ -33,6 +33,12 @@ class JdbcEmailVerificationAdapter implements EmailVerificationPort {
     }
 
     @Override
+    public void lockEmail(String email) {
+        // PostgreSQL advisory lock: 주소마다 다른 번호의 자물쇠, 트랜잭션이 끝나면 저절로 풀린다
+        jdbc.sql("SELECT pg_advisory_xact_lock(hashtext(:email))").param("email", email).query().singleRow();
+    }
+
+    @Override
     public void delete(long id) {
         jdbc.sql("DELETE FROM email_verification WHERE id = :id").param("id", id).update();
     }

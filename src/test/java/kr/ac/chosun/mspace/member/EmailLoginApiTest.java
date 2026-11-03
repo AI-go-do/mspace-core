@@ -7,7 +7,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
-import java.util.HashMap;
 import java.util.Map;
 import kr.ac.chosun.mspace.TestcontainersConfiguration;
 import kr.ac.chosun.mspace.common.auth.JwtTokens;
@@ -69,7 +68,7 @@ class EmailLoginApiTest {
 
     /** 보낸 번호를 기억하는 가짜 메일 */
     static class CapturingSender implements VerificationCodeSender {
-        final Map<String, String> last = new HashMap<>();
+        final Map<String, String> last = new java.util.concurrent.ConcurrentHashMap<>();
         boolean broken;
 
         @Override
@@ -295,5 +294,31 @@ class EmailLoginApiTest {
         assertThat(login(EMAIL, code, null, null)).hasStatus(400).bodyJson()
                 .extractingPath("$.code").isEqualTo("SIGNUP_INFO_REQUIRED");
         assertThat(login(EMAIL, code, "홍길동", "20230001")).hasStatusOk();
+    }
+
+    @Test
+    @DisplayName("같은 주소로 동시에 여러 번 요청해도 번호는 하나만 만들어진다")
+    void concurrentSendCreatesOneCode() throws Exception {
+        int n = 8;
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(n);
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        java.util.List<java.util.concurrent.Future<Integer>> results = new java.util.ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            results.add(pool.submit(() -> {
+                start.await();
+                return sendCode(EMAIL).getResponse().getStatus();
+            }));
+        }
+        start.countDown();
+        int ok = 0;
+        for (var f : results) {
+            if (f.get() == 204) {
+                ok++;
+            }
+        }
+        pool.shutdown();
+
+        assertThat(ok).isEqualTo(1);
+        assertThat(jdbc.sql("SELECT count(*) FROM email_verification").query(Integer.class).single()).isEqualTo(1);
     }
 }

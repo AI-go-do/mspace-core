@@ -16,6 +16,12 @@ public interface EmailVerificationPort {
     /** 메일을 못 보냈을 때 방금 남긴 기록을 지운다 (안 지우면 1분 동안 다시 못 받는다) */
     void delete(long id);
 
+    /**
+     * 같은 주소로 들어온 요청을 지금 트랜잭션이 끝날 때까지 줄 세운다.
+     * 트랜잭션 안에서만 부른다.
+     */
+    void lockEmail(String email);
+
     /** 이 주소로 가장 최근에 보낸 번호 기록 */
     Optional<Verification> findLatest(String email);
 

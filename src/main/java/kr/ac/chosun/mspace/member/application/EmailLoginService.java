@@ -58,14 +58,18 @@ class EmailLoginService implements EmailLoginUseCase {
     public void sendCode(String rawEmail) {
         String email = SchoolEmail.of(rawEmail).value();
         Instant now = clock.instant();
-        verifications.findLatest(email)
-                .filter(last -> now.isBefore(last.createdAt().plus(EmailCodeRule.RESEND_INTERVAL)))
-                .ifPresent(last -> {
-                    throw new BusinessException(ErrorCode.EMAIL_CODE_TOO_SOON);
-                });
-
         String code = newCode();
-        long id = verifications.save(email, hash(email, code), now, now.plus(EmailCodeRule.VALID_FOR));
+        // "1분 안에 보냈나 확인 → 저장"을 같은 주소끼리 한 줄로 세운다 (동시에 두 번 눌러도 번호는 하나)
+        long id = tx.execute(status -> {
+            verifications.lockEmail(email);
+            verifications.findLatest(email)
+                    .filter(last -> now.isBefore(last.createdAt().plus(EmailCodeRule.RESEND_INTERVAL)))
+                    .ifPresent(last -> {
+                        throw new BusinessException(ErrorCode.EMAIL_CODE_TOO_SOON);
+                    });
+            return verifications.save(email, hash(email, code), now, now.plus(EmailCodeRule.VALID_FOR));
+        });
+        // 메일은 트랜잭션 밖에서 보낸다 (SMTP가 느려도 DB 잠금을 오래 잡지 않게)
         try {
             sender.send(email, code);
         } catch (RuntimeException e) {
