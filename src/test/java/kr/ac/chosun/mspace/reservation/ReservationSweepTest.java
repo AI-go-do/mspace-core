@@ -28,6 +28,8 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.assertj.MvcTestResult;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 노쇼(FR-RSV-102)와 자동 퇴실(FR-RSV-101). 시계를 옮긴 뒤 sweep()을 직접 불러 본다 (1분 스케줄러는 테스트에서 꺼 둠).
@@ -79,6 +81,9 @@ class ReservationSweepTest {
 
     @Autowired
     SweepReservationsUseCase sweeps;
+
+    @Autowired
+    PlatformTransactionManager tx;
 
     String code;
     int eventSeq;
@@ -221,5 +226,53 @@ class ReservationSweepTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+
+    @Test
+    @DisplayName("다른 작업이 예약 줄을 오래 잡고 있어도 정리는 잠금 대기 상한(3초) 안에 끝나고, 다른 쪽(자동 퇴실)은 처리한다")
+    void lockedRowDoesNotBlockSweep() throws Exception {
+        // 2번 방: 대표자 4번 + 5·6번, 10:30–11:00, 입실함
+        assertThat(mvc.post().uri("/api/reservations").header("X-User-Id", "4").contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"roomId":2,"startAt":"2030-03-05T10:30:00+09:00","endAt":"2030-03-05T11:00:00+09:00",
+                         "participantStudentIds":["20230005","20230006"]}""").exchange()).hasStatus(201);
+        String code2 = jdbc.sql("SELECT access_code FROM reservation WHERE id = 2").query(String.class).single();
+        now("10:25");
+        assertThat(mvc.post().uri("/api/access/verify").header("Authorization", "Bearer test-device-token")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"eventId":"2-1-1","roomId":2,"deviceId":"keypad-2","code":"%s"}""".formatted(code2))
+                .exchange()).bodyJson().extractingPath("$.result").isEqualTo("OPENED");
+
+        // 다른 트랜잭션이 1번 예약 줄을 6초 동안 잡고 있다
+        CountDownLatch held = new CountDownLatch(1);
+        ExecutorService other = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> holder = other.submit(() -> new TransactionTemplate(tx).executeWithoutResult(s -> {
+                jdbc.sql("SELECT id FROM reservation WHERE id = 1 FOR UPDATE").query(Long.class).single();
+                held.countDown();
+                try {
+                    Thread.sleep(6000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }));
+            assertThat(held.await(5, TimeUnit.SECONDS)).isTrue();
+
+            now("11:01");   // 1번은 노쇼 대상(잠김), 2번은 자동 퇴실 대상
+            long started = System.nanoTime();
+            Swept swept = sweeps.sweep();
+            long tookMs = (System.nanoTime() - started) / 1_000_000;
+
+            assertThat(tookMs).isLessThan(5000);
+            assertThat(swept).isEqualTo(new Swept(0, 1));
+            holder.get(10, TimeUnit.SECONDS);
+        } finally {
+            other.shutdownNow();
+        }
+        assertThat(status()).isEqualTo("BOOKED");
+        // 잠금이 풀린 뒤 다음 번에는 처리된다
+        assertThat(sweeps.sweep()).isEqualTo(new Swept(1, 0));
+        assertThat(status()).isEqualTo("NO_SHOW");
     }
 }
