@@ -68,4 +68,18 @@ class JdbcReservationQueryAdapter implements ReservationQueryPort {
                         rs.getTimestamp("start_at").toInstant()))
                 .optional();
     }
+
+    @Override
+    public Optional<CodeMatch> findActiveByCode(int roomId, String accessCode) {
+        return jdbc.sql("""
+                        SELECT id, status, start_at, end_at FROM reservation
+                        WHERE room_id = :room AND access_code = :code AND status IN ('BOOKED', 'IN_USE')
+                        FOR UPDATE
+                        """)
+                .param("room", roomId)
+                .param("code", accessCode)
+                .query((rs, n) -> new CodeMatch(rs.getLong("id"), ReservationStatus.valueOf(rs.getString("status")),
+                        rs.getTimestamp("start_at").toInstant(), rs.getTimestamp("end_at").toInstant()))
+                .optional();
+    }
 }

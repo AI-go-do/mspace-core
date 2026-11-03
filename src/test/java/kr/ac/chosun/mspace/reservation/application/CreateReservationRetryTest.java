@@ -138,6 +138,33 @@ class CreateReservationRetryTest {
     }
 
     @Test
+    @DisplayName("뽑은 키패드 번호가 같은 방 다른 예약과 겹치면 새 번호로 다시 해서 저장한다")
+    void reissuesTakenAccessCode() {
+        // given: 첫 저장은 번호 겹침(one_active_code_per_room), 두 번째는 성공. 번호는 부를 때마다 다르게
+        FakePort port = new FakePort(0) {
+            @Override
+            public long insert(NewReservation reservation) {
+                insertCalls++;
+                if (insertCalls == 1) {
+                    throw new BusinessException(ErrorCode.ACCESS_CODE_TAKEN);
+                }
+                return 42;
+            }
+        };
+        int[] issued = {0};
+        CreateReservationService service = new CreateReservationService(port, new RoomQuery(rooms),
+                () -> "00000" + (++issued[0]), new ReservationPolicy(7, 30, 120), clock,
+                TransactionOperations.withoutTransaction());
+
+        // when
+        CreateReservationUseCase.Created created = service.create(1, command);
+
+        // then
+        assertThat(port.insertCalls).isEqualTo(2);
+        assertThat(created.accessCode()).isEqualTo("000002");
+    }
+
+    @Test
     @DisplayName("같은 키 요청이 동시에 와서 저장이 409로 지면, 키로 다시 찾아 앞 요청의 예약을 200(replayed)으로 돌려준다")
     void replaysAfterKeyConflict() {
         // given: 처음 찾을 땐 없음 → 저장은 키 유일 제약 409 → 다시 찾으면 앞 요청이 만든 예약(id 7)이 있음

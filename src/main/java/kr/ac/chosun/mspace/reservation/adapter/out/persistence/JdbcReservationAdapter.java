@@ -32,7 +32,8 @@ class JdbcReservationAdapter implements ReservationCommandPort {
             "no_room_overlap", ErrorCode.RESERVATION_TIME_TAKEN,
             "one_active_per_owner", ErrorCode.OWNER_HAS_ACTIVE_RESERVATION,
             "no_person_overlap", ErrorCode.PARTICIPANT_TIME_TAKEN,
-            "one_reservation_per_key", ErrorCode.IDEMPOTENCY_KEY_REUSED);
+            "one_reservation_per_key", ErrorCode.IDEMPOTENCY_KEY_REUSED,
+            "one_active_code_per_room", ErrorCode.ACCESS_CODE_TAKEN);
 
     private final JdbcClient jdbc;
 
