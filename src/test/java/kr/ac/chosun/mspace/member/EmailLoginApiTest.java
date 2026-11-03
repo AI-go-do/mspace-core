@@ -404,6 +404,23 @@ class EmailLoginApiTest {
     }
 
     @Test
+    @DisplayName("액세스 토큰으로 로그인이 필요한 API를 쓴다: /api/auth/check 204, 틀린 토큰·만료 토큰은 401")
+    void accessTokenOpensProtectedApi() throws Exception {
+        String access = json(signUp(), "$.accessToken");
+
+        assertThat(mvc.get().uri("/api/auth/check").header("Authorization", "Bearer " + access)).hasStatus(204);
+        assertThat(mvc.get().uri("/api/members?studentId=20230001").header("Authorization", "Bearer " + access))
+                .hasStatusOk().bodyJson().extractingPath("$.name").isEqualTo("홍*동");
+
+        assertThat(mvc.get().uri("/api/auth/check").header("Authorization", "Bearer not-a-token")).hasStatus(401);
+        assertThat(mvc.get().uri("/api/auth/check").header("Authorization", "Basic abc")).hasStatus(401);
+        assertThat(mvc.get().uri("/api/auth/check")).hasStatus(401);
+
+        clock.plus(Duration.ofHours(2));   // 액세스 토큰 1시간 지남
+        assertThat(mvc.get().uri("/api/auth/check").header("Authorization", "Bearer " + access)).hasStatus(401);
+    }
+
+    @Test
     @DisplayName("쓸 때마다 14일이 새로 시작: 13일마다 쓰면 계속 이어지고, 14일 동안 안 쓰면 401")
     void slidingExpiry() throws Exception {
         String t = json(signUp(), "$.refreshToken");

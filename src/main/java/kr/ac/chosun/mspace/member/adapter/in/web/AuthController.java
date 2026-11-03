@@ -1,11 +1,13 @@
 package kr.ac.chosun.mspace.member.adapter.in.web;
 
 import java.time.Instant;
+import kr.ac.chosun.mspace.common.auth.LoginUser;
 import kr.ac.chosun.mspace.member.application.EmailLoginUseCase;
 import kr.ac.chosun.mspace.member.application.TokenSessionUseCase;
 import kr.ac.chosun.mspace.member.application.EmailLoginUseCase.LoginCommand;
 import kr.ac.chosun.mspace.member.application.EmailLoginUseCase.LoginResult;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -50,6 +52,15 @@ class AuthController {
     @PostMapping("/api/auth/logout")
     ResponseEntity<Void> logout(@RequestBody RefreshRequest request) {
         sessions.logout(request.refreshToken());
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 토큰 확인 (FR-AUTH-002). 게이트웨이(nginx auth_request)가 /api/agent/로 넘기기 전에 부른다.
+     * 토큰이 맞으면 204, 아니면 LoginUser를 만들다가 401
+     */
+    @GetMapping("/api/auth/check")
+    ResponseEntity<Void> check(LoginUser user) {
         return ResponseEntity.noContent().build();
     }
 

@@ -3,6 +3,7 @@ package kr.ac.chosun.mspace.room.adapter.out.persistence;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import kr.ac.chosun.mspace.room.application.RoomAvailabilityPort;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
@@ -26,6 +27,15 @@ class JdbcRoomAvailabilityAdapter implements RoomAvailabilityPort {
                 .query((rs, n) -> new RoomInfo(rs.getInt("id"), rs.getString("name"),
                         rs.getInt("min_people"), rs.getInt("max_people")))
                 .list();
+    }
+
+    @Override
+    public Optional<RoomInfo> findActiveRoom(int roomId) {
+        return jdbc.sql("SELECT id, name, min_people, max_people FROM rooms WHERE id = :id AND is_active")
+                .param("id", roomId)
+                .query((rs, n) -> new RoomInfo(rs.getInt("id"), rs.getString("name"),
+                        rs.getInt("min_people"), rs.getInt("max_people")))
+                .optional();
     }
 
     @Override

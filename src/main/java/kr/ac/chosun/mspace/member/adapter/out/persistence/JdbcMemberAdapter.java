@@ -6,13 +6,14 @@ import java.util.Optional;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.member.application.MemberPort;
+import kr.ac.chosun.mspace.member.application.MemberQueryPort;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
-/** users 테이블 중 로그인에 필요한 부분만 */
+/** users 테이블: 로그인(MemberPort)과 참여자 학번 검색(MemberQueryPort) */
 @Component
-class JdbcMemberAdapter implements MemberPort {
+class JdbcMemberAdapter implements MemberPort, MemberQueryPort {
 
     private final JdbcClient jdbc;
 
@@ -59,5 +60,14 @@ class JdbcMemberAdapter implements MemberPort {
                 .param("verifiedAt", Timestamp.from(verifiedAt))
                 .param("id", memberId)
                 .update();
+    }
+
+    @Override
+    public Optional<String> findVerifiedName(String studentId) {
+        // student_id는 UNIQUE라 많아야 한 줄. 인덱스(UNIQUE가 만든 것)로 바로 찾는다
+        return jdbc.sql("SELECT name FROM users WHERE student_id = :sid AND verified_at IS NOT NULL")
+                .param("sid", studentId)
+                .query(String.class)
+                .optional();
     }
 }

@@ -55,8 +55,8 @@
         </dependency>
         <dependency>
             <groupId>org.postgresql</groupId>
+            <!-- compile: 위반한 DB 제약 이름을 PSQLException에서 읽는다 (예약 어댑터) -->
             <artifactId>postgresql</artifactId>
-            <scope>runtime</scope>
         </dependency>
 
         <!-- 로그인 (FR-AUTH-001): 학교 메일로 인증번호 보내기. 메일 서버 설정이 없으면 로그에만 찍는다 -->
