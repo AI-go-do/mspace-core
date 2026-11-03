@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import kr.ac.chosun.mspace.reservation.domain.CreatedVia;
 import kr.ac.chosun.mspace.reservation.domain.ReservationStatus;
 
 /** 예약을 만들 때 필요한 DB 일. 구현은 adapter/out/persistence. */
@@ -33,14 +34,16 @@ public interface ReservationCommandPort {
     /**
      * @param idempotencyKey 멱등 키. 없으면 null
      * @param instant        즉시 시작이면 true (is_instant: 노쇼 마감이 시작 + 10분이 되고, 길이 규칙이 다르다)
+     * @param createdVia     어디서 만들었나 (created_via)
      */
     record NewReservation(int roomId, long ownerId, Instant startAt, Instant endAt,
-                          String accessCode, List<Long> participantIds, String idempotencyKey, boolean instant) {
+                          String accessCode, List<Long> participantIds, String idempotencyKey, boolean instant,
+                          CreatedVia createdVia) {
 
         /** 미리 예약 */
         public NewReservation(int roomId, long ownerId, Instant startAt, Instant endAt,
                               String accessCode, List<Long> participantIds, String idempotencyKey) {
-            this(roomId, ownerId, startAt, endAt, accessCode, participantIds, idempotencyKey, false);
+            this(roomId, ownerId, startAt, endAt, accessCode, participantIds, idempotencyKey, false, CreatedVia.WEB);
         }
     }
 

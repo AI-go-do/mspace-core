@@ -3,6 +3,7 @@ package kr.ac.chosun.mspace.reservation.application;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.List;
+import kr.ac.chosun.mspace.reservation.domain.CreatedVia;
 import kr.ac.chosun.mspace.reservation.domain.ReservationStatus;
 
 /**
@@ -32,9 +33,16 @@ public interface CreateReservationUseCase {
      * 예약 만들기 입력. 시각은 Instant(UTC 기준 한 순간)로 받는다.
      *
      * @param idempotencyKey 멱등 키(Idempotency-Key 헤더, 64자 이하). 없으면 null (웹 화면)
+     * @param createdVia     어디서 만들었나 (X-Client 헤더). 통계용이고 권한과는 상관없다
      */
     record Command(int roomId, Instant startAt, Instant endAt, List<String> participantStudentIds,
-                   String idempotencyKey) {
+                   String idempotencyKey, CreatedVia createdVia) {
+
+        /** 웹 화면에서 */
+        public Command(int roomId, Instant startAt, Instant endAt, List<String> participantStudentIds,
+                       String idempotencyKey) {
+            this(roomId, startAt, endAt, participantStudentIds, idempotencyKey, CreatedVia.WEB);
+        }
 
         /** 멱등 키 없이 */
         public Command(int roomId, Instant startAt, Instant endAt, List<String> participantStudentIds) {

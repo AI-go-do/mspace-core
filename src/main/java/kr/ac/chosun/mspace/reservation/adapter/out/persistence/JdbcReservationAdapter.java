@@ -90,8 +90,8 @@ class JdbcReservationAdapter implements ReservationCommandPort {
             lockInOrder(r);
             long id = jdbc.sql("""
                             INSERT INTO reservation (room_id, owner_id, start_at, end_at, headcount, access_code,
-                                                     idempotency_key, is_instant)
-                            VALUES (:room, :owner, :start, :end, :headcount, :code, :key, :instant)
+                                                     idempotency_key, is_instant, created_via)
+                            VALUES (:room, :owner, :start, :end, :headcount, :code, :key, :instant, :via)
                             RETURNING id
                             """)
                     .param("room", r.roomId())
@@ -99,6 +99,7 @@ class JdbcReservationAdapter implements ReservationCommandPort {
                     .param("start", Timestamp.from(r.startAt()))
                     .param("end", Timestamp.from(r.endAt()))
                     .param("instant", r.instant())
+                    .param("via", r.createdVia().name())
                     .param("headcount", r.participantIds().size())
                     .param("code", r.accessCode())
                     .param("key", r.idempotencyKey(), java.sql.Types.VARCHAR)

@@ -32,6 +32,7 @@ public enum ErrorCode {
     // 없는 예약과 남의 예약(참여자도 아님)은 둘 다 404: 남의 예약이 있는지 없는지 알려 주지 않으려고
     RESERVATION_NOT_FOUND(HttpStatus.NOT_FOUND, "찾을 수 없는 예약입니다"),
     NOT_RESERVATION_OWNER(HttpStatus.FORBIDDEN, "대표자만 할 수 있습니다"),
+    ADMIN_ONLY(HttpStatus.FORBIDDEN, "관리자만 볼 수 있습니다"),
     RESERVATION_NOT_CANCELABLE(HttpStatus.CONFLICT, "시작 전인 예약만 취소할 수 있습니다"),
 
     // 퇴실 (FR-RSV-008). 이름은 영준 비서(mspace-assistant #30)와 맞춤
