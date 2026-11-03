@@ -1,4 +1,4 @@
-package kr.ac.chosun.mspace.reservation.domain;
+package kr.ac.chosun.mspace.common.privacy;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -15,10 +15,10 @@ class MaskedNameTest {
     }
 
     @Test
-    @DisplayName("두 글자는 끝 글자를 가리고, 한 글자·빈 값은 그대로(빈 값은 빈 문자열)")
+    @DisplayName("두 글자는 끝 글자를 가리고, 한 글자는 전부 가리고, 빈 값은 빈 문자열")
     void shortNames() {
         assertThat(MaskedName.of("정하")).isEqualTo("정*");
-        assertThat(MaskedName.of("솔")).isEqualTo("솔");
+        assertThat(MaskedName.of("솔")).isEqualTo("*");
         assertThat(MaskedName.of(" ")).isEmpty();
         assertThat(MaskedName.of(null)).isEmpty();
     }
