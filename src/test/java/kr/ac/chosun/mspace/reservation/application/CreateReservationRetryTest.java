@@ -88,7 +88,8 @@ class CreateReservationRetryTest {
     CreateReservationService service(FakePort port) {
         // 번호 발급은 인터페이스라 테스트에서 고정 번호를 끼운다
         return new CreateReservationService(port, new RoomQuery(rooms), () -> "123456",
-                new ReservationPolicy(7, 30, 120), clock, TransactionOperations.withoutTransaction());
+                new ReservationPolicy(7, 30, 120), clock, TransactionOperations.withoutTransaction(),
+                () -> new SweepReservationsUseCase.Swept(0, 0));
     }
 
     @Test
@@ -154,7 +155,7 @@ class CreateReservationRetryTest {
         int[] issued = {0};
         CreateReservationService service = new CreateReservationService(port, new RoomQuery(rooms),
                 () -> "00000" + (++issued[0]), new ReservationPolicy(7, 30, 120), clock,
-                TransactionOperations.withoutTransaction());
+                TransactionOperations.withoutTransaction(), () -> new SweepReservationsUseCase.Swept(0, 0));
 
         // when
         CreateReservationUseCase.Created created = service.create(1, command);

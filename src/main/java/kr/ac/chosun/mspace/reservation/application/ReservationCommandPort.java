@@ -30,9 +30,18 @@ public interface ReservationCommandPort {
      */
     Optional<KeyedReservation> findByIdempotencyKey(long ownerId, String idempotencyKey);
 
-    /** @param idempotencyKey 멱등 키. 없으면 null */
+    /**
+     * @param idempotencyKey 멱등 키. 없으면 null
+     * @param instant        즉시 시작이면 true (is_instant: 노쇼 마감이 시작 + 10분이 되고, 길이 규칙이 다르다)
+     */
     record NewReservation(int roomId, long ownerId, Instant startAt, Instant endAt,
-                          String accessCode, List<Long> participantIds, String idempotencyKey) {
+                          String accessCode, List<Long> participantIds, String idempotencyKey, boolean instant) {
+
+        /** 미리 예약 */
+        public NewReservation(int roomId, long ownerId, Instant startAt, Instant endAt,
+                              String accessCode, List<Long> participantIds, String idempotencyKey) {
+            this(roomId, ownerId, startAt, endAt, accessCode, participantIds, idempotencyKey, false);
+        }
     }
 
     /** 멱등 키로 찾은 예약. 다시 온 요청과 내용이 같은지 비교하려고 참여자 학번(대표자 제외)도 담는다 */

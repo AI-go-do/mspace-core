@@ -157,13 +157,14 @@ class ReservationSweepTest {
     }
 
     @Test
-    @DisplayName("수용 기준: 노쇼가 되면 방·대표자·참여자가 바로 풀린다 (같은 사람들이 같은 방 11:00–12:00 → 409였다가 201)")
+    @DisplayName("수용 기준: 노쇼가 되면 방·대표자·참여자가 바로 풀린다. 새 예약은 만들기 직전에 정리해서 1분 정리를 기다리지 않는다")
     void noShowReleasesRoomOwnerAndParticipants() {
-        now("10:46");
-        assertThat(book("11:00", "12:00")).hasStatus(409);
+        now("10:45");
+        assertThat(book("11:00", "12:00")).hasStatus(409);   // 마감 전이라 아직 내 예약
 
-        sweeps.sweep();
-        assertThat(book("11:00", "12:00")).hasStatus(201);
+        now("10:46");
+        assertThat(book("11:00", "12:00")).hasStatus(201);   // 1분 정리 전이지만 만들기 직전 정리로 노쇼 처리됨
+        assertThat(status()).isEqualTo("NO_SHOW");
     }
 
     @Test

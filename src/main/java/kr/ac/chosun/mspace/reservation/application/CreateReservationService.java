@@ -29,6 +29,10 @@ import org.springframework.transaction.support.TransactionOperations;
  * DB가 마지막에 막는 것: 겹침, 대표자 1건, 같은 사람 두 방 → 동시에 눌러도 한 건만 성공하는 409.
  * 교착(40P01)은 저장 전 줄 세우기 잠금(어댑터)으로 막고, 그래도 나면 처음부터 새 트랜잭션으로 다시 한다.
  * 멱등 키가 있으면 같은 대표자·같은 키의 예약이 이미 있는지 먼저 보고, 있으면 새로 만들지 않고 그 예약을 돌려준다(#10).
+ * 즉시 시작(FR-RSV-103)도 같은 길로 만든다. 다른 점은 시각 규칙({@link ReservationTime#instant})과 is_instant뿐이다.
+ * <p>
+ * 만들기 전에 지난 예약 정리(노쇼·자동 퇴실)를 한 번 돌린다. 1분 정리를 기다리지 않고, 끝났는데 아직 IN_USE인 내 예약이나
+ * 마감이 지났는데 아직 BOOKED인 예약 때문에 409가 나지 않게 하려고 (끝나자마자 이어서 즉시 시작하는 연장, FR-RSV-104).
  */
 @Service
 public class CreateReservationService implements CreateReservationUseCase {
@@ -42,9 +46,12 @@ public class CreateReservationService implements CreateReservationUseCase {
     private final ReservationPolicy policy;
     private final Clock clock;
     private final TransactionOperations tx;
+    private final SweepReservationsUseCase sweeps;
 
     public CreateReservationService(ReservationCommandPort port, RoomQuery rooms, AccessCodeIssuer codes,
-                                    ReservationPolicy policy, Clock clock, TransactionOperations tx) {
+                                    ReservationPolicy policy, Clock clock, TransactionOperations tx,
+                                    SweepReservationsUseCase sweeps) {
+        this.sweeps = sweeps;
         this.port = port;
         this.rooms = rooms;
         this.codes = codes;
@@ -66,13 +73,23 @@ public class CreateReservationService implements CreateReservationUseCase {
      */
     @Override
     public Created create(long ownerId, Command command) {
-        Optional<Created> earlier = replay(ownerId, command);
+        return make(ownerId, command, false);
+    }
+
+    @Override
+    public Created startNow(long ownerId, Command command) {
+        return make(ownerId, command, true);
+    }
+
+    private Created make(long ownerId, Command command, boolean instant) {
+        Optional<Created> earlier = replay(ownerId, command, instant);
         if (earlier.isPresent()) {
             return earlier.get();
         }
+        sweeps.sweep();
         for (int attempt = 1; ; attempt++) {
             try {
-                return tx.execute(status -> createOnce(ownerId, command));
+                return tx.execute(status -> createOnce(ownerId, command, instant));
             } catch (PessimisticLockingFailureException e) {
                 // 40P01(교착)은 Spring이 이 예외로 바꿔 준다. 트랜잭션은 이미 되돌려졌다
                 if (attempt >= MAX_ATTEMPTS) {
@@ -89,7 +106,7 @@ public class CreateReservationService implements CreateReservationUseCase {
                 // 같은 키 요청 두 개가 동시에 오면 둘 다 위 replay에서 "없음"을 본다. 늦은 쪽은 저장에서 409(대표자 1건 또는
                 // 키 유일 제약)를 받는데, 그 사이 앞 요청이 커밋됐으니 다시 찾으면 처음 예약이 나온다 → 409 대신 그 예약을 200으로
                 if (e.errorCode().status() == HttpStatus.CONFLICT) {
-                    earlier = replay(ownerId, command);
+                    earlier = replay(ownerId, command, instant);
                     if (earlier.isPresent()) {
                         return earlier.get();
                     }
@@ -104,13 +121,13 @@ public class CreateReservationService implements CreateReservationUseCase {
      *
      * @throws BusinessException 같은 키인데 방·시각·참여자가 다르면 409(IDEMPOTENCY_KEY_REUSED)
      */
-    private Optional<Created> replay(long ownerId, Command command) {
+    private Optional<Created> replay(long ownerId, Command command, boolean instant) {
         if (command.idempotencyKey() == null) {
             return Optional.empty();
         }
         return tx.execute(status -> port.findByIdempotencyKey(ownerId, command.idempotencyKey()))
                 .map(k -> {
-                    if (!sameRequest(k, command)) {
+                    if (!sameRequest(k, command, instant)) {
                         throw new BusinessException(ErrorCode.IDEMPOTENCY_KEY_REUSED);
                     }
                     return new Created(k.id(), k.roomId(), k.startAt().atZone(SEOUL), k.endAt().atZone(SEOUL),
@@ -120,17 +137,20 @@ public class CreateReservationService implements CreateReservationUseCase {
 
     /**
      * 방·시작·끝·참여자 학번이 모두 같은지. 참여자는 순서만 무시하고 개수는 그대로 비교한다
-     * (Set으로 비교하면 [A, B]와 [A, B, B]가 같아져서, 새로 보냈다면 400일 요청이 200으로 재생된다)
+     * (Set으로 비교하면 [A, B]와 [A, B, B]가 같아져서, 새로 보냈다면 400일 요청이 200으로 재생된다).
+     * 즉시 시작은 시작을 서버가 정하므로(다시 보낸 시각은 다르다) 시작은 비교하지 않는다
      */
-    private static boolean sameRequest(KeyedReservation k, Command c) {
-        return k.roomId() == c.roomId() && k.startAt().equals(c.startAt()) && k.endAt().equals(c.endAt())
+    private static boolean sameRequest(KeyedReservation k, Command c, boolean instant) {
+        return k.roomId() == c.roomId() && (instant || k.startAt().equals(c.startAt())) && k.endAt().equals(c.endAt())
                 && k.participantStudentIds().stream().sorted().toList()
                         .equals(c.participantStudentIds().stream().sorted().toList());
     }
 
     /** 한 번 시도: 서버 검사(시각 → 방 → 대표자 → 참여자 → 인원)를 통과하면 DB에 저장한다. 트랜잭션 안에서 불린다 */
-    private Created createOnce(long ownerId, Command command) {
-        ReservationTime time = ReservationTime.of(command.startAt(), command.endAt(), policy, clock.instant());
+    private Created createOnce(long ownerId, Command command, boolean instant) {
+        ReservationTime time = instant
+                ? ReservationTime.instant(clock.instant(), command.endAt(), policy)
+                : ReservationTime.of(command.startAt(), command.endAt(), policy, clock.instant());
 
         ActiveRoom room = rooms.findActive(command.roomId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.ROOM_NOT_FOUND));
@@ -165,7 +185,7 @@ public class CreateReservationService implements CreateReservationUseCase {
 
         String accessCode = codes.issue();
         long id = port.insert(new NewReservation(room.id(), ownerId, time.start(), time.end(), accessCode,
-                participantIds, command.idempotencyKey()));
+                participantIds, command.idempotencyKey(), instant));
         return new Created(id, room.id(), time.start().atZone(SEOUL), time.end().atZone(SEOUL),
                 ReservationStatus.BOOKED, headcount, accessCode, false);
     }
