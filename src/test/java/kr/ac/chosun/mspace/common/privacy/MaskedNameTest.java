@@ -1,4 +1,4 @@
-package kr.ac.chosun.mspace.reservation.domain;
+package kr.ac.chosun.mspace.common.privacy;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

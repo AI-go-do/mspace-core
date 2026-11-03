@@ -1,4 +1,4 @@
-package kr.ac.chosun.mspace.reservation.domain;
+package kr.ac.chosun.mspace.common.privacy;
 
 /**
  * 다른 사람에게 보여 줄 이름 가리기 (V1 주석 3번: "이름 일부만 보여 주기, 예: 김*영").
