@@ -10,6 +10,7 @@ import kr.ac.chosun.mspace.reservation.application.CreateReservationUseCase;
 import kr.ac.chosun.mspace.reservation.application.CreateReservationUseCase.Command;
 import kr.ac.chosun.mspace.reservation.application.CreateReservationUseCase.Created;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -30,15 +31,34 @@ class ReservationController {
      * {"roomId":1,"startAt":"2026-11-03T14:00:00+09:00","endAt":"2026-11-03T16:00:00+09:00",
      *  "participantStudentIds":["20230002","20230003"]}   ← 대표자 본인은 빼고 적는다
      *
-     * @param user    로그인한 회원 (대표자가 된다)
-     * @param request 방·시작·끝 시각·참여자 학번
-     * @return 만든 예약 (키패드 번호 포함, 대표자에게만 보여 준다)
+     * <p>
+     * Idempotency-Key 헤더(64자 이하)를 붙이면, 같은 키로 다시 보낼 때 새로 만들지 않고 처음 예약을 200으로 돌려준다
+     * (비서가 응답을 못 받아 다시 보내도 예약이 두 번 생기지 않게). 같은 키를 다른 내용에 쓰면 409(IDEMPOTENCY_KEY_REUSED).
+     *
+     * @param user           로그인한 회원 (대표자가 된다)
+     * @param idempotencyKey 멱등 키. 없으면 매번 새로 만든다 (웹 화면)
+     * @param request        방·시작·끝 시각·참여자 학번
+     * @return 만든 예약 (키패드 번호 포함, 대표자에게만 보여 준다). 새로 만들면 201, 같은 키 재요청이면 200
      */
     @PostMapping("/api/reservations")
-    ResponseEntity<CreateReservationResponse> create(LoginUser user, @RequestBody CreateReservationRequest request) {
-        Created created = service.create(user.id(), request.toCommand());
-        return ResponseEntity.created(URI.create("/api/reservations/" + created.id()))
-                .body(CreateReservationResponse.from(created));
+    ResponseEntity<CreateReservationResponse> create(LoginUser user,
+                                                     @RequestHeader(name = "Idempotency-Key", required = false)
+                                                     String idempotencyKey,
+                                                     @RequestBody CreateReservationRequest request) {
+        Created created = service.create(user.id(), request.toCommand(checkKey(idempotencyKey)));
+        CreateReservationResponse body = CreateReservationResponse.from(created);
+        if (created.replayed()) {
+            return ResponseEntity.ok(body);
+        }
+        return ResponseEntity.created(URI.create("/api/reservations/" + created.id())).body(body);
+    }
+
+    /** 멱등 키는 1~64자 (DB 칸 varchar(64)). 빈 값이나 너무 길면 400 */
+    private static String checkKey(String key) {
+        if (key != null && (key.isBlank() || key.length() > 64)) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST, "Idempotency-Key는 1~64자여야 합니다");
+        }
+        return key;
     }
 
     /** 예약 만들기 요청 본문. 시각은 +09:00 같은 오프셋이 붙은 ISO-8601 */
@@ -50,13 +70,13 @@ class ReservationController {
          *
          * @throws BusinessException 빠진 값이 있거나 빈 학번이 있으면 400(INVALID_REQUEST)
          */
-        Command toCommand() {
+        Command toCommand(String idempotencyKey) {
             if (roomId == null || startAt == null || endAt == null || participantStudentIds == null
                     || participantStudentIds.stream().anyMatch(s -> s == null || s.isBlank())) {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST);
             }
             return new Command(roomId, startAt.toInstant(), endAt.toInstant(),
-                    participantStudentIds.stream().map(String::trim).toList());
+                    participantStudentIds.stream().map(String::trim).toList(), idempotencyKey);
         }
     }
 }
