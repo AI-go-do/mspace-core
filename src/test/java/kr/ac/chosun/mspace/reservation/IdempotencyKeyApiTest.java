@@ -123,6 +123,14 @@ class IdempotencyKeyApiTest {
     }
 
     @Test
+    @DisplayName("같은 키에 참여자를 중복으로 넣어 보내면 다른 요청으로 본다 → 409 (Set 비교면 200으로 재생됨)")
+    void duplicateParticipantIsDifferentRequest() {
+        assertThat(reserve(1, "k1", BODY)).hasStatus(201);
+        assertThat(reserve(1, "k1", BODY.replace("\"20230002\",\"20230003\"", "\"20230002\",\"20230003\",\"20230003\"")))
+                .hasStatus(409).bodyJson().extractingPath("$.code").isEqualTo("IDEMPOTENCY_KEY_REUSED");
+    }
+
+    @Test
     @DisplayName("키는 대표자마다 따로: 다른 대표자가 같은 키를 써도 각자 새 예약 → 201")
     void keyIsPerOwner() {
         assertThat(reserve(1, "k1", BODY)).hasStatus(201);

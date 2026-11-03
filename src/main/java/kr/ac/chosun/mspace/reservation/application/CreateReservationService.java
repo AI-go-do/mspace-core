@@ -118,10 +118,14 @@ public class CreateReservationService implements CreateReservationUseCase {
                 });
     }
 
-    /** 방·시작·끝·참여자 학번(순서 무관)이 모두 같은지 */
+    /**
+     * 방·시작·끝·참여자 학번이 모두 같은지. 참여자는 순서만 무시하고 개수는 그대로 비교한다
+     * (Set으로 비교하면 [A, B]와 [A, B, B]가 같아져서, 새로 보냈다면 400일 요청이 200으로 재생된다)
+     */
     private static boolean sameRequest(KeyedReservation k, Command c) {
         return k.roomId() == c.roomId() && k.startAt().equals(c.startAt()) && k.endAt().equals(c.endAt())
-                && Set.copyOf(k.participantStudentIds()).equals(Set.copyOf(c.participantStudentIds()));
+                && k.participantStudentIds().stream().sorted().toList()
+                        .equals(c.participantStudentIds().stream().sorted().toList());
     }
 
     /** 한 번 시도: 서버 검사(시각 → 방 → 대표자 → 참여자 → 인원)를 통과하면 DB에 저장한다. 트랜잭션 안에서 불린다 */
