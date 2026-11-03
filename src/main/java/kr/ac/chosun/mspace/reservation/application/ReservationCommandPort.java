@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import kr.ac.chosun.mspace.reservation.domain.ReservationStatus;
 
 /** 예약을 만들 때 필요한 DB 일. 구현은 adapter/out/persistence. */
 public interface ReservationCommandPort {
@@ -24,7 +25,18 @@ public interface ReservationCommandPort {
      */
     long insert(NewReservation reservation);
 
+    /**
+     * 이 대표자가 이 멱등 키로 만든 예약. 없으면 빈 값
+     */
+    Optional<KeyedReservation> findByIdempotencyKey(long ownerId, String idempotencyKey);
+
+    /** @param idempotencyKey 멱등 키. 없으면 null */
     record NewReservation(int roomId, long ownerId, Instant startAt, Instant endAt,
-                          String accessCode, List<Long> participantIds) {
+                          String accessCode, List<Long> participantIds, String idempotencyKey) {
+    }
+
+    /** 멱등 키로 찾은 예약. 다시 온 요청과 내용이 같은지 비교하려고 참여자 학번(대표자 제외)도 담는다 */
+    record KeyedReservation(long id, int roomId, Instant startAt, Instant endAt, ReservationStatus status,
+                            int headcount, String accessCode, List<String> participantStudentIds) {
     }
 }

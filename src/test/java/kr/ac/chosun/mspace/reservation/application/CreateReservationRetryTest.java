@@ -47,6 +47,11 @@ class CreateReservationRetryTest {
         }
 
         @Override
+        public Optional<KeyedReservation> findByIdempotencyKey(long ownerId, String idempotencyKey) {
+            return Optional.empty();
+        }
+
+        @Override
         public long insert(NewReservation reservation) {
             insertCalls++;
             if (insertCalls <= deadlocks) {
