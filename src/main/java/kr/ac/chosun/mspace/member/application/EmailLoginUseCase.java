@@ -31,8 +31,12 @@ public interface EmailLoginUseCase {
     }
 
     /**
-     * @param newMember 이번에 가입했는지 (화면이 이용 수칙 동의로 보낼지 정할 때 쓴다)
+     * @param accessToken      API를 부를 때 붙이는 JWT (기본 1시간)
+     * @param newMember        이번에 가입했는지 (화면이 이용 수칙 동의로 보낼지 정할 때 쓴다)
+     * @param refreshToken     액세스 토큰이 끝나면 새로 받을 때 쓰는 토큰 (기본 14일). 폰에만 보관
+     * @param refreshExpiresAt refresh 토큰이 끝나는 시각. 그 전에 한 번이라도 바꾸면 다시 14일
      */
-    record LoginResult(String accessToken, Instant expiresAt, long memberId, boolean newMember) {
+    record LoginResult(String accessToken, Instant expiresAt, long memberId, boolean newMember,
+                       String refreshToken, Instant refreshExpiresAt) {
     }
 }

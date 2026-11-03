@@ -345,4 +345,105 @@ class EmailLoginApiTest {
         assertThat(verifications.markUsed(older, t.plusSeconds(62))).isFalse();
         assertThat(verifications.markUsed(newer, t.plusSeconds(62))).isTrue();
     }
+    // ---------- 자동 로그인 (refresh 토큰) ----------
+
+    String json(MvcTestResult r, String path) throws Exception {
+        return com.jayway.jsonpath.JsonPath.read(
+                r.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8), path).toString();
+    }
+
+    /** 가입하고 로그인 응답을 돌려준다 */
+    MvcTestResult signUp() {
+        sendCode(EMAIL);
+        return login(EMAIL, mail.last.get(EMAIL), "홍길동", "20230001");
+    }
+
+    MvcTestResult refresh(String refreshToken) {
+        return mvc.post().uri("/api/auth/refresh").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"refreshToken\": \"%s\"}".formatted(refreshToken)).exchange();
+    }
+
+    MvcTestResult logout(String refreshToken) {
+        return mvc.post().uri("/api/auth/logout").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"refreshToken\": \"%s\"}".formatted(refreshToken)).exchange();
+    }
+
+    @Test
+    @DisplayName("로그인하면 액세스 토큰 1시간 + refresh 토큰 14일, DB에는 refresh 토큰 해시만")
+    void loginGivesRefreshToken() throws Exception {
+        MvcTestResult r = signUp();
+        assertThat(r).hasStatusOk();
+        assertThat(Instant.parse(json(r, "$.expiresAt"))).isEqualTo(START.plus(Duration.ofHours(1)));
+        assertThat(Instant.parse(json(r, "$.refreshExpiresAt"))).isEqualTo(START.plus(Duration.ofDays(14)));
+        String refreshToken = json(r, "$.refreshToken");
+        assertThat(refreshToken).hasSizeGreaterThanOrEqualTo(43);
+
+        assertThat(jdbc.sql("SELECT count(*) FROM refresh_token WHERE token_hash = :raw")
+                .param("raw", refreshToken).query(Integer.class).single()).isZero();
+        assertThat(jdbc.sql("SELECT count(*) FROM refresh_token WHERE member_id = 1 AND revoked_at IS NULL")
+                .query(Integer.class).single()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("자동 로그인: 액세스 토큰이 끝나도 refresh 토큰으로 새 한 쌍을 받고, 받은 refresh 토큰은 다시 못 쓴다")
+    void refreshRotates() throws Exception {
+        String first = json(signUp(), "$.refreshToken");
+        clock.plus(Duration.ofHours(2));   // 액세스 토큰은 끝남
+
+        MvcTestResult r = refresh(first);
+        assertThat(r).hasStatusOk().bodyJson().satisfies(j -> {
+            j.assertThat().extractingPath("$.memberId").isEqualTo(1);
+            j.assertThat().extractingPath("$.newMember").isEqualTo(false);
+            j.assertThat().extractingPath("$.tokenType").isEqualTo("Bearer");
+        });
+        assertThat(tokens.verify(json(r, "$.accessToken"))).hasValueSatisfying(v -> assertThat(v.memberId()).isEqualTo(1L));
+        String second = json(r, "$.refreshToken");
+        assertThat(second).isNotEqualTo(first);
+
+        assertThat(refresh(second)).hasStatusOk();
+    }
+
+    @Test
+    @DisplayName("쓸 때마다 14일이 새로 시작: 13일마다 쓰면 계속 이어지고, 14일 동안 안 쓰면 401")
+    void slidingExpiry() throws Exception {
+        String t = json(signUp(), "$.refreshToken");
+        for (int i = 0; i < 3; i++) {
+            clock.plus(Duration.ofDays(13));
+            MvcTestResult r = refresh(t);
+            assertThat(r).hasStatusOk();
+            t = json(r, "$.refreshToken");
+        }
+        clock.plus(Duration.ofDays(14));
+        assertThat(refresh(t)).hasStatus(401).bodyJson()
+                .extractingPath("$.code").isEqualTo("REFRESH_TOKEN_INVALID");
+    }
+
+    @Test
+    @DisplayName("이미 쓴 refresh 토큰이 다시 오면 도난으로 보고 그 회원 토큰을 모두 끊는다")
+    void reusedTokenRevokesAll() throws Exception {
+        String stolen = json(signUp(), "$.refreshToken");
+        String current = json(refresh(stolen), "$.refreshToken");   // 진짜 학생이 먼저 바꿈
+
+        assertThat(refresh(stolen)).hasStatus(401);                  // 훔친 쪽이 옛 토큰을 씀
+        assertThat(refresh(current)).hasStatus(401).bodyJson()       // 진짜 학생도 다시 로그인해야 함
+                .extractingPath("$.code").isEqualTo("REFRESH_TOKEN_INVALID");
+        assertThat(jdbc.sql("SELECT count(*) FROM refresh_token WHERE revoked_at IS NULL")
+                .query(Integer.class).single()).isZero();
+    }
+
+    @Test
+    @DisplayName("로그아웃하면 그 refresh 토큰은 바로 못 쓴다. 모르는 토큰이어도 204")
+    void logoutRevokes() throws Exception {
+        String t = json(signUp(), "$.refreshToken");
+        assertThat(logout(t)).hasStatus(204);
+        assertThat(refresh(t)).hasStatus(401);
+        assertThat(logout("not-a-token")).hasStatus(204);
+    }
+
+    @Test
+    @DisplayName("없는 토큰·빈 값이면 401")
+    void unknownRefreshToken() {
+        assertThat(refresh("nope")).hasStatus(401);
+        assertThat(refresh("")).hasStatus(401);
+    }
 }

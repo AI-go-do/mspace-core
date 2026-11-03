@@ -7,12 +7,8 @@ import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.HexFormat;
-import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
-import kr.ac.chosun.mspace.common.auth.JwtTokens;
-import kr.ac.chosun.mspace.common.auth.JwtTokens.Issued;
-import kr.ac.chosun.mspace.common.auth.JwtTokens.Scopes;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.member.application.EmailVerificationPort.Verification;
@@ -39,17 +35,17 @@ class EmailLoginService implements EmailLoginUseCase {
     private final EmailVerificationPort verifications;
     private final MemberPort members;
     private final VerificationCodeSender sender;
-    private final JwtTokens tokens;
+    private final SessionTokenIssuer sessions;
     private final TransactionOperations tx;
     private final Clock clock;
     private final SecureRandom random = new SecureRandom();
 
     EmailLoginService(EmailVerificationPort verifications, MemberPort members, VerificationCodeSender sender,
-                      JwtTokens tokens, TransactionOperations tx, Clock clock) {
+                      SessionTokenIssuer sessions, TransactionOperations tx, Clock clock) {
         this.verifications = verifications;
         this.members = members;
         this.sender = sender;
-        this.tokens = tokens;
+        this.sessions = sessions;
         this.tx = tx;
         this.clock = clock;
     }
@@ -123,8 +119,9 @@ class EmailLoginService implements EmailLoginUseCase {
             return members.insertVerified(email, signup.studentId(), signup.name(), now);
         });
 
-        Issued issued = tokens.issue(memberId, List.of(Scopes.USER));
-        return new LoginResult(issued.token(), issued.expiresAt(), memberId, existing.isEmpty());
+        SessionTokenIssuer.Pair pair = sessions.issue(memberId, now);
+        return new LoginResult(pair.accessToken(), pair.accessExpiresAt(), memberId, existing.isEmpty(),
+                pair.refreshToken(), pair.refreshExpiresAt());
     }
 
     private String newCode() {

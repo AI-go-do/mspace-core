@@ -51,7 +51,8 @@ mspace:
   auth:
     jwt:
       secret: ${JWT_SECRET:}   # 32바이트 이상. 비우면 실행할 때마다 임시값(로컬 전용)
-      ttl: ${JWT_TTL:12h}      # 짧게 둬서 "중간에 못 끊는" JWT 약점을 줄인다
+      ttl: ${JWT_TTL:1h}       # 액세스 토큰. 짧게 둬서 "중간에 못 끊는" JWT 약점을 줄인다
+      refresh-ttl: ${JWT_REFRESH_TTL:14d}   # 자동 로그인 기간. DB에 해시로 저장돼 로그아웃하면 바로 끊긴다
       issuer: mspace-core
   mail:
     enabled: ${MAIL_ENABLED:false}   # false면 인증번호를 로그에 찍는다

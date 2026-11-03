@@ -18,7 +18,7 @@ class JwtTokensTest {
     static final Instant NOW = Instant.parse("2026-11-03T01:00:00Z");
 
     JwtTokens at(Instant now, String secret, String issuer) {
-        return new JwtTokens(new JwtProperties(secret, Duration.ofHours(12), issuer),
+        return new JwtTokens(new JwtProperties(secret, Duration.ofHours(12), issuer, null),
                 Clock.fixed(now, ZoneId.of("Asia/Seoul")));
     }
 
@@ -69,10 +69,11 @@ class JwtTokensTest {
     }
 
     @Test
-    @DisplayName("유효 시간·발급자가 비어 있으면 12시간·mspace-core")
+    @DisplayName("유효 시간·발급자가 비어 있으면 액세스 1시간·refresh 14일·mspace-core")
     void defaults() {
-        JwtProperties props = new JwtProperties(SECRET, null, " ");
-        assertThat(props.ttl()).isEqualTo(Duration.ofHours(12));
+        JwtProperties props = new JwtProperties(SECRET, null, " ", null);
+        assertThat(props.ttl()).isEqualTo(Duration.ofHours(1));
+        assertThat(props.refreshTtl()).isEqualTo(Duration.ofDays(14));
         assertThat(props.issuer()).isEqualTo("mspace-core");
     }
 }
