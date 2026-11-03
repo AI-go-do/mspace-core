@@ -5,11 +5,13 @@ import java.sql.Timestamp;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.reservation.application.ReservationCommandPort;
+import kr.ac.chosun.mspace.reservation.domain.ReservationStatus;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.ServerErrorMessage;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,7 +31,8 @@ class JdbcReservationAdapter implements ReservationCommandPort {
     private static final Map<String, ErrorCode> CONSTRAINTS = Map.of(
             "no_room_overlap", ErrorCode.RESERVATION_TIME_TAKEN,
             "one_active_per_owner", ErrorCode.OWNER_HAS_ACTIVE_RESERVATION,
-            "no_person_overlap", ErrorCode.PARTICIPANT_TIME_TAKEN);
+            "no_person_overlap", ErrorCode.PARTICIPANT_TIME_TAKEN,
+            "one_reservation_per_key", ErrorCode.IDEMPOTENCY_KEY_REUSED);
 
     private final JdbcClient jdbc;
 
@@ -85,8 +88,9 @@ class JdbcReservationAdapter implements ReservationCommandPort {
         try {
             lockInOrder(r);
             long id = jdbc.sql("""
-                            INSERT INTO reservation (room_id, owner_id, start_at, end_at, headcount, access_code)
-                            VALUES (:room, :owner, :start, :end, :headcount, :code)
+                            INSERT INTO reservation (room_id, owner_id, start_at, end_at, headcount, access_code,
+                                                     idempotency_key)
+                            VALUES (:room, :owner, :start, :end, :headcount, :code, :key)
                             RETURNING id
                             """)
                     .param("room", r.roomId())
@@ -95,6 +99,7 @@ class JdbcReservationAdapter implements ReservationCommandPort {
                     .param("end", Timestamp.from(r.endAt()))
                     .param("headcount", r.participantIds().size())
                     .param("code", r.accessCode())
+                    .param("key", r.idempotencyKey(), java.sql.Types.VARCHAR)
                     .query(Long.class)
                     .single();
             // 참여자는 id 순서로 넣는다. 두 예약이 같은 사람들을 다른 순서로 넣으면
@@ -128,6 +133,35 @@ class JdbcReservationAdapter implements ReservationCommandPort {
             }
             throw e;
         }
+    }
+
+    /** 멱등 키로 찾기. 제약 one_reservation_per_key(owner_id, idempotency_key)의 인덱스를 탄다 */
+    @Override
+    public Optional<KeyedReservation> findByIdempotencyKey(long ownerId, String idempotencyKey) {
+        return jdbc.sql("""
+                        SELECT id, room_id, start_at, end_at, status, headcount, access_code
+                        FROM reservation WHERE owner_id = :owner AND idempotency_key = :key
+                        """)
+                .param("owner", ownerId)
+                .param("key", idempotencyKey)
+                .query((rs, n) -> new KeyedReservation(rs.getLong("id"), rs.getInt("room_id"),
+                        rs.getTimestamp("start_at").toInstant(), rs.getTimestamp("end_at").toInstant(),
+                        ReservationStatus.valueOf(rs.getString("status")), rs.getInt("headcount"),
+                        rs.getString("access_code"), List.of()))
+                .optional()
+                .map(k -> new KeyedReservation(k.id(), k.roomId(), k.startAt(), k.endAt(), k.status(), k.headcount(),
+                        k.accessCode(), otherStudentIds(k.id())));
+    }
+
+    /** 예약의 참여자 학번 (대표자 제외) */
+    private List<String> otherStudentIds(long reservationId) {
+        return jdbc.sql("""
+                        SELECT u.student_id FROM reservation_participant p JOIN users u ON u.id = p.user_id
+                        WHERE p.reservation_id = :id AND NOT p.is_owner
+                        """)
+                .param("id", reservationId)
+                .query(String.class)
+                .list();
     }
 
     /**

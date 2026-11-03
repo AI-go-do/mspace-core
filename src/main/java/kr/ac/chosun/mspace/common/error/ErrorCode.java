@@ -22,6 +22,8 @@ public enum ErrorCode {
     PARTICIPANT_TIME_TAKEN(HttpStatus.CONFLICT, "참여자 중 같은 시간에 다른 방 예약이 있는 사람이 있습니다"),
     // 동시 요청끼리 DB에서 서로 기다리는 교착이 다시 해도 계속 날 때 (드묾). 예약은 저장되지 않았다
     RESERVATION_BUSY(HttpStatus.SERVICE_UNAVAILABLE, "요청이 몰려 처리하지 못했습니다. 잠시 후 다시 시도해 주세요"),
+    // 같은 Idempotency-Key를 다른 내용(방·시각·참여자)에 다시 씀 (#10)
+    IDEMPOTENCY_KEY_REUSED(HttpStatus.CONFLICT, "이미 다른 예약에 쓴 Idempotency-Key입니다"),
 
     // 예약 취소 (FR-RSV-007). 이름은 영준 비서(mspace-assistant #30)와 맞춤
     // 없는 예약과 남의 예약(참여자도 아님)은 둘 다 404: 남의 예약이 있는지 없는지 알려 주지 않으려고

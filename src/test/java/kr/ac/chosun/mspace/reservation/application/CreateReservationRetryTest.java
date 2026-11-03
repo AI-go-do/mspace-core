@@ -14,6 +14,7 @@ import kr.ac.chosun.mspace.common.config.ReservationPolicy;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.reservation.application.CreateReservationUseCase.Command;
+import kr.ac.chosun.mspace.reservation.domain.ReservationStatus;
 import kr.ac.chosun.mspace.room.application.RoomAvailabilityPort;
 import kr.ac.chosun.mspace.room.application.RoomQuery;
 import org.junit.jupiter.api.DisplayName;
@@ -44,6 +45,11 @@ class CreateReservationRetryTest {
         @Override
         public Map<String, Long> findVerifiedUserIds(Collection<String> studentIds) {
             return Map.of("2024000002", 2L, "2024000003", 3L);
+        }
+
+        @Override
+        public Optional<KeyedReservation> findByIdempotencyKey(long ownerId, String idempotencyKey) {
+            return Optional.empty();
         }
 
         @Override
@@ -128,6 +134,42 @@ class CreateReservationRetryTest {
 
         // when, then
         assertThatThrownBy(() -> service(port).create(1, command)).isInstanceOf(BusinessException.class);
+        assertThat(port.insertCalls).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("같은 키 요청이 동시에 와서 저장이 409로 지면, 키로 다시 찾아 앞 요청의 예약을 200(replayed)으로 돌려준다")
+    void replaysAfterKeyConflict() {
+        // given: 처음 찾을 땐 없음 → 저장은 키 유일 제약 409 → 다시 찾으면 앞 요청이 만든 예약(id 7)이 있음
+        Command keyed = new Command(command.roomId(), command.startAt(), command.endAt(),
+                command.participantStudentIds(), "same-key");
+        int[] lookups = {0};
+        FakePort port = new FakePort(0) {
+            @Override
+            public Optional<KeyedReservation> findByIdempotencyKey(long ownerId, String idempotencyKey) {
+                lookups[0]++;
+                if (lookups[0] == 1) {
+                    return Optional.empty();
+                }
+                return Optional.of(new KeyedReservation(7, keyed.roomId(), keyed.startAt(), keyed.endAt(),
+                        ReservationStatus.BOOKED, 3, "654321", keyed.participantStudentIds()));
+            }
+
+            @Override
+            public long insert(NewReservation reservation) {
+                insertCalls++;
+                throw new BusinessException(ErrorCode.IDEMPOTENCY_KEY_REUSED);
+            }
+        };
+
+        // when
+        CreateReservationUseCase.Created created = service(port).create(1, keyed);
+
+        // then
+        assertThat(created.replayed()).isTrue();
+        assertThat(created.id()).isEqualTo(7);
+        assertThat(created.accessCode()).isEqualTo("654321");
+        assertThat(lookups[0]).isEqualTo(2);
         assertThat(port.insertCalls).isEqualTo(1);
     }
 }

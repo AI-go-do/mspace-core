@@ -47,6 +47,8 @@ curl localhost:8080/api/reservations/me -H 'X-User-Id: 1'          # 내 예약 
 curl -X POST localhost:8080/api/reservations/1/cancel -H 'X-User-Id: 1'   # 시작 전 취소 → {"id":1,"status":"CANCELED"}
 ```
 
+비서처럼 응답을 못 받으면 다시 보내는 쪽은 `Idempotency-Key` 헤더(1~64자)를 붙여요. 같은 키로 다시 보내면 새로 만들지 않고 처음 예약을 `200`으로 돌려주고, 같은 키를 다른 내용에 쓰면 `409 IDEMPOTENCY_KEY_REUSED`예요.
+
 ## 폴더 구조
 
 기능별로 나누고, 기능 안은 포트·어댑터로 나눠요 (팀 컨벤션 3절).
