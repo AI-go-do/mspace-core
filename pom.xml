@@ -59,6 +59,18 @@
             <artifactId>postgresql</artifactId>
         </dependency>
 
+        <!-- 로그인 (FR-AUTH-001): 학교 메일로 인증번호 보내기. 메일 서버 설정이 없으면 로그에만 찍는다 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+        <!-- 로그인 토큰(JWT) 서명·확인. Spring Security도 안에서 이 라이브러리를 쓴다 -->
+        <dependency>
+            <groupId>com.nimbusds</groupId>
+            <artifactId>nimbus-jose-jwt</artifactId>
+            <version>10.4</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc-test</artifactId>
