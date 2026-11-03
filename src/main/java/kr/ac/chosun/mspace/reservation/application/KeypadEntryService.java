@@ -47,10 +47,22 @@ public class KeypadEntryService implements KeypadEntryUseCase {
             // 끝난 예약 (자동 퇴실·노쇼 처리는 v0.2 스케줄러가 한다)
             return new Entry(Result.WRONG_CODE, null);
         }
-        if (match.status() == ReservationStatus.BOOKED) {
-            // false면 그 사이 다른 입력이 먼저 체크인한 것 → 이미 IN_USE라 문만 연다
-            statuses.checkInIfBooked(match.id(), now, policy.openBeforeMinutes());
+        if (match.status() == ReservationStatus.BOOKED
+                && !statuses.checkInIfBooked(match.id(), now, policy.openBeforeMinutes())
+                && !stillInUse(roomId, code, match.id())) {
+            // 읽은 뒤 체크인 전에 대표자가 취소함 (시작 10분 전 ~ 시작 사이에는 둘 다 가능). 취소된 번호로는 열지 않는다
+            return new Entry(Result.WRONG_CODE, null);
         }
         return new Entry(Result.OPENED, match.id());
+    }
+
+    /**
+     * 체크인이 0줄을 바꿨을 때 다시 읽는다. 같은 방 입력은 keypad_lock으로 한 줄로 서지만 취소는 그 줄에 서지 않아서,
+     * 0줄의 원인은 "다른 입력이 먼저 체크인"(IN_USE)일 수도, "그 사이 취소"(CANCELED)일 수도 있다
+     */
+    private boolean stillInUse(int roomId, String code, long reservationId) {
+        return queries.findActiveByCode(roomId, code)
+                .filter(m -> m.id() == reservationId && m.status() == ReservationStatus.IN_USE)
+                .isPresent();
     }
 }
