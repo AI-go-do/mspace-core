@@ -144,18 +144,29 @@ class JdbcReservationAdapter implements ReservationCommandPort {
      * 중복을 막는 건 여전히 DB 제약이고, 이 잠금은 교착만 없앤다.
      */
     private void lockInOrder(NewReservation r) {
-        // 잠금을 무한정 기다리지 않게 이 트랜잭션에만 상한을 건다 (SET LOCAL과 같음, 커밋·롤백 때 풀림).
-        // 넘으면 PostgreSQL 55P03 → Spring이 PessimisticLockingFailureException 계열로 바꿔서 서비스의 다시 하기 → 503
-        jdbc.sql("SELECT set_config('lock_timeout', :ms, true)")
-                .param("ms", lockTimeout.toMillis() + "ms")
-                .query((rs, n) -> 1).list();
-        lock(-(long) r.roomId());
+        // 잠금을 무한정 기다리지 않게 상한을 건다. lock_timeout은 잠금 "하나"마다 적용되므로,
+        // 방 → 참여자 순으로 여러 개를 잡을 때 매번 "남은 시간"만 다시 걸어 이번 시도 전체가 상한을 넘지 않게 한다.
+        // 넘으면 PostgreSQL 55P03 → insert의 catch가 CannotAcquireLockException으로 바꿔서 서비스의 다시 하기 → 503
+        long deadline = System.nanoTime() + lockTimeout.toNanos();
+        lockWithin(-(long) r.roomId(), deadline);
         for (Long userId : r.participantIds().stream().sorted().toList()) {
-            lock(userId);
+            lockWithin(userId, deadline);
         }
     }
 
-    /** 번호 하나를 이 트랜잭션이 끝날 때까지 잠근다. 다른 트랜잭션이 쥐고 있으면 풀릴 때까지 기다린다 */
+    /** 남은 시간을 이 트랜잭션의 lock_timeout으로 걸고(SET LOCAL과 같음, 커밋·롤백 때 풀림) 잠금을 잡는다 */
+    private void lockWithin(long key, long deadline) {
+        long leftMs = (deadline - System.nanoTime()) / 1_000_000;
+        if (leftMs < 1) {
+            // 0ms는 PostgreSQL에서 "무제한"이라 걸 수 없다. 시간을 다 썼으면 바로 잠금 실패로 끝낸다
+            throw new CannotAcquireLockException("예약 잠금 대기 시간 초과");
+        }
+        jdbc.sql("SELECT set_config('lock_timeout', :ms, true)")
+                .param("ms", leftMs + "ms")
+                .query((rs, n) -> 1).list();
+        lock(key);
+    }
+
     private void lock(long key) {
         jdbc.sql("SELECT pg_advisory_xact_lock(:key)").param("key", key).query((rs, n) -> 1).list();
     }
