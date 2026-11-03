@@ -102,6 +102,9 @@ class EmailLoginApiTest {
     JdbcClient jdbc;
 
     @Autowired
+    kr.ac.chosun.mspace.member.application.EmailVerificationPort verifications;
+
+    @Autowired
     MovableClock clock;
 
     @Autowired
@@ -330,5 +333,16 @@ class EmailLoginApiTest {
 
         assertThat(ok).isEqualTo(1);
         assertThat(jdbc.sql("SELECT count(*) FROM email_verification").query(Integer.class).single()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("새 번호가 발급된 뒤에는 옛 번호를 사용 처리할 수 없다 (로그인 도중 재발급 경합)")
+    void olderCodeCannotBeConsumedAfterNewerIssued() {
+        Instant t = clock.instant();
+        long older = verifications.save(EMAIL, "a", t, t.plus(Duration.ofMinutes(10)));
+        long newer = verifications.save(EMAIL, "b", t.plusSeconds(61), t.plus(Duration.ofMinutes(11)));
+
+        assertThat(verifications.markUsed(older, t.plusSeconds(62))).isFalse();
+        assertThat(verifications.markUsed(newer, t.plusSeconds(62))).isTrue();
     }
 }

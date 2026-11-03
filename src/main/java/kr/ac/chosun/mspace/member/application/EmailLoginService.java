@@ -110,8 +110,10 @@ class EmailLoginService implements EmailLoginUseCase {
         Signup signup = existing.isPresent() ? null : Signup.from(command);
 
         long memberId = tx.execute(status -> {
+            // 번호 발급(sendCode)과 같은 잠금을 잡는다. 새 번호가 커밋됐으면 markUsed가 옛 번호를 거절한다
+            verifications.lockEmail(email);
             if (!verifications.markUsed(v.id(), now)) {
-                // 같은 번호로 동시에 두 번 들어온 경우 늦은 쪽
+                // 같은 번호로 동시에 두 번 들어왔거나, 그사이 새 번호가 발급된 경우
                 throw new BusinessException(ErrorCode.EMAIL_CODE_NOT_FOUND);
             }
             if (existing.isPresent()) {

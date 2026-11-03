@@ -83,7 +83,19 @@ class JdbcEmailVerificationAdapter implements EmailVerificationPort {
 
     @Override
     public boolean markUsed(long id, Instant usedAt) {
-        return jdbc.sql("UPDATE email_verification SET used_at = :usedAt WHERE id = :id AND used_at IS NULL")
+        // 그사이 새 번호가 발급됐으면 옛 번호는 쓸 수 없다 (최신 번호만 유효)
+        return jdbc.sql("""
+                        UPDATE email_verification AS cur
+                           SET used_at = :usedAt
+                         WHERE cur.id = :id
+                           AND cur.used_at IS NULL
+                           AND NOT EXISTS (
+                               SELECT 1
+                                 FROM email_verification AS newer
+                                WHERE newer.email = cur.email
+                                  AND (newer.created_at, newer.id) > (cur.created_at, cur.id)
+                           )
+                        """)
                 .param("usedAt", Timestamp.from(usedAt))
                 .param("id", id)
                 .update() == 1;

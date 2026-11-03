@@ -40,7 +40,8 @@ public interface EmailVerificationPort {
     /**
      * 아직 안 쓴 번호를 "썼음"으로 바꾼다.
      *
-     * @return 바꿨으면 true. 동시에 같은 번호로 두 번 들어오면 한쪽만 true
+     * @return 바꿨으면 true. 동시에 같은 번호로 두 번 들어오면 한쪽만 true.
+     *         그사이 같은 주소로 더 새 번호가 생겼으면 false
      */
     boolean markUsed(long id, Instant usedAt);
 
