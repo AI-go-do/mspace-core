@@ -32,6 +32,7 @@ mspace:
     booking-window-days: 7   # 오늘 포함 7일 (오늘 ~ 오늘+6일)
     slot-minutes: 30
     max-minutes: 120         # 1회 최대 2시간
+    lock-timeout: 3s         # 예약 저장 때 잠금(advisory lock) 최대 대기. 넘으면 다시 하고, 3번 다 넘으면 503
   access:
     open-before-minutes: 10  # 번호는 시작 10분 전부터 끝나기 전까지 (FR-ACC-001)
     lock-after-failures: 5   # 5번 연속 틀리면
