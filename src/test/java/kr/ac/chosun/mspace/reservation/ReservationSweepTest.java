@@ -270,11 +270,9 @@ class ReservationSweepTest {
             assertThat(held.await(5, TimeUnit.SECONDS)).isTrue();
 
             now("11:01");   // 1번은 노쇼 대상(잠김), 3번도 노쇼 대상(안 잠김), 2번은 자동 퇴실 대상
-            long started = System.nanoTime();
             Swept swept = sweeps.sweep();
-            long tookMs = (System.nanoTime() - started) / 1_000_000;
 
-            assertThat(tookMs).isLessThan(1000);   // 잠긴 줄은 기다리지 않고 건너뜀
+            // 잠긴 줄을 기다렸다면 노쇼 단계가 잠금 대기 상한(3초)에 걸려 Swept(0, 1)이 된다. 1이면 건너뛰고 처리한 것
             assertThat(swept).isEqualTo(new Swept(1, 1));
             assertThat(jdbc.sql("SELECT status FROM reservation WHERE id = 3").query(String.class).single())
                     .isEqualTo("NO_SHOW");
