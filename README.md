@@ -29,6 +29,16 @@ curl localhost:8080/actuator/health   # {"status":"UP"}이면 정상
 
 설정값은 `.env.example`을 `.env`로 복사해서 채워요. `.env`는 커밋하지 않아요.
 
+### 로그인 붙기 전 임시 방법
+
+로그인(재웅님 담당)이 붙기 전까지는 `X-User-Id` 헤더에 회원 id를 넣어서 "누가 보낸 요청인지"를 알려 줘요. `MSPACE_DEV_HEADER=true`일 때만 켜지고, 기본값은 꺼짐이라 운영에서는 항상 401이에요.
+
+```bash
+MSPACE_DEV_HEADER=true ./mvnw spring-boot:run
+curl -X POST localhost:8080/api/reservations -H 'X-User-Id: 1' -H 'Content-Type: application/json' \
+  -d '{"roomId":1,"startAt":"2026-11-03T14:00:00+09:00","endAt":"2026-11-03T16:00:00+09:00","participantStudentIds":["20230002","20230003"]}'
+```
+
 ## 폴더 구조
 
 기능별로 나누고, 기능 안은 포트·어댑터로 나눠요 (팀 컨벤션 3절).

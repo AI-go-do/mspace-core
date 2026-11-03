@@ -1,0 +1,116 @@
+package kr.ac.chosun.mspace.reservation.application;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import kr.ac.chosun.mspace.common.config.ReservationPolicy;
+import kr.ac.chosun.mspace.common.error.BusinessException;
+import kr.ac.chosun.mspace.common.error.ErrorCode;
+import kr.ac.chosun.mspace.reservation.application.CreateReservationService.Command;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.transaction.support.TransactionOperations;
+
+/**
+ * 교착 다시 하기만 따로 본다. DB 없이, insert가 정해진 횟수만큼 교착 예외를 던지는 가짜 포트를 쓴다.
+ * (실제 교착 재현은 ConcurrentReservationTest의 "같은 참여자·다른 방" 100건 테스트)
+ */
+class CreateReservationRetryTest {
+
+    /** insert를 부를 때마다 센다. 처음 deadlocks번은 교착 예외, 그다음은 성공(id 42) */
+    static class FakePort implements ReservationCommandPort {
+        final int deadlocks;
+        int insertCalls;
+
+        FakePort(int deadlocks) {
+            this.deadlocks = deadlocks;
+        }
+
+        @Override
+        public Optional<RoomCapacity> findActiveRoom(int roomId) {
+            return Optional.of(new RoomCapacity(roomId, "1번 방", 3, 5));
+        }
+
+        @Override
+        public Optional<String> findVerifiedStudentId(long userId) {
+            return Optional.of("2024000001");
+        }
+
+        @Override
+        public Map<String, Long> findVerifiedUserIds(Collection<String> studentIds) {
+            return Map.of("2024000002", 2L, "2024000003", 3L);
+        }
+
+        @Override
+        public long insert(NewReservation reservation) {
+            insertCalls++;
+            if (insertCalls <= deadlocks) {
+                throw new PessimisticLockingFailureException("deadlock detected (40P01)");
+            }
+            return 42;
+        }
+    }
+
+    // 지금 = 2026-11-03 10:10 서울, 예약 = 11/04 14:00~16:00
+    final Clock clock = Clock.fixed(Instant.parse("2026-11-03T01:10:00Z"), ZoneId.of("Asia/Seoul"));
+    final Command command = new Command(1, Instant.parse("2026-11-04T05:00:00Z"), Instant.parse("2026-11-04T07:00:00Z"),
+            List.of("2024000002", "2024000003"));
+
+    CreateReservationService service(FakePort port) {
+        return new CreateReservationService(port, new AccessCodeGenerator(), new ReservationPolicy(7, 30, 120),
+                clock, TransactionOperations.withoutTransaction());
+    }
+
+    @Test
+    @DisplayName("교착이 두 번 나도 세 번째에 저장되면 예약이 만들어진다")
+    void retriesUntilSuccess() {
+        // given
+        FakePort port = new FakePort(2);
+
+        // when
+        CreateReservationService.Created created = service(port).create(1, command);
+
+        // then
+        assertThat(created.id()).isEqualTo(42);
+        assertThat(port.insertCalls).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("교착이 세 번 계속되면 더 하지 않고 503(RESERVATION_BUSY)으로 끝난다")
+    void givesUpAfterMaxAttempts() {
+        // given
+        FakePort port = new FakePort(Integer.MAX_VALUE);
+
+        // when, then
+        assertThatThrownBy(() -> service(port).create(1, command))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).errorCode())
+                .isEqualTo(ErrorCode.RESERVATION_BUSY);
+        assertThat(port.insertCalls).isEqualTo(CreateReservationService.MAX_ATTEMPTS);
+    }
+
+    @Test
+    @DisplayName("409 같은 업무 오류는 다시 하지 않는다")
+    void doesNotRetryBusinessErrors() {
+        // given: insert가 겹침(409)으로 실패
+        FakePort port = new FakePort(0) {
+            @Override
+            public long insert(NewReservation reservation) {
+                insertCalls++;
+                throw new BusinessException(ErrorCode.RESERVATION_TIME_TAKEN);
+            }
+        };
+
+        // when, then
+        assertThatThrownBy(() -> service(port).create(1, command)).isInstanceOf(BusinessException.class);
+        assertThat(port.insertCalls).isEqualTo(1);
+    }
+}
