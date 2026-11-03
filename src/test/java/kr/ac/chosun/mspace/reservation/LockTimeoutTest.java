@@ -97,8 +97,9 @@ class LockTimeoutTest {
                     .isEqualTo(ErrorCode.RESERVATION_BUSY);
             Duration waited = Duration.ofNanos(System.nanoTime() - started);
 
-            // then: 300ms × 3번 근처에서 끝났고(10초 안), 예약은 저장되지 않았다
-            assertThat(waited).isLessThan(Duration.ofSeconds(10));
+            // then: 300ms × 3번(약 1초) 근처에서 끝났고, 예약은 저장되지 않았다
+            // 5초 상한: 실행 환경 여유는 두되, 설정이 안 먹고 기본값 3초 × 3번(약 9초)이면 실패한다
+            assertThat(waited).isLessThan(Duration.ofSeconds(5));
             assertThat(jdbc.sql("SELECT count(*) FROM reservation").query(Integer.class).single()).isZero();
         } finally {
             release.countDown();

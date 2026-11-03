@@ -36,6 +36,10 @@ class JdbcReservationAdapter implements ReservationCommandPort {
     private final Duration lockTimeout;
 
     JdbcReservationAdapter(JdbcClient jdbc, @Value("${mspace.reservation.lock-timeout:3s}") Duration lockTimeout) {
+        // PostgreSQL은 lock_timeout 0을 "무제한 대기"로 본다. 1ms 미만(0·음수·500us 등)은 시작할 때 막는다
+        if (lockTimeout.toMillis() < 1) {
+            throw new IllegalArgumentException("mspace.reservation.lock-timeout은 1ms 이상이어야 해요: " + lockTimeout);
+        }
         this.jdbc = jdbc;
         this.lockTimeout = lockTimeout;
     }
