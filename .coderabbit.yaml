@@ -1,0 +1,20 @@
+# CodeRabbit: PR마다 AI가 남기는 참고용 리뷰 (사람 리뷰를 대신하지 않음, infra-cicd 3절)
+# 설정 설명: https://docs.coderabbit.ai/reference/configuration
+language: ko-KR
+reviews:
+  profile: chill                   # 사소한 지적은 줄이고 버그·보안 위주로
+  request_changes_workflow: false  # 승인/거절은 사람만
+  high_level_summary: true         # PR 맨 위에 변경 요약
+  poem: false
+  auto_review:
+    enabled: true
+    base_branches:
+      - develop
+      - main
+  path_instructions:
+    - path: "src/main/resources/db/migration/**"
+      instructions: "이미 합쳐진 Flyway 파일은 고치면 안 된다. 새 V 파일인지 확인하고, 제약 이름이 어댑터의 매핑과 맞는지 본다."
+    - path: "src/test/**"
+      instructions: "테스트는 Testcontainers PostgreSQL을 쓴다(H2 금지). 시간은 고정 Clock을 쓰는지 본다."
+chat:
+  auto_reply: true
