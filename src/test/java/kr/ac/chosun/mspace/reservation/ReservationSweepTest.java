@@ -230,7 +230,7 @@ class ReservationSweepTest {
     }
 
     @Test
-    @DisplayName("다른 작업이 예약 줄을 오래 잡고 있어도 정리는 잠금 대기 상한(3초) 안에 끝나고, 다른 쪽(자동 퇴실)은 처리한다")
+    @DisplayName("다른 작업이 예약 줄 하나를 오래 잡고 있어도 정리는 그 줄만 건너뛰고 다른 노쇼·자동 퇴실은 바로 처리한다")
     void lockedRowDoesNotBlockSweep() throws Exception {
         // 2번 방: 대표자 4번 + 5·6번, 10:30–11:00, 입실함
         assertThat(mvc.post().uri("/api/reservations").header("X-User-Id", "4").contentType(MediaType.APPLICATION_JSON)
@@ -244,6 +244,16 @@ class ReservationSweepTest {
                 .content("""
                         {"eventId":"2-1-1","roomId":2,"deviceId":"keypad-2","code":"%s"}""".formatted(code2))
                 .exchange()).bodyJson().extractingPath("$.result").isEqualTo("OPENED");
+
+        // 3번 방: 대표자 7번 + 8·9번, 10:30–11:00, 안 들어옴 (1번과 상관없는 사람의 노쇼 대상)
+        for (int i = 7; i <= 9; i++) {
+            jdbc.sql("INSERT INTO users (email, student_id, name, verified_at) VALUES (:e, :s, '회원', now())")
+                    .param("e", "u" + i + "@chosun.ac.kr").param("s", "2023000" + i).update();
+        }
+        assertThat(mvc.post().uri("/api/reservations").header("X-User-Id", "7").contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"roomId":3,"startAt":"2030-03-05T10:30:00+09:00","endAt":"2030-03-05T11:00:00+09:00",
+                         "participantStudentIds":["20230008","20230009"]}""").exchange()).hasStatus(201);
 
         // 다른 트랜잭션이 1번 예약 줄을 6초 동안 잡고 있다
         CountDownLatch held = new CountDownLatch(1);
@@ -260,13 +270,15 @@ class ReservationSweepTest {
             }));
             assertThat(held.await(5, TimeUnit.SECONDS)).isTrue();
 
-            now("11:01");   // 1번은 노쇼 대상(잠김), 2번은 자동 퇴실 대상
+            now("11:01");   // 1번은 노쇼 대상(잠김), 3번도 노쇼 대상(안 잠김), 2번은 자동 퇴실 대상
             long started = System.nanoTime();
             Swept swept = sweeps.sweep();
             long tookMs = (System.nanoTime() - started) / 1_000_000;
 
-            assertThat(tookMs).isLessThan(5000);
-            assertThat(swept).isEqualTo(new Swept(0, 1));
+            assertThat(tookMs).isLessThan(1000);   // 잠긴 줄은 기다리지 않고 건너뜀
+            assertThat(swept).isEqualTo(new Swept(1, 1));
+            assertThat(jdbc.sql("SELECT status FROM reservation WHERE id = 3").query(String.class).single())
+                    .isEqualTo("NO_SHOW");
             holder.get(10, TimeUnit.SECONDS);
         } finally {
             other.shutdownNow();
