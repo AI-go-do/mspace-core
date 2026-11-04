@@ -152,8 +152,10 @@ public class ContinueReservationService implements ContinueReservationUseCase {
 
     /** 새 끝은 지금 끝 + 30분 단위, 최대 maxMinutes */
     private void checkEnd(Instant currentEnd, Instant endAt) {
-        long minutes = Duration.between(currentEnd, endAt).toMinutes();
-        boolean onSlot = Duration.between(currentEnd, endAt).toSeconds() % ((long) slots.slotMinutes() * 60) == 0;
+        Duration extra = Duration.between(currentEnd, endAt);
+        long minutes = extra.toMinutes();
+        // toSeconds()는 소수 초를 버려서, 15:30:00.4 같은 값이 칸 검사를 지나가지 않게 나노초도 본다
+        boolean onSlot = extra.getNano() == 0 && extra.toSeconds() % ((long) slots.slotMinutes() * 60) == 0;
         if (minutes <= 0 || minutes > policy.maxMinutes() || !onSlot) {
             throw new BusinessException(ErrorCode.RESERVATION_INVALID_LENGTH,
                     "연장은 지금 종료 시각부터 %d분 단위로 최대 %d분까지 할 수 있습니다"

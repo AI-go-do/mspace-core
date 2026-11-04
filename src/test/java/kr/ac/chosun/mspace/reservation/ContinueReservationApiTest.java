@@ -215,6 +215,21 @@ class ContinueReservationApiTest {
     }
 
     @Test
+    @DisplayName("끝에 소수 초가 붙으면(14:30:00.4) 30분 칸이 아니라 400 RESERVATION_INVALID_LENGTH")
+    void fractionalSecondEndRejected() {
+        now("13:50");
+
+        MvcTestResult r = mvc.post().uri("/api/reservations/" + ours + "/continue").header("X-User-Id", "1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"endAt":"2030-03-05T14:30:00.4+09:00"}""")
+                .exchange();
+
+        assertThat(r).hasStatus(400).bodyJson().extractingPath("$.code").isEqualTo("RESERVATION_INVALID_LENGTH");
+        assertThat(status(ours)).isEqualTo("IN_USE");
+    }
+
+    @Test
     @DisplayName("다음 칸을 다른 팀이 잡았으면 409 RESERVATION_TIME_TAKEN이고 지금 예약은 그대로 사용 중")
     void nextSlotTaken() {
         now("12:56");
