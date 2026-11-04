@@ -4,6 +4,8 @@ import static kr.ac.chosun.mspace.common.config.TimeConfig.SEOUL;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -48,6 +50,9 @@ public class CreateReservationService implements CreateReservationUseCase {
     /** 교착이면 몇 번까지 해 보나 (처음 1번 + 다시 2번). 다 실패하면 503 */
     static final int MAX_ATTEMPTS = 3;
 
+    /** 정지 끝나는 시각 표시: "11/18 14:30" */
+    private static final DateTimeFormatter UNTIL = DateTimeFormatter.ofPattern("M/d HH:mm");
+
     private final ReservationCommandPort port;
     private final RoomQuery rooms;
     private final AccessCodeIssuer codes;
@@ -57,11 +62,13 @@ public class CreateReservationService implements CreateReservationUseCase {
     private final SweepReservationsUseCase sweeps;
     private final UsageChainPort chains;
     private final ExtensionPolicy extension;
+    private final SuspensionPort suspensions;
 
     public CreateReservationService(ReservationCommandPort port, RoomQuery rooms, AccessCodeIssuer codes,
                                     ReservationPolicy policy, Clock clock, TransactionOperations tx,
                                     SweepReservationsUseCase sweeps, UsageChainPort chains,
-                                    ExtensionPolicy extension) {
+                                    ExtensionPolicy extension, SuspensionPort suspensions) {
+        this.suspensions = suspensions;
         this.sweeps = sweeps;
         this.chains = chains;
         this.extension = extension;
@@ -184,6 +191,13 @@ public class CreateReservationService implements CreateReservationUseCase {
         String ownerStudentId = port.findVerifiedStudentId(ownerId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
 
+        // 노쇼 벌칙 (FR-RSV-106): 정지 중이면 대표자로 못 잡는다. 끝나는 날짜를 알려 준다
+        Instant now = clock.instant();
+        suspensions.suspendedUntil(ownerId, now).ifPresent(until -> {
+            throw new BusinessException(ErrorCode.USER_SUSPENDED,
+                    "노쇼 2번으로 %s까지 이용이 정지되어 예약할 수 없습니다".formatted(UNTIL.format(until.atZone(SEOUL))));
+        });
+
         // 대표자는 서버가 넣는다. 목록에 대표자 학번이 또 있으면 같은 사람 두 번 → 400
         List<String> others = command.participantStudentIds();
         Set<String> seen = new HashSet<>();
@@ -204,6 +218,11 @@ public class CreateReservationService implements CreateReservationUseCase {
                 >= extension.maxCount()) {
             throw new BusinessException(ErrorCode.RESERVATION_EXTENSION_LIMIT,
                     "연장까지 쓴 뒤 %d분 안에는 새로 예약할 수 없습니다".formatted(extension.chainGapMinutes()));
+        }
+
+        // 정지 중인 사람은 참여자로도 못 들어간다 (대표자만 막으면 친구 이름으로 계속 쓸 수 있다)
+        if (suspensions.anySuspended(ids.values(), now)) {
+            throw new BusinessException(ErrorCode.PARTICIPANT_SUSPENDED);
         }
 
         int headcount = others.size() + 1;

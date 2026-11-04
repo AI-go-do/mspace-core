@@ -55,6 +55,10 @@ mspace:
       open-before-minutes: 10  # 종료 10분 전부터 종료 전까지
       max-minutes: 120       # 한 번에 늘리는 시간은 원래 종료부터 30분 단위, 최대 2시간
       chain-gap-minutes: 30  # 직전 예약이 끝난 뒤 30분 안에 시작하면 이어진 사용으로 본다
+    no-show-penalty:         # 노쇼 벌칙 (FR-RSV-106, 11/4 지영 결정)
+      count: 2               # 30일 안에 노쇼 2번이면
+      window-days: 30
+      suspend-days: 14       # 14일 동안 대표자·참여자 모두 예약 불가. 정지가 끝나면 횟수는 처음부터
     sweep:
       enabled: ${MSPACE_SWEEP_ENABLED:true}   # 노쇼·자동 퇴실 정리 (FR-RSV-101, 102)
       interval: PT1M         # 1분마다. 노쇼·자동 퇴실은 최대 이만큼 늦게 반영된다
@@ -80,7 +84,7 @@ mspace:
       - key: NO_SHOW
         title: 노쇼
         rule: 시작 15분 안에 키패드로 입실해요(지금 바로 쓰기는 10분)
-        penalty: 예약이 자동으로 풀려요
+        penalty: 예약이 자동으로 풀려요. 30일 안에 2번이면 14일 동안 예약·참여 모두 못 해요
       - key: AWAY
         title: 자리 비움
         rule: 짐만 두고 자리를 맡아 두지 않아요. 사용 중에 오래 비우지 않아요

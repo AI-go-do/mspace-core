@@ -127,6 +127,15 @@ curl -X POST localhost:8080/api/access/verify -H 'Authorization: Bearer <장치 
 
 바뀌면 방·대표자·참여자 시간이 바로 풀려요. 다른 작업이 예약을 오래 잡고 있으면 잠금 대기 상한(`mspace.reservation.lock-timeout`, 3초)을 넘긴 쪽만 건너뛰고 다음 번에 다시 해요. 주기는 `mspace.reservation.sweep.interval`(기본 `PT1M`)이고, `MSPACE_SWEEP_ENABLED=false`면 꺼져요. 테스트에서는 꺼 두고(`src/test/resources/config/application.yml`) 시계를 옮겨서 직접 불러요.
 
+### 노쇼 벌칙 (FR-RSV-106)
+
+30일 안에 노쇼가 2번이면 2번째 노쇼가 정리되는 순간부터 14일 동안 이용 정지예요(V9 `user_suspension`). 노쇼를 바꾸는 정리와 같은 트랜잭션에서 걸어요. 대표자 기록만 세요.
+
+- 정지 중에는 대표자로 예약하면 `403 USER_SUSPENDED`(메시지에 끝나는 날짜), 참여자로 넣으면 `403 PARTICIPANT_SUSPENDED`(누구인지는 안 알려 줘요). 미리 예약과 지금 바로 쓰기 모두 막아요.
+- 정지가 끝나면 횟수는 처음부터 다시 세요. 정지 전에 잡아 둔 예약은 그대로 둬요.
+- 정리가 동시에 돌아도 정지는 한 줄만 생겨요(같은 사람 기간 겹침 금지 `one_suspension_at_a_time` + `ON CONFLICT DO NOTHING`).
+- 숫자는 `mspace.reservation.no-show-penalty`(2번·30일·14일)에 있어요. 자리 비움 3번 = 노쇼 1번(FR-DEV-103)은 자리 비움 기능과 같이 붙여요.
+
 ## 폴더 구조
 
 기능별로 나누고, 기능 안은 포트·어댑터로 나눠요 (팀 컨벤션 3절).

@@ -8,7 +8,7 @@ import java.time.Instant;
  */
 public interface ReservationSweepPort {
 
-    /** BOOKED인데 체크인 마감(checkin_deadline)이 지난 예약 → NO_SHOW. 바꾼 건수 */
+    /** BOOKED인데 체크인 마감(checkin_deadline)이 지난 예약 → NO_SHOW. 같은 트랜잭션에서 노쇼 벌칙(FR-RSV-106) 정지도 건다. 바꾼 건수 */
     int markNoShows(Instant now);
 
     /** IN_USE인데 끝나는 시각이 된 예약 → AUTO_CHECKED_OUT (퇴실 시각 = 끝나는 시각). 바꾼 건수 */
