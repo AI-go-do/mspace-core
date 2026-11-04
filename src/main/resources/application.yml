@@ -62,6 +62,8 @@ mspace:
   auth:
     # 임시: 로그인이 붙기 전까지 X-User-Id 헤더로 회원을 받는다. 운영에서는 꼭 false
     dev-header: ${MSPACE_DEV_HEADER:false}
+    # refresh 토큰 쿠키에 Secure를 붙인다(HTTPS로만 보냄). 운영은 꼭 true. 맥에서 http로 시험할 때만 false
+    cookie-secure: ${MSPACE_AUTH_COOKIE_SECURE:true}
     jwt:
       secret: ${JWT_SECRET:}   # 32바이트 이상. 비우면 실행할 때마다 임시값(로컬 전용)
       ttl: ${JWT_TTL:1h}       # 액세스 토큰. 짧게 둬서 "중간에 못 끊는" JWT 약점을 줄인다
