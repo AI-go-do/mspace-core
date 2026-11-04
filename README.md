@@ -40,7 +40,7 @@ curl localhost:8080/actuator/health   # {"status":"UP"}이면 정상
 관리자 화면이 아직 없어서 SQL로 정해요. 메일 인증으로 먼저 가입한 뒤에 바꿔요. 관리자만 `GET /api/reservations/stats`(WEB/AGENT 예약 건수)를 볼 수 있어요.
 
 ```bash
-docker compose exec db psql -U mspace -d mspace -c "UPDATE users SET role = 'ADMIN' WHERE email = '내메일@chosun.ac.kr'"
+docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "UPDATE users SET role = '"'"'ADMIN'"'"' WHERE email = '"'"'내메일@chosun.ac.kr'"'"'"'
 ```
 
 ### 로그인 붙기 전 임시 방법
