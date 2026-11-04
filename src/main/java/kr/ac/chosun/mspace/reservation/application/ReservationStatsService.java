@@ -29,6 +29,9 @@ class ReservationStatsService implements ReservationStatsUseCase {
         if (!port.isAdmin(userId)) {
             throw new BusinessException(ErrorCode.ADMIN_ONLY);
         }
+        // 아주 먼 날짜(+999999999년 등)는 plusDays·timestamptz 범위에서 500이 나서 입구에서 400으로 막는다
+        requireSaneYear(from, "from");
+        requireSaneYear(to, "to");
         if (from != null && to != null && from.isAfter(to)) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST, "from은 to보다 늦을 수 없습니다");
         }
@@ -39,5 +42,16 @@ class ReservationStatsService implements ReservationStatsUseCase {
         long web = counts.getOrDefault(CreatedVia.WEB, 0L);
         long agent = counts.getOrDefault(CreatedVia.AGENT, 0L);
         return new Counts(from, to, web + agent, web, agent);
+    }
+
+    /** 운영 기간 근처만 의미가 있어 넉넉히 2000–2100년만 받는다 */
+    static final int MIN_YEAR = 2000;
+    static final int MAX_YEAR = 2100;
+
+    private static void requireSaneYear(LocalDate date, String name) {
+        if (date != null && (date.getYear() < MIN_YEAR || date.getYear() > MAX_YEAR)) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST,
+                    name + "는 " + MIN_YEAR + "–" + MAX_YEAR + "년 사이여야 합니다");
+        }
     }
 }

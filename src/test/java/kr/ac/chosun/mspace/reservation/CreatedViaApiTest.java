@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.List;
 import kr.ac.chosun.mspace.TestcontainersConfiguration;
+import kr.ac.chosun.mspace.common.auth.JwtTokens;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -45,6 +47,9 @@ class CreatedViaApiTest {
     @Autowired
     JdbcClient jdbc;
 
+    @Autowired
+    JwtTokens tokens;
+
     @BeforeEach
     void members() {
         jdbc.sql("TRUNCATE reservation, reservation_participant, users RESTART IDENTITY CASCADE").update();
@@ -58,6 +63,10 @@ class CreatedViaApiTest {
 
     /** owner 1·4·7이 각각 자기 팀(다음 두 사람)과 room번 방을 14:00–16:00에 */
     MvcTestResult book(int owner, int room, String client) {
+        return book(owner, room, client, null);
+    }
+
+    MvcTestResult book(int owner, int room, String client, String idempotencyKey) {
         var req = mvc.post().uri("/api/reservations").header("X-User-Id", String.valueOf(owner))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -65,6 +74,9 @@ class CreatedViaApiTest {
                          "participantStudentIds":["2023000%d","2023000%d"]}""".formatted(room, owner + 1, owner + 2));
         if (client != null) {
             req = req.header("X-Client", client);
+        }
+        if (idempotencyKey != null) {
+            req = req.header("Idempotency-Key", idempotencyKey);
         }
         return req.exchange();
     }
@@ -168,5 +180,58 @@ class CreatedViaApiTest {
     @DisplayName("건수: 로그인 안 하면 401")
     void needsLogin() {
         assertThat(mvc.get().uri("/api/reservations/stats").exchange()).hasStatus(401);
+    }
+
+    @Test
+    @DisplayName("지금 바로 쓰기(/instant)도 X-Client가 없으면 WEB")
+    void instantDefaultsToWeb() {
+        MvcTestResult r = mvc.post().uri("/api/reservations/instant").header("X-User-Id", "1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"roomId":1,"endAt":"2026-11-03T11:00:00+09:00","participantStudentIds":["20230002","20230003"]}""")
+                .exchange();
+
+        assertThat(r).hasStatus(201);
+        assertThat(via(1)).isEqualTo("WEB");
+    }
+
+    @Test
+    @DisplayName("같은 Idempotency-Key로 X-Client만 바꿔 다시 보내면 200, 처음 값(WEB)이 그대로 남는다")
+    void retryKeepsFirstClient() {
+        assertThat(book(1, 1, null, "k-1")).hasStatus(201);
+        assertThat(book(1, 1, "agent", "k-1")).hasStatus(200);
+
+        assertThat(jdbc.sql("SELECT count(*) FROM reservation").query(Integer.class).single()).isEqualTo(1);
+        assertThat(via(1)).isEqualTo("WEB");
+    }
+
+    @Test
+    @DisplayName("건수: 실제 로그인 토큰(Bearer JWT)으로도 관리자는 200, 학생은 403")
+    void adminByRealToken() {
+        String admin = tokens.issue(9, List.of(JwtTokens.Scopes.USER)).token();
+        String student = tokens.issue(1, List.of(JwtTokens.Scopes.USER)).token();
+
+        assertThat(mvc.get().uri("/api/reservations/stats").header("Authorization", "Bearer " + admin).exchange())
+                .hasStatus(200);
+        assertThat(mvc.get().uri("/api/reservations/stats").header("Authorization", "Bearer " + student).exchange())
+                .hasStatus(403).bodyJson().extractingPath("$.code").isEqualTo("ADMIN_ONLY");
+    }
+
+    @Test
+    @DisplayName("건수: 회원 표에 없는 사람이면 403")
+    void unknownMember() {
+        assertThat(mvc.get().uri("/api/reservations/stats").header("X-User-Id", "999").exchange())
+                .hasStatus(403).bodyJson().extractingPath("$.code").isEqualTo("ADMIN_ONLY");
+    }
+
+    @Test
+    @DisplayName("건수: 아주 먼 날짜(2000–2100년 밖)는 500이 아니라 400")
+    void farDates() {
+        assertThat(mvc.get().uri("/api/reservations/stats").param("to", "+999999999-12-31")
+                .header("X-User-Id", "9").exchange())
+                .hasStatus(400).bodyJson().extractingPath("$.message").asString().contains("2000");
+        assertThat(stats("?to=300000-01-01")).hasStatus(400);
+        assertThat(stats("?from=1999-12-31")).hasStatus(400);
+        assertThat(stats("?from=2000-01-01&to=2100-12-31")).hasStatus(200);
     }
 }
