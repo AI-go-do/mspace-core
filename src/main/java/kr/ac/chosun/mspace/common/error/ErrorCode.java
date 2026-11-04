@@ -38,6 +38,10 @@ public enum ErrorCode {
     // 퇴실 (FR-RSV-008). 이름은 영준 비서(mspace-assistant #30)와 맞춤
     RESERVATION_NOT_IN_USE(HttpStatus.CONFLICT, "입실한(사용 중) 예약만 퇴실할 수 있습니다"),
 
+    // 연장하기 (FR-RSV-105). 409 RESERVATION_EXTENSION_LIMIT은 11/3 지영·영준 합의(#44)
+    RESERVATION_EXTENSION_LIMIT(HttpStatus.CONFLICT, "연장은 1회만 할 수 있습니다"),
+    RESERVATION_EXTENSION_NOT_OPEN(HttpStatus.CONFLICT, "연장은 종료 10분 전부터 종료 전까지만 할 수 있습니다"),
+
     // 키패드 (FR-ACC-001)
     DEVICE_UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "장치 토큰이 없거나 맞지 않습니다"),
     // 내부용: 새로 뽑은 번호가 같은 방 다른 예약 번호와 겹침 → 서비스가 새 번호로 다시 한다 (응답으로 나가지 않음)

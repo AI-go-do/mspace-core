@@ -32,13 +32,23 @@ public interface ReservationCommandPort {
     Optional<KeyedReservation> findByIdempotencyKey(long ownerId, String idempotencyKey);
 
     /**
-     * @param idempotencyKey 멱등 키. 없으면 null
-     * @param instant        즉시 시작이면 true (is_instant: 노쇼 마감이 시작 + 10분이 되고, 길이 규칙이 다르다)
-     * @param createdVia     어디서 만들었나 (created_via)
+     * @param idempotencyKey  멱등 키. 없으면 null
+     * @param instant         즉시 시작이면 true (is_instant: 노쇼 마감이 시작 + 10분이 되고, 길이 규칙이 다르다)
+     * @param createdVia      어디서 만들었나 (created_via)
+     * @param inUse           true면 처음부터 IN_USE(입실 시각 = 지금)로 넣는다. 연장하기만 쓴다
+     * @param continuedFromId 연장이면 원래 예약 id, 아니면 null
      */
     record NewReservation(int roomId, long ownerId, Instant startAt, Instant endAt,
                           String accessCode, List<Long> participantIds, String idempotencyKey, boolean instant,
-                          CreatedVia createdVia) {
+                          CreatedVia createdVia, boolean inUse, Long continuedFromId) {
+
+        /** 미리 예약·즉시 시작 */
+        public NewReservation(int roomId, long ownerId, Instant startAt, Instant endAt,
+                              String accessCode, List<Long> participantIds, String idempotencyKey, boolean instant,
+                              CreatedVia createdVia) {
+            this(roomId, ownerId, startAt, endAt, accessCode, participantIds, idempotencyKey, instant, createdVia,
+                    false, null);
+        }
 
         /** 미리 예약 */
         public NewReservation(int roomId, long ownerId, Instant startAt, Instant endAt,

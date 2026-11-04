@@ -50,6 +50,11 @@ mspace:
     slot-minutes: 30
     max-minutes: 120         # 1회 최대 2시간
     lock-timeout: 3s         # 예약 저장 때 잠금(advisory lock) 최대 대기. 넘으면 다시 하고, 3번 다 넘으면 503
+    extension:               # 연장하기 (FR-RSV-105)
+      max-count: 1           # 이어진 사용 한 번에 연장 1회
+      open-before-minutes: 10  # 종료 10분 전부터 종료 전까지
+      max-minutes: 120       # 한 번에 늘리는 시간은 원래 종료부터 30분 단위, 최대 2시간
+      chain-gap-minutes: 30  # 직전 예약이 끝난 뒤 30분 안에 시작하면 이어진 사용으로 본다
     sweep:
       enabled: ${MSPACE_SWEEP_ENABLED:true}   # 노쇼·자동 퇴실 정리 (FR-RSV-101, 102)
       interval: PT1M         # 1분마다. 노쇼·자동 퇴실은 최대 이만큼 늦게 반영된다
