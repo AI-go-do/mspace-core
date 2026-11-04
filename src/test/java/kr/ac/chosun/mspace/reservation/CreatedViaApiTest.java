@@ -73,7 +73,7 @@ class CreatedViaApiTest {
                         {"roomId":%d,"startAt":"2026-11-03T14:00:00+09:00","endAt":"2026-11-03T16:00:00+09:00",
                          "participantStudentIds":["2023000%d","2023000%d"]}""".formatted(room, owner + 1, owner + 2));
         if (client != null) {
-            req = req.header("X-Client", client);
+            req = req.header("X-Created-Via", client);
         }
         if (idempotencyKey != null) {
             req = req.header("Idempotency-Key", idempotencyKey);
@@ -91,10 +91,10 @@ class CreatedViaApiTest {
     }
 
     @Test
-    @DisplayName("X-Client 없이(웹 화면) 만들면 WEB, agent를 붙이면 AGENT로 저장된다")
+    @DisplayName("X-Created-Via 없이(웹 화면) 만들면 WEB, AGENT를 붙이면 AGENT로 저장된다")
     void recordsWhereItCameFrom() {
         assertThat(book(1, 1, null)).hasStatus(201);
-        assertThat(book(4, 2, "agent")).hasStatus(201);
+        assertThat(book(4, 2, "AGENT")).hasStatus(201);
         assertThat(book(7, 3, " Agent ")).hasStatus(201);   // 대소문자·앞뒤 공백 무시
 
         assertThat(via(1)).isEqualTo("WEB");
@@ -103,11 +103,11 @@ class CreatedViaApiTest {
     }
 
     @Test
-    @DisplayName("지금 바로 쓰기(/instant)도 X-Client: agent면 AGENT")
+    @DisplayName("지금 바로 쓰기(/instant)도 X-Created-Via: AGENT면 AGENT")
     void instantFromAgent() {
         // 지금 10:10, 끝 11:00
         MvcTestResult r = mvc.post().uri("/api/reservations/instant").header("X-User-Id", "1")
-                .header("X-Client", "agent")
+                .header("X-Created-Via", "AGENT")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                         {"roomId":1,"endAt":"2026-11-03T11:00:00+09:00","participantStudentIds":["20230002","20230003"]}""")
@@ -118,7 +118,7 @@ class CreatedViaApiTest {
     }
 
     @Test
-    @DisplayName("X-Client가 web·agent가 아니면(오타) 400, 예약은 안 생긴다 (비서 숫자가 WEB으로 잘못 세지지 않게)")
+    @DisplayName("X-Created-Via가 WEB·AGENT가 아니면(오타) 400, 예약은 안 생긴다 (비서 숫자가 WEB으로 잘못 세지지 않게)")
     void unknownClientRejected() {
         assertThat(book(1, 1, "agnet")).hasStatus(400).bodyJson()
                 .extractingPath("$.code").isEqualTo("INVALID_REQUEST");
@@ -129,8 +129,8 @@ class CreatedViaApiTest {
     @DisplayName("건수: 기간 없이 부르면 전체, WEB·AGENT를 따로 센다 (노쇼·취소된 예약도 만든 건수에 들어간다)")
     void countsAll() {
         book(1, 1, null);
-        book(4, 2, "agent");
-        book(7, 3, "agent");
+        book(4, 2, "AGENT");
+        book(7, 3, "AGENT");
         jdbc.sql("UPDATE reservation SET status = 'NO_SHOW' WHERE id = 3").update();
 
         assertThat(stats("")).hasStatus(200).bodyJson().satisfies(json -> {
@@ -145,8 +145,8 @@ class CreatedViaApiTest {
     @DisplayName("건수: from·to는 서울 날짜로 양 끝 포함. 범위 밖에 만든 예약은 빠진다")
     void countsWithinDates() {
         book(1, 1, null);
-        book(4, 2, "agent");
-        book(7, 3, "agent");
+        book(4, 2, "AGENT");
+        book(7, 3, "AGENT");
         // 1번: 11/1 00:00 서울(범위 첫 순간), 2번: 11/2 23:59 서울(범위 마지막 날), 3번: 11/3 00:00 서울(범위 밖)
         jdbc.sql("UPDATE reservation SET created_at = '2026-11-01T00:00:00+09:00' WHERE id = 1").update();
         jdbc.sql("UPDATE reservation SET created_at = '2026-11-02T23:59:59+09:00' WHERE id = 2").update();
@@ -183,7 +183,7 @@ class CreatedViaApiTest {
     }
 
     @Test
-    @DisplayName("지금 바로 쓰기(/instant)도 X-Client가 없으면 WEB")
+    @DisplayName("지금 바로 쓰기(/instant)도 X-Created-Via가 없으면 WEB")
     void instantDefaultsToWeb() {
         MvcTestResult r = mvc.post().uri("/api/reservations/instant").header("X-User-Id", "1")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -196,10 +196,10 @@ class CreatedViaApiTest {
     }
 
     @Test
-    @DisplayName("같은 Idempotency-Key로 X-Client만 바꿔 다시 보내면 200, 처음 값(WEB)이 그대로 남는다")
+    @DisplayName("같은 Idempotency-Key로 X-Created-Via만 바꿔 다시 보내면 200, 처음 값(WEB)이 그대로 남는다")
     void retryKeepsFirstClient() {
         assertThat(book(1, 1, null, "k-1")).hasStatus(201);
-        assertThat(book(1, 1, "agent", "k-1")).hasStatus(200);
+        assertThat(book(1, 1, "AGENT", "k-1")).hasStatus(200);
 
         assertThat(jdbc.sql("SELECT count(*) FROM reservation").query(Integer.class).single()).isEqualTo(1);
         assertThat(via(1)).isEqualTo("WEB");

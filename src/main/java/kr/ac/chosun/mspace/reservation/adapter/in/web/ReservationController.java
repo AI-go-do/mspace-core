@@ -59,7 +59,7 @@ class ReservationController {
     ResponseEntity<CreateReservationResponse> create(LoginUser user,
                                                      @RequestHeader(name = "Idempotency-Key", required = false)
                                                      String idempotencyKey,
-                                                     @RequestHeader(name = CLIENT_HEADER, required = false) String client,
+                                                     @RequestHeader(name = CREATED_VIA_HEADER, required = false) String client,
                                                      @RequestBody CreateReservationRequest request) {
         Created created = service.create(user.id(), request.toCommand(checkKey(idempotencyKey), via(client)));
         CreateReservationResponse body = CreateReservationResponse.from(created);
@@ -79,7 +79,7 @@ class ReservationController {
     ResponseEntity<CreateReservationResponse> startNow(LoginUser user,
                                                        @RequestHeader(name = "Idempotency-Key", required = false)
                                                        String idempotencyKey,
-                                                       @RequestHeader(name = CLIENT_HEADER, required = false) String client,
+                                                       @RequestHeader(name = CREATED_VIA_HEADER, required = false) String client,
                                                        @RequestBody StartNowRequest request) {
         Created created = service.startNow(user.id(), request.toCommand(checkKey(idempotencyKey), via(client)));
         CreateReservationResponse body = CreateReservationResponse.from(created);
@@ -90,16 +90,16 @@ class ReservationController {
     }
 
     /**
-     * 어디서 보낸 요청인지 알리는 헤더. 비서(mspace-assistant)는 "agent"를 붙이고, 웹 화면은 안 붙인다(= WEB).
+     * 어디서 보낸 요청인지 알리는 헤더. 비서(mspace-assistant)는 "AGENT"를 붙이고, 웹 화면은 안 붙인다(= WEB). 이름은 DB 칸 created_via와 맞췄다(영준 #43, 11/4 지영 결정).
      * WEB/AGENT 예약 건수를 따로 세는 통계용 표시라, 권한 검사에는 쓰지 않는다 (11/3 영준 요청)
      */
-    static final String CLIENT_HEADER = "X-Client";
+    static final String CREATED_VIA_HEADER = "X-Created-Via";
 
-    /** X-Client 값을 고른다. "web"·"agent"(대소문자 무시) 말고 다른 값이면 400: 오타가 WEB으로 잘못 세지지 않게 */
+    /** X-Created-Via 값을 고른다. "WEB"·"AGENT"(대소문자 무시) 말고 다른 값이면 400: 오타가 WEB으로 잘못 세지지 않게 */
     private static CreatedVia via(String client) {
-        CreatedVia via = CreatedVia.fromClientHeader(client);
+        CreatedVia via = CreatedVia.fromHeader(client);
         if (via == null) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST, "X-Client는 web 또는 agent여야 합니다");
+            throw new BusinessException(ErrorCode.INVALID_REQUEST, "X-Created-Via는 WEB 또는 AGENT여야 합니다");
         }
         return via;
     }
