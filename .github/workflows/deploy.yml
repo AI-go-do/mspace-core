@@ -114,7 +114,7 @@ jobs:
           # 되돌릴 자리는 'compose 설정 검사를 통과한 마지막 커밋'. 지난 배포가 검사 전에 끊겼으면 HEAD가 검사 안 된 커밋일 수 있어서
           GOOD="$HOME/.mspace-infra-good"
           # GOOD는 dev·prod가 같이 쓰므로, 있는 .env.* 전부로 compose 설정을 검사한다
-          check() { for E in dev prod; do [ -f ".env.$E" ] || continue; docker compose -p "mspace-$E" --env-file ".env.$E" config -q || return 1; done; }
+          check() { [ -f ".env.$T" ] || { echo ".env.$T 파일이 없음"; return 1; }; for E in dev prod; do [ -f ".env.$E" ] || continue; docker compose -p "mspace-$E" --env-file ".env.$E" config -q || return 1; done; }
           C="docker compose -p mspace-$T --env-file .env.$T"
           # 기록이 없으면(첫 배포) pull 전에 지금 설정을 검사해 그 커밋을 기록한다. 지금 설정부터 틀리면 pull 없이 멈춘다
           if [ ! -s "$GOOD" ]; then
