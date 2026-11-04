@@ -110,7 +110,7 @@ AI 비서·MCP(v0.3) ─▶ core API만 호출
 - `main`, `develop` 직접 push 금지
 - 커밋: `feat: 예약 생성 API 추가` (feat, fix, refactor, test, docs, chore) + `Refs #12`
 - PR: 제목은 커밋 형식, 본문에 요구사항 ID(`FR-RSV-001`)와 `Closes #12`. 400줄 안. **매일 15시까지**
-- 합치기: 빌드·테스트 통과 + 팀원 1명 승인 → Squash merge. `main`은 새 코드 커버리지 80% 이상
+- 합치기: 빌드·테스트 통과 + 팀원 1명 승인 → `develop`은 Squash merge, `main`은 Merge commit([컨벤션](conventions.md)). `main`은 새 코드 커버리지 80% 이상
 - 리뷰 댓글 머리말: `[필수]` `[제안]` `[질문]`
 - 이슈 제목: `[FR-RSV-001] 예약 생성`, 라벨은 종류 + 버전(`v0.1`)
 
@@ -135,7 +135,7 @@ AI 비서·MCP(v0.3) ─▶ core API만 호출
 | 시간 | ISO-8601 `+09:00`. 날짜 계산은 `Asia/Seoul`, DB는 `timestamptz` |
 | 오류 | `{ "code": "...", "message": "..." }`. 코드는 `RESERVATION_OVERLAP`처럼 |
 | 상태 코드 | 400 입력 오류 · 401 로그인 안 함 · 403 권한 없음 · 404 없음 · 409 충돌 |
-| API 문서 | springdoc OpenAPI 자동 생성. 프론트 타입과 MCP 도구가 이것을 근거로 한다 |
+| API 문서 | springdoc OpenAPI 자동 생성(아직 core에 없음, 그 전까지는 [API 명세](api/README.md)가 기준). 프론트 타입과 MCP 도구가 이것을 근거로 한다 |
 | DB | snake_case, `…_at`, `is_…`, 상태는 대문자 문자열 + CHECK. 테이블은 `schema-v2.sql` 기준 |
 | 테스트 | `@DisplayName` 한국어, given/when/then, 수용 기준 1개 = 테스트 1개 이상 |
 
