@@ -96,6 +96,14 @@ curl -X POST localhost:8080/api/reports/7/judge -H 'X-User-Id: 9' -H 'Content-Ty
   -d '{"verdict":"FALSE"}'                                                             # → 200
 ```
 
+### 이용 규칙 (FR-WEB-003)
+
+`GET /api/rules`는 로그인 없이 볼 수 있어요. 예약 규칙 숫자(7일·30분·2시간·노쇼 15/10분·연장)는 실제 검사에 쓰는 설정값을 그대로 내려 줘요. 이용 수칙 8개와 체크인·퇴실 때 보여 줄 한 줄 안내는 `mspace.rules`(docs 요구사항 3.1 원본)에 있어요. 화면과 비서(`usage_rules`)가 같은 내용을 써요. 노쇼 분은 DB 트리거와 같아야 해서 `RulesApiTest`가 둘을 비교해요.
+
+```bash
+curl localhost:8080/api/rules   # → {"reservation":{...},"conduct":[...],"reminders":{...}}
+```
+
 ### 키패드 (장치)
 
 키패드는 사람 로그인 대신 장치 토큰으로 불러요. `.env`의 `MSPACE_DEVICE_TOKEN`이 비어 있으면 키패드 요청은 모두 401이에요. 토큰 값은 수연님 키패드 중계와 개인 메시지로만 주고받아요.
