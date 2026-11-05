@@ -62,7 +62,7 @@ class KeypadEntryServiceTest {
         }
 
         @Override
-        public boolean checkoutIfInUse(long reservationId, long ownerId) {
+        public boolean checkoutIfInUse(long reservationId, long ownerId, Instant now) {
             return false;
         }
     }

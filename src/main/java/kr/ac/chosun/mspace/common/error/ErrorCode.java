@@ -42,6 +42,10 @@ public enum ErrorCode {
     RESERVATION_EXTENSION_LIMIT(HttpStatus.CONFLICT, "연장은 1회만 할 수 있습니다"),
     RESERVATION_EXTENSION_NOT_OPEN(HttpStatus.CONFLICT, "연장은 종료 10분 전부터 종료 전까지만 할 수 있습니다"),
 
+    // 신고 (FR-RPT-101)
+    REPORT_NOISE_NOT_CONFIRMED(HttpStatus.BAD_REQUEST, "소음 신고는 \"정말 소란인가요?\"를 체크해야 보낼 수 있습니다"),
+    REPORT_NOT_ALLOWED(HttpStatus.FORBIDDEN, "지금 그 방이나 옆 방을 사용 중인 예약자만 신고할 수 있습니다"),
+
     // 키패드 (FR-ACC-001)
     DEVICE_UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "장치 토큰이 없거나 맞지 않습니다"),
     // 내부용: 새로 뽑은 번호가 같은 방 다른 예약 번호와 겹침 → 서비스가 새 번호로 다시 한다 (응답으로 나가지 않음)
