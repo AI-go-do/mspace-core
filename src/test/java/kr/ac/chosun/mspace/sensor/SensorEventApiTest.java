@@ -37,7 +37,8 @@ import org.springframework.test.web.servlet.assertj.MvcTestResult;
  * 기본 예약: 1번 방 10:30–12:30, 대표자 1번 + 참여자 2·3번, 10:30 입실. 시계는 2030년 (다른 예약 테스트와 같은 이유).
  * 센서 신호는 테스트가 시계를 옮기며 직접 보내고, 정리·알림도 직접 부른다 (1분 스케줄러는 테스트에서 꺼 둠).
  */
-@SpringBootTest(properties = {"mspace.auth.dev-header=true", "mspace.access.device-token=test-device-token"})
+@SpringBootTest(properties = {"mspace.auth.dev-header=true", "mspace.access.device-token=test-device-token",
+        "mspace.sensor.away.still-here-enabled=true"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, SensorEventApiTest.TestBeans.class})
 class SensorEventApiTest {
@@ -388,6 +389,67 @@ class SensorEventApiTest {
             assertThat(status(id)).isEqualTo("AWAY_RELEASED");
         }
         assertThat(suspensions()).isEqualTo(1);
+    }
+
+    MvcTestResult stillHere(long id, long userId) {
+        return mvc.post().uri("/api/reservations/" + id + "/still-here").header("X-User-Id", String.valueOf(userId)).exchange();
+    }
+
+    @Test
+    @DisplayName("아직 있어요: 누르면 타이머가 누른 시각부터 다시. 그 뒤엔 10분 비면 알림 없이 바로 퇴실 (11/5 지영)")
+    void stillHereThenReleaseAfterTen() {
+        long id = bookAndCheckIn("10:30", "12:30");
+        occupancy("10:35", false);
+        heartbeat("10:36", "10:45", false);
+        reminders.sendDue();
+        assertThat(kindsSentTo(1)).containsExactly("AWAY_SOON");
+        assertThat(jdbc.sql("SELECT body FROM notification WHERE user_id = 1").query(String.class).single())
+                .contains("아직 있어요");
+
+        at("10:47");
+        assertThat(stillHere(id, 1)).hasStatusOk().bodyJson().extractingPath("$.status").isEqualTo("IN_USE");
+        heartbeat("10:47", "10:56", false);
+        reminders.sendDue();
+        sweeps.sweep();
+        assertThat(status(id)).isEqualTo("IN_USE");   // 10:50(원래 15분)이 지나도 그대로, 10:47부터 9분
+
+        heartbeat("10:57", "10:57", false);
+        reminders.sendDue();
+        sweeps.sweep();
+        assertThat(status(id)).isEqualTo("AWAY_RELEASED");   // 누른 뒤 10분
+        assertThat(kindsSentTo(1)).containsExactly("AWAY_SOON");   // 두 번째 알림 없음
+        assertThat(jdbc.sql("SELECT checked_out_at FROM reservation WHERE id = :id").param("id", id)
+                .query(Instant.class).single()).isEqualTo(OffsetDateTime.parse(iso("10:57")).toInstant());
+    }
+
+    @Test
+    @DisplayName("아직 있어요 뒤에 돌아왔다 다시 나가면 그때부터 10분")
+    void stillHereThenBackThenAway() {
+        long id = bookAndCheckIn("10:30", "12:30");
+        at("10:40");
+        assertThat(stillHere(id, 1)).hasStatusOk();
+        occupancy("10:41", true);
+        occupancy("10:50", false);
+        heartbeat("10:51", "10:59", false);
+        sweeps.sweep();
+        assertThat(status(id)).isEqualTo("IN_USE");   // 10:50부터 9분
+        heartbeat("11:00", "11:00", false);
+        sweeps.sweep();
+        assertThat(status(id)).isEqualTo("AWAY_RELEASED");
+    }
+
+    @Test
+    @DisplayName("아직 있어요: 예약당 1번(두 번째 409), 대표자만(참여자 403·남 404), 사용 중일 때만(409)")
+    void stillHereRules() {
+        long id = bookAndCheckIn("10:30", "12:30");
+        at("10:40");
+        assertThat(stillHere(id, 2)).hasStatus(403).bodyJson().extractingPath("$.code").isEqualTo("NOT_RESERVATION_OWNER");
+        assertThat(stillHere(id, 4)).hasStatus(404).bodyJson().extractingPath("$.code").isEqualTo("RESERVATION_NOT_FOUND");
+        assertThat(stillHere(id, 1)).hasStatusOk();
+        assertThat(stillHere(id, 1)).hasStatus(409).bodyJson().extractingPath("$.code").isEqualTo("STILL_HERE_ALREADY_USED");
+
+        assertThat(mvc.post().uri("/api/reservations/" + id + "/checkout").header("X-User-Id", "1").exchange()).hasStatusOk();
+        assertThat(stillHere(id, 1)).hasStatus(409).bodyJson().extractingPath("$.code").isEqualTo("RESERVATION_NOT_IN_USE");
     }
 
     int suspensions() {

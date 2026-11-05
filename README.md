@@ -155,7 +155,7 @@ curl -X POST localhost:8080/api/access/verify -H 'Authorization: Bearer <장치 
 | `END_SOON` | 사용 중, 끝 10분 전. 다음 칸이 비면 "연장할 수 있어요" | 전원 | 종료 10분 전입니다 |
 | `NO_SHOW_SOON` | 입실 안 했고 입실 마감 5분 전 | 대표자만 | 노쇼 5분 전입니다 |
 
-- 예약·사람·종류별 한 번만 (`notification_log` PK + `ON CONFLICT DO NOTHING`). 동시에 10번 돌아도 3건이에요.
+- 예약·사람·종류별 한 번만 (`notification_log` PK + `ON CONFLICT DO NOTHING`). 동시에 10번 돌아도 받는 사람마다 종류별로 한 번만 생겨요(건수는 받는 사람 수에 따라 달라요. 노쇼 5분 전은 대표자만).
 - 알림은 앱 알림함(V10 `notification`)에 저장돼요. `GET /api/notifications/me`로 최근 50개를 봐요.
 - 메일은 재웅님 담당이에요. `NotificationChannel`을 구현한 빈을 등록하면 알림함 저장이 커밋된 뒤 불려요. 메일이 실패해도 알림함에는 남고, 다시 보내지는 않아요.
 - 분(minute) 값은 `mspace.notification.reminder`에서 바꿔요. 끄려면 `MSPACE_REMINDER_ENABLED=false`.
@@ -183,7 +183,26 @@ curl -X POST localhost:8080/api/sensor-events -H 'Authorization: Bearer <장치 
 
 - 숫자는 `mspace.sensor`에 있어요.
 - 장치·방마다 토큰을 나누는 것(`403 DEVICE_ROOM_MISMATCH`)은 재웅님 답을 기다려요. 지금은 키패드와 같은 토큰 하나예요.
-- 시연용 "아직 있어요" 버튼(FR-NTF-103)은 아직 없어요.
+- "아직 있어요"(FR-DEV-103): `POST /api/reservations/{id}/still-here`. 대표자, 사용 중, **예약당 1번**(11/5 지영 "docs대로", 실제 서비스에도 넣음). 누르면 자리 비움 시계를 누른 시각부터 다시 재고, **누른 뒤에는 10분 비면 알림 없이 바로 퇴실**해요(11/5 지영, `release-after-still-here-minutes`). 돌아왔다 다시 나가면 그때부터 10분이에요. 기본으로 켜져 있고 `MSPACE_STILL_HERE_ENABLED=false`로 끌 수 있어요(끄면 404 `STILL_HERE_DISABLED`). 두 번째는 409 `STILL_HERE_ALREADY_USED`.
+
+### 방 현황 (FR-DEV-102)
+
+홈 화면 "지금 비어 있는 방 N개 중 M개"와 비서가 쓰는 API예요. 로그인 없이 볼 수 있고, 누가 예약했는지는 내려 주지 않아요.
+
+```bash
+curl localhost:8080/api/rooms/status
+# → {"now":"…+09:00","availableCount":3,"roomCount":5,"rooms":[{"roomId":1,"roomName":"1번 방","minPeople":3,"maxPeople":5,
+#     "status":"IN_USE","currentStartAt":"…","currentEndAt":"…","nextStartAt":null,"presence":"OCCUPIED"}, …]}
+```
+
+| 값 | 뜻 |
+|---|---|
+| `status` | 예약 기준. `AVAILABLE` 지금 걸린 예약 없음 · `RESERVED` 예약 시간인데 입실 전 · `IN_USE` 사용 중. `availableCount`는 `AVAILABLE` 수 |
+| `currentEndAt` | 지금 예약이 끝나는(방이 비는) 시각. 없으면 `null` |
+| `nextStartAt` | 지금 이후 가장 가까운 예약 시작. 없으면 `null` |
+| `presence` | 센서가 본 재실(참고). `OCCUPIED` · `EMPTY` · `UNKNOWN`(1분 넘게 신호 없음이거나 센서 없음) |
+
+- "비었는지"는 예약 기준이에요. 예약을 잡을 수 있는지와 같은 기준이라서요. 센서는 예약 없이 사람이 있거나 사용 중인데 비어 있는 걸 보여 주는 참고값이에요.
 
 ## 폴더 구조
 

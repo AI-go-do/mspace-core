@@ -67,14 +67,16 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
     @Transactional
     public int releaseAway(Instant now) {
         // 자리 비움 (FR-DEV-103): 사용 중인데 방이 비어 있음이 15분. 타이머 시작 = 비어 있음이 된 관측 시각,
-        // 끊겼다 돌아온 시각(trusted_from), 체크인 시각 중 늦은 것 (알림 AWAY_SOON과 같은 식)
+        // 끊겼다 돌아온 시각(trusted_from), 체크인 시각, "아직 있어요" 누른 시각 중 늦은 것.
+        // 기준: 버튼 안 썼으면 15분(10분에 AWAY_SOON 알림), 썼으면 10분에 알림 없이 바로 (11/5 지영)
         // 센서가 1분 넘게 조용하면(끊김) "있음"으로 보고 풀지 않는다 (FR-DEV-101 "틀리면 있음 쪽으로")
-        // 끝 시각이 된 예약은 자동 퇴실(autoCheckout)이 맡는다. 퇴실 시각 = 15분이 찬 시각 (정리가 늦게 돌아도 같게)
+        // 끝 시각이 된 예약은 자동 퇴실(autoCheckout)이 맡는다. 퇴실 시각 = 기준 시간이 찬 시각 (정리가 늦게 돌아도 같게)
         // 같은 트랜잭션에서 벌칙도 센다: 자리 비움 3번 = 노쇼 1번
         List<Long> owners = withLockTimeout(() -> jdbc.sql("""
                 UPDATE reservation r
                 SET status = 'AWAY_RELEASED',
-                    checked_out_at = greatest(p.changed_at, p.trusted_from, r.checked_in_at) + make_interval(mins => :release)
+                    checked_out_at = greatest(p.changed_at, p.trusted_from, r.checked_in_at, r.still_here_at)
+                                     + make_interval(mins => CASE WHEN r.still_here_at IS NULL THEN :release ELSE :releaseAfterStillHere END)
                 FROM room_presence p
                 WHERE r.id IN (SELECT id FROM reservation
                                WHERE status = 'IN_USE' AND end_at > :now
@@ -83,13 +85,14 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
                   AND p.room_id = r.room_id
                   AND NOT p.occupied
                   AND p.last_received_at >= :aliveAfter
-                  AND greatest(p.changed_at, p.trusted_from, r.checked_in_at) <= :emptySince
+                  AND greatest(p.changed_at, p.trusted_from, r.checked_in_at, r.still_here_at)
+                      + make_interval(mins => CASE WHEN r.still_here_at IS NULL THEN :release ELSE :releaseAfterStillHere END) <= :now
                 RETURNING r.owner_id
                 """)
                 .param("now", Timestamp.from(now))
                 .param("release", sensor.away().releaseAfterMinutes())
                 .param("aliveAfter", Timestamp.from(now.minusSeconds(sensor.offlineAfterSeconds())))
-                .param("emptySince", Timestamp.from(now.minus(Duration.ofMinutes(sensor.away().releaseAfterMinutes()))))
+                .param("releaseAfterStillHere", sensor.away().releaseAfterStillHereMinutes())
                 .query(Long.class).list());
         if (!owners.isEmpty()) {
             suspendRepeatedNoShows(owners, now);
@@ -103,7 +106,11 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
      * 바꾼 UPDATE와 같은 트랜잭션이라, 노쇼만 남고 정지가 빠지는 일은 없다 (둘 다 되거나 둘 다 안 됨).
      * <ul>
      *   <li>노쇼 시각 = 입실 마감과 끝 중 이른 쪽, 자리 비움 시각 = 퇴실 시각 (정리가 늦게 돌아도 기록 기준은 같게)</li>
+     *   <li>30일은 정리가 돈 시각이 아니라 그 사람의 가장 최근 기록 시각부터 거꾸로 센다.
+     *       정리가 오래 멈췄다가 돌아도 "기록끼리 30일 안"이면 정지가 걸린다</li>
      *   <li>지난 정지가 끝난 뒤의 기록만 센다 → 정지가 끝나면 처음부터 다시</li>
+     *   <li>두 정리가 같은 사람의 기록을 하나씩 나눠 바꾸는 일은 없다: 대표자는 끝나지 않은 예약(BOOKED·IN_USE)이
+     *       동시에 1건뿐이라(one_active_per_owner) 한 사람에게서 바뀌는 줄은 한 번에 1줄이고, 그 전 기록은 이미 커밋돼 보인다</li>
      *   <li>이미 정지 중이면 새로 걸지 않는다(NOT EXISTS). 두 정리가 동시에 돌아 둘 다 통과해도
      *       one_suspension_at_a_time(기간 겹침 금지)이 한 줄만 받고 나머지는 ON CONFLICT DO NOTHING</li>
      * </ul>
@@ -120,7 +127,11 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
                                            ELSE r.checked_out_at END AS happened_at
                       FROM reservation r
                       WHERE r.owner_id IN (:owners) AND r.status IN ('NO_SHOW', 'AWAY_RELEASED')) h
-                WHERE h.happened_at > :windowStart
+                WHERE h.happened_at > (SELECT max(CASE r2.status WHEN 'NO_SHOW' THEN least(r2.checkin_deadline, r2.end_at)
+                                                                ELSE r2.checked_out_at END)
+                                       FROM reservation r2
+                                       WHERE r2.owner_id = h.owner_id AND r2.status IN ('NO_SHOW', 'AWAY_RELEASED'))
+                                      - make_interval(days => :windowDays)
                   AND h.happened_at >= coalesce(
                         (SELECT max(s.ends_at) FROM user_suspension s WHERE s.user_id = h.owner_id), '-infinity'::timestamptz)
                   AND NOT EXISTS (SELECT 1 FROM user_suspension s
@@ -132,7 +143,7 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
                 .param("now", at)
                 .param("owners", owners.stream().distinct().toList())
                 .param("until", Timestamp.from(now.plus(Duration.ofDays(penalty.suspendDays()))))
-                .param("windowStart", Timestamp.from(now.minus(Duration.ofDays(penalty.windowDays()))))
+                .param("windowDays", penalty.windowDays())
                 .param("perNoShow", sensor.away().perNoShow())
                 .param("points", penalty.count() * sensor.away().perNoShow())
                 .update();
