@@ -143,6 +143,21 @@ curl -X POST localhost:8080/api/access/verify -H 'Authorization: Bearer <장치 
 - 정리가 동시에 돌아도 정지는 한 줄만 생겨요(같은 사람 기간 겹침 금지 `one_suspension_at_a_time` + `ON CONFLICT DO NOTHING`).
 - 숫자는 `mspace.reservation.no-show-penalty`(2번·30일·14일)에 있어요. 자리 비움 3번 = 노쇼 1번(FR-DEV-103)은 자리 비움 기능과 같이 붙여요.
 
+### 예약 알림 3종 (FR-NTF-101, 102, 104)
+
+1분마다 시각을 보고 알림을 만들어요. 문구에는 방 이름·시각만 넣어요(이름·학번 없음).
+
+| 종류 | 언제 | 누구에게 | 제목 |
+|---|---|---|---|
+| `START_SOON` | 미리 예약 시작 10분 전 (지금 바로 쓰기는 안 보냄) | 대표자·참여자 전원 | 입실 10분 전입니다 |
+| `END_SOON` | 사용 중, 끝 10분 전. 다음 칸이 비면 "연장할 수 있어요" | 전원 | 종료 10분 전입니다 |
+| `NO_SHOW_SOON` | 입실 안 했고 입실 마감 5분 전 | 대표자만 | 노쇼 5분 전입니다 |
+
+- 예약·사람·종류별 한 번만 (`notification_log` PK + `ON CONFLICT DO NOTHING`). 동시에 10번 돌아도 3건이에요.
+- 알림은 앱 알림함(V10 `notification`)에 저장돼요. `GET /api/notifications/me`로 최근 50개를 봐요.
+- 메일은 재웅님 담당이에요. `NotificationChannel`을 구현한 빈을 등록하면 알림함 저장이 커밋된 뒤 불려요. 메일이 실패해도 알림함에는 남고, 다시 보내지는 않아요.
+- 분(minute) 값은 `mspace.notification.reminder`에서 바꿔요. 끄려면 `MSPACE_REMINDER_ENABLED=false`.
+
 ## 폴더 구조
 
 기능별로 나누고, 기능 안은 포트·어댑터로 나눠요 (팀 컨벤션 3절).
