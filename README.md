@@ -3,8 +3,15 @@
 M-SPACE 예약 시스템의 백엔드(core)예요. 조선대 IT융합대학 M-SPACE 스터디룸의 **예약, 출입, 회원** API를 열고, 겹침 금지·대표자 1건 같은 예약 규칙을 DB 제약으로 지켜요.
 
 - 학생 폰(front)과 문 앞 키패드, AI 비서가 모두 이 서버의 API만 불러요. 권한 판단도 여기서만 해요.
-- 요구사항: [요구사항 명세 v0.4](https://github.com/AI-go-do/docs/blob/main/requirements/requirements.md)
+- **규칙·API의 기준은 [AI-go-do/docs](https://github.com/AI-go-do/docs) 저장소예요.** 이 README나 코드 주석이 docs와 다르면 docs를 따르고, 다른 곳은 고쳐요.
+- 요구사항: [요구사항 명세](https://github.com/AI-go-do/docs/blob/main/requirements/requirements.md) · API: [API 명세](https://github.com/AI-go-do/docs/blob/main/api/README.md)
 - 팀 규칙: [팀 컨벤션](https://github.com/AI-go-do/docs/blob/main/conventions.md) · [인프라 · CI/CD](https://github.com/AI-go-do/docs/blob/main/infra/infra-cicd.md) · [팀 공통 맥락](TEAM.md)
+
+## 문서
+
+- [결정 기록](docs/결정.md): 왜 이렇게 했나 (A vs B → 결정)
+- [트러블슈팅](docs/트러블슈팅.md): 막힌 것, 원인, 해결, 결과 숫자
+- API·요구사항은 팀 문서 [AI-go-do/docs](https://github.com/AI-go-do/docs)가 기준이에요
 
 ## 기술 스택
 

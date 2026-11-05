@@ -57,9 +57,17 @@ public class RoomAvailabilityService {
                 boolean taken = overlaps(booked, room.id(), s.toInstant(), e.toInstant());
                 slots.add(new Slot(s, e, !past && !taken));
             }
-            rooms.add(new RoomSlots(room.id(), room.name(), room.minPeople(), room.maxPeople(), slots));
+            // 지금 시각이 든 칸은 지난 칸이라 available=false로만 나와서 예약 여부를 알 수 없다 → 따로 알려 준다
+            boolean occupiedNow = date.equals(today) && occupiedAt(booked, room.id(), now);
+            rooms.add(new RoomSlots(room.id(), room.name(), room.minPeople(), room.maxPeople(), occupiedNow, slots));
         }
         return new DayAvailability(date, policy.slotMinutes(), rooms);
+    }
+
+    /** 이 시각에 이 방의 끝나지 않은 예약이 있는지. 반열린 구간 [시작, 끝) 기준 */
+    private static boolean occupiedAt(List<BookedTime> booked, int roomId, Instant at) {
+        return booked.stream().anyMatch(b -> b.roomId() == roomId
+                && !at.isBefore(b.startAt()) && at.isBefore(b.endAt()));
     }
 
     /** 반열린 구간 [시작, 끝)끼리 겹치는지. DB의 tstzrange && 와 같은 기준 */
@@ -71,7 +79,9 @@ public class RoomAvailabilityService {
     public record DayAvailability(LocalDate date, int slotMinutes, List<RoomSlots> rooms) {
     }
 
-    public record RoomSlots(int roomId, String roomName, int minPeople, int maxPeople, List<Slot> slots) {
+    /** @param occupiedNow 지금 이 방에 끝나지 않은 예약이 있는지. 오늘이 아닌 날짜면 false */
+    public record RoomSlots(int roomId, String roomName, int minPeople, int maxPeople, boolean occupiedNow,
+                            List<Slot> slots) {
     }
 
     public record Slot(ZonedDateTime startAt, ZonedDateTime endAt, boolean available) {

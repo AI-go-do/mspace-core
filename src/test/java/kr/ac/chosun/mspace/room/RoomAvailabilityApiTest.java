@@ -53,12 +53,17 @@ class RoomAvailabilityApiTest {
 
     /** 테스트용 예약 1건. 인원 확인 트리거는 커밋 때 도는데 테스트는 롤백하므로 참여자는 넣지 않는다 */
     void reserve(int roomId, String start, String end, String status) {
+        reserve(1, roomId, start, end, status);
+    }
+
+    /** 대표자를 정해 넣는다. 끝나지 않은 예약은 대표자당 1건이라(one_active_per_owner) 여러 건이면 대표자를 나눈다 */
+    void reserve(long ownerId, int roomId, String start, String end, String status) {
         jdbc.sql("""
                 INSERT INTO reservation (room_id, owner_id, start_at, end_at, headcount, access_code, status, canceled_at)
-                VALUES (:room, 1, :start::timestamptz, :end::timestamptz, 3, '123456', :status,
+                VALUES (:room, :owner, :start::timestamptz, :end::timestamptz, 3, '123456', :status,
                         CASE WHEN :status = 'CANCELED' THEN now() END)
                 """)
-                .param("room", roomId).param("start", start).param("end", end).param("status", status)
+                .param("room", roomId).param("owner", ownerId).param("start", start).param("end", end).param("status", status)
                 .update();
     }
 
@@ -114,6 +119,28 @@ class RoomAvailabilityApiTest {
                 .satisfies(json -> json.assertThat()
                         .extractingPath("$.rooms[1].slots[?(@.available == false)].startAt").asArray()
                         .containsExactly("2026-11-05T00:00:00+09:00", "2026-11-05T00:30:00+09:00"));
+    }
+
+    @Test
+    @DisplayName("오늘 10:10에 걸친 끝나지 않은 예약이 있는 방만 occupiedNow=true. 10:00에 끝난 예약·다른 날은 false")
+    void occupiedNow() {
+        jdbc.sql("INSERT INTO users (id, email, student_id, name, verified_at) OVERRIDING SYSTEM VALUE "
+                + "VALUES (2, 'b@chosun.ac.kr', '20230002', '김지영', now())").update();
+        reserve(1, 1, "2026-11-03 09:30+09", "2026-11-03 10:30+09", "BOOKED");   // 지금(10:10) 사용 중
+        reserve(2, 2, "2026-11-03 09:00+09", "2026-11-03 10:00+09", "BOOKED");   // 이미 끝남
+        reserve(3, "2026-11-03 09:30+09", "2026-11-03 10:30+09", "CANCELED"); // 취소는 안 침
+
+        assertThat(mvc.get().uri("/api/rooms/availability?date=2026-11-03"))
+                .bodyJson()
+                .satisfies(json -> {
+                    json.assertThat().extractingPath("$.rooms[0].occupiedNow").isEqualTo(true);
+                    json.assertThat().extractingPath("$.rooms[1].occupiedNow").isEqualTo(false);
+                    json.assertThat().extractingPath("$.rooms[2].occupiedNow").isEqualTo(false);
+                    json.assertThat().extractingPath("$.rooms[3].occupiedNow").isEqualTo(false);
+                });
+        assertThat(mvc.get().uri("/api/rooms/availability?date=2026-11-04"))
+                .bodyJson()
+                .extractingPath("$.rooms[0].occupiedNow").isEqualTo(false);
     }
 
     @Test
