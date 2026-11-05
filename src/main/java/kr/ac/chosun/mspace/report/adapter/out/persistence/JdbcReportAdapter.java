@@ -47,6 +47,12 @@ class JdbcReportAdapter implements ReportPort, ReportJudgePort {
     }
 
     @Override
+    public boolean roomExists(int roomId) {
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM rooms WHERE id = :room)").param("room", roomId)
+                .query(Boolean.class).single();
+    }
+
+    @Override
     public Saved save(int roomId, long reporterId, long basisReservationId, ReportCategory category, String content) {
         return jdbc.sql("""
                         INSERT INTO report (room_id, reporter_id, reporter_reservation_id, category, content)
