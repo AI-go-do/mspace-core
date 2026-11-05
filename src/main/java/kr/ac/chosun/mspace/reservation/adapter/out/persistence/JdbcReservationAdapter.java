@@ -98,7 +98,7 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
                                                      status, checked_in_at, continued_from_id)
                             VALUES (:room, :owner, :start, :end, :headcount, :code, :key, :instant, :via,
                                     CASE WHEN :inUse THEN 'IN_USE' ELSE 'BOOKED' END,
-                                    CASE WHEN :inUse THEN now() END, :from)
+                                    CASE WHEN :inUse THEN CAST(:start AS timestamptz) END, :from)
                             RETURNING id
                             """)
                     .param("inUse", r.inUse())

@@ -26,8 +26,9 @@ public interface ReservationStatusPort {
 
     /**
      * 이 회원이 대표자이고 IN_USE일 때만 CHECKED_OUT으로 바꾼다 (퇴실). 방·참여자 시간이 바로 풀린다.
+     * 퇴실 시각은 앱 Clock으로 받는다: 연장은 이 시각을 새 예약 시작으로 쓰므로 DB now()와 어긋나면 안 된다.
      *
      * @return 바꿨으면 true
      */
-    boolean checkoutIfInUse(long reservationId, long ownerId);
+    boolean checkoutIfInUse(long reservationId, long ownerId, Instant now);
 }
