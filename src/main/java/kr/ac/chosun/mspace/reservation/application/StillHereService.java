@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * "아직 있어요" (FR-DEV-103, FR-NTF-103). 센서 오판 대비용이라 시연·테스트에서만 켠다(실제 서비스는 센서로만 판단).
+ * "아직 있어요" (FR-DEV-103, FR-NTF-103). 센서 오판 대비. 11/5 지영: 실제 서비스에도 넣는다(설정으로 끌 수 있음).
  * 11/5 지영 "docs대로": 예약당 1번. 누르면 자리 비움 10분 알림·15분 퇴실을 누른 시각부터 다시 잰다.
  * 퇴실과 같은 방식: 조건부 UPDATE 한 번, 안 바뀌었을 때만 이유를 찾아 404 → 403 → 409.
  */

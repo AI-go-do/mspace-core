@@ -17,8 +17,8 @@ class StillHereController {
     }
 
     /**
-     * "아직 있어요" (FR-DEV-103, 시연·테스트 전용). 대표자, 사용 중(IN_USE), 예약당 1번. 자리 비움 타이머를 지금부터 다시 잰다.
-     * 200 {"id":12,"status":"IN_USE"} / 404 꺼져 있음(STILL_HERE_DISABLED)·없거나 내 예약 아님 / 403 참여자
+     * "아직 있어요" (FR-DEV-103). 대표자, 사용 중(IN_USE), 예약당 1번. 자리 비움 타이머를 지금부터 다시 잰다.
+     * 200 {"id":12,"status":"IN_USE"} / 404 설정으로 꺼 둠(STILL_HERE_DISABLED)·없거나 내 예약 아님 / 403 참여자
      * / 409 사용 중 아님(RESERVATION_NOT_IN_USE)·이미 씀(STILL_HERE_ALREADY_USED)
      */
     @PostMapping("/api/reservations/{id}/still-here")

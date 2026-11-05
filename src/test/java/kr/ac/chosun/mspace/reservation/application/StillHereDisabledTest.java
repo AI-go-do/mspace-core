@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 class StillHereDisabledTest {
 
     @Test
-    @DisplayName("설정이 꺼져 있으면(실제 서비스) DB를 건드리지 않고 404 STILL_HERE_DISABLED")
+    @DisplayName("설정으로 꺼 두면 DB를 건드리지 않고 404 STILL_HERE_DISABLED")
     void disabled() {
         SensorPolicy sensor = new SensorPolicy(60, 5, new SensorPolicy.Away(10, 15, 3, false), null);
         StillHereService service = new StillHereService(null, null, sensor,

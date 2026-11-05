@@ -37,8 +37,7 @@ import org.springframework.test.web.servlet.assertj.MvcTestResult;
  * 기본 예약: 1번 방 10:30–12:30, 대표자 1번 + 참여자 2·3번, 10:30 입실. 시계는 2030년 (다른 예약 테스트와 같은 이유).
  * 센서 신호는 테스트가 시계를 옮기며 직접 보내고, 정리·알림도 직접 부른다 (1분 스케줄러는 테스트에서 꺼 둠).
  */
-@SpringBootTest(properties = {"mspace.auth.dev-header=true", "mspace.access.device-token=test-device-token",
-        "mspace.sensor.away.still-here-enabled=true"})
+@SpringBootTest(properties = {"mspace.auth.dev-header=true", "mspace.access.device-token=test-device-token"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, SensorEventApiTest.TestBeans.class})
 class SensorEventApiTest {

@@ -17,7 +17,7 @@ public record SensorPolicy(int offlineAfterSeconds, int futureToleranceMinutes, 
      * @param notifyAfterMinutes  사용 중 비어 있음이 이만큼이면 대표자에게 "5분 안에 돌아와 주세요" (10)
      * @param releaseAfterMinutes 이만큼이면 자동 퇴실 AWAY_RELEASED (15)
      * @param perNoShow           30일 안 자리 비움 몇 번이 노쇼 1번인가 (3)
-     * @param stillHereEnabled    시연·테스트용 "아직 있어요" 버튼을 켤지 (실제 서비스는 false, FR-DEV-103)
+     * @param stillHereEnabled    "아직 있어요" 버튼을 켤지 (기본 true. 11/5 실제 서비스에도 넣기로 함, FR-DEV-103)
      */
     public record Away(int notifyAfterMinutes, int releaseAfterMinutes, int perNoShow, boolean stillHereEnabled) {
     }
