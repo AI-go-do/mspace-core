@@ -1,14 +1,19 @@
 package kr.ac.chosun.mspace.notification.adapter.out.persistence;
 
 import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import kr.ac.chosun.mspace.notification.application.Notification;
+import kr.ac.chosun.mspace.notification.application.NotificationInbox.NewNotification;
 import kr.ac.chosun.mspace.notification.application.NotificationQueryPort;
+import kr.ac.chosun.mspace.notification.application.NotificationWritePort;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
-class JdbcNotificationQueryAdapter implements NotificationQueryPort {
+class JdbcNotificationQueryAdapter implements NotificationQueryPort, NotificationWritePort {
 
     private final JdbcClient jdbc;
 
@@ -34,5 +39,23 @@ class JdbcNotificationQueryAdapter implements NotificationQueryPort {
                             read == null ? null : read.toInstant());
                 })
                 .list();
+    }
+
+    @Override
+    @Transactional
+    public List<Notification> saveAll(List<NewNotification> items, Instant now) {
+        List<Notification> saved = new ArrayList<>();
+        for (NewNotification n : items) {
+            long id = jdbc.sql("""
+                    INSERT INTO notification (user_id, reservation_id, kind, title, body, created_at)
+                    VALUES (:user, :reservation, :kind, :title, :body, :now)
+                    RETURNING id
+                    """)
+                    .param("user", n.userId()).param("reservation", n.reservationId()).param("kind", n.kind())
+                    .param("title", n.title()).param("body", n.body()).param("now", Timestamp.from(now))
+                    .query(Long.class).single();
+            saved.add(new Notification(id, n.userId(), n.reservationId(), n.kind(), n.title(), n.body(), now, null));
+        }
+        return saved;
     }
 }

@@ -131,6 +131,7 @@ curl -X POST localhost:8080/api/access/verify -H 'Authorization: Bearer <장치 
 |---|---|---|
 | `BOOKED` | 체크인 마감이 지나면: 미리 예약은 시작 + 15분, 즉시 시작은 누른 시각 + 10분 (`checkin_deadline`) | `NO_SHOW` |
 | `IN_USE` | 끝나는 시각이 되면 | `AUTO_CHECKED_OUT` (퇴실 시각 = 끝나는 시각) |
+| `IN_USE` | 재실 센서가 15분 비어 있음 (아래 "재실·CO2 센서") | `AWAY_RELEASED` (퇴실 시각 = 15분이 찬 시각) |
 
 바뀌면 방·대표자·참여자 시간이 바로 풀려요. 다른 작업이 예약을 오래 잡고 있으면 잠금 대기 상한(`mspace.reservation.lock-timeout`, 3초)을 넘긴 쪽만 건너뛰고 다음 번에 다시 해요. 주기는 `mspace.reservation.sweep.interval`(기본 `PT1M`)이고, `MSPACE_SWEEP_ENABLED=false`면 꺼져요. 테스트에서는 꺼 두고(`src/test/resources/config/application.yml`) 시계를 옮겨서 직접 불러요.
 
@@ -141,7 +142,8 @@ curl -X POST localhost:8080/api/access/verify -H 'Authorization: Bearer <장치 
 - 정지 중에는 대표자로 예약하면 `403 USER_SUSPENDED`(메시지에 끝나는 날짜), 참여자로 넣으면 `403 PARTICIPANT_SUSPENDED`(누구인지는 안 알려 줘요). 미리 예약, 지금 바로 쓰기, 연장(연장도 새 예약이라서) 모두 막아요.
 - 정지가 끝나면 횟수는 처음부터 다시 세요. 정지 전에 잡아 둔 예약은 그대로 둬요.
 - 정리가 동시에 돌아도 정지는 한 줄만 생겨요(같은 사람 기간 겹침 금지 `one_suspension_at_a_time` + `ON CONFLICT DO NOTHING`).
-- 숫자는 `mspace.reservation.no-show-penalty`(2번·30일·14일)에 있어요. 자리 비움 3번 = 노쇼 1번(FR-DEV-103)은 자리 비움 기능과 같이 붙여요.
+- 숫자는 `mspace.reservation.no-show-penalty`(2번·30일·14일)에 있어요.
+- 자리 비움 3번 = 노쇼 1번(FR-DEV-103): 노쇼 1번을 3점, 자리 비움 1번을 1점으로 더해 6점이면 정지예요. 자리 비움 퇴실도 같은 트랜잭션에서 세요.
 
 ### 예약 알림 3종 (FR-NTF-101, 102, 104)
 
@@ -158,6 +160,31 @@ curl -X POST localhost:8080/api/access/verify -H 'Authorization: Bearer <장치 
 - 메일은 재웅님 담당이에요. `NotificationChannel`을 구현한 빈을 등록하면 알림함 저장이 커밋된 뒤 불려요. 메일이 실패해도 알림함에는 남고, 다시 보내지는 않아요.
 - 분(minute) 값은 `mspace.notification.reminder`에서 바꿔요. 끄려면 `MSPACE_REMINDER_ENABLED=false`.
 
+### 재실·CO2 센서 (FR-DEV-101~104)
+
+센서 장치(수연님)가 키패드와 같은 장치 토큰으로 불러요. 형식은 mspace-device `docs/sensor-events-api.md`예요.
+
+```bash
+curl -X POST localhost:8080/api/sensor-events -H 'Authorization: Bearer <장치 토큰>' -H 'Content-Type: application/json' \
+  -d '{"eventId":"o-1","roomId":1,"deviceId":"sensor-1","kind":"OCCUPANCY","occupied":false,"sources":{"pir":false,"radar":false},"observedAt":"2026-11-06T10:40:00+09:00"}'
+curl -X POST localhost:8080/api/sensor-events -H 'Authorization: Bearer <장치 토큰>' -H 'Content-Type: application/json' \
+  -d '{"eventId":"c-1","roomId":1,"deviceId":"sensor-1","kind":"CO2","ppm":1080,"source":"virtual","observedAt":"2026-11-06T10:41:00+09:00"}'
+# → {"result":"STORED"} 또는 {"result":"DUPLICATE"}. 401 토큰, 400 형식(모르는 kind, ppm 0~10000 밖, 오프셋 없는 시각, 5분 넘는 미래, 없는 방)
+```
+
+| 무엇 | 어떻게 |
+|---|---|
+| 재실 저장 | 처음 이벤트, 상태를 바꾼 이벤트, 늦게 와서 반영은 못 했지만 지금과 다른 상태를 본 이벤트를 `sensor_event`에 남겨요. 10초마다 오는 "그대로" 신호는 `room_presence`의 받은 시각만 고쳐요 |
+| 늦게 온 이벤트 | `observedAt`이 지금 상태보다 옛것이면 상태를 덮지 않아요(기록만) |
+| 끊김 | 1분 넘게 신호가 없으면 그 방은 "있음"으로 봐요. 다시 오면 그때부터 10·15분을 다시 재요 |
+| 자리 비움 알림 | 사용 중 10분 비어 있음 → 대표자에게 `AWAY_SOON` "자리에 안 계시네요" (예약당 한 번) |
+| 자리 비움 퇴실 | 15분 → `AWAY_RELEASED`, 방·참여자 시간이 바로 풀려요. 끝 시각이 된 예약은 보통 자동 퇴실 |
+| 환기 알림 | 1000ppm 초과가 30~90초 간격으로 3번(처음과 끝 100초 이상) → 그 방 사용자 전원에게 `VENTILATE`. 같은 방 30분에 한 번, 쓰는 사람이 없으면 안 보내요 |
+
+- 숫자는 `mspace.sensor`에 있어요.
+- 장치·방마다 토큰을 나누는 것(`403 DEVICE_ROOM_MISMATCH`)은 재웅님 답을 기다려요. 지금은 키패드와 같은 토큰 하나예요.
+- 시연용 "아직 있어요" 버튼(FR-NTF-103)은 아직 없어요.
+
 ## 폴더 구조
 
 기능별로 나누고, 기능 안은 포트·어댑터로 나눠요 (팀 컨벤션 3절).
@@ -173,6 +200,8 @@ kr.ac.chosun.mspace
 ├── member             회원·로그인
 ├── room               방
 ├── access             출입(키패드)
+├── sensor             재실·CO2 센서
+├── notification       알림
 └── common             공통 오류, 설정
 ```
 

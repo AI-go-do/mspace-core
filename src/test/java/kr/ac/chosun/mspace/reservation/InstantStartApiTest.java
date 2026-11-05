@@ -272,7 +272,7 @@ class InstantStartApiTest {
         assertThat(column(1, "checkin_deadline")).isEqualTo(at("14:39"));
 
         now("14:30");
-        assertThat(sweeps.sweep()).isEqualTo(new SweepReservationsUseCase.Swept(1, 0));
+        assertThat(sweeps.sweep()).isEqualTo(new SweepReservationsUseCase.Swept(1, 0, 0));
         assertThat(status(1)).isEqualTo("NO_SHOW");
         assertThat(startNow("15:00")).hasStatus(201);
     }

@@ -201,7 +201,7 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
                             CROSS JOIN LATERAL (
                                 SELECT r.id, r.start_at, r.continued_from_id FROM reservation r
                                 WHERE r.owner_id = :owner
-                                  AND r.status IN ('CHECKED_OUT', 'AUTO_CHECKED_OUT')
+                                  AND r.status IN ('CHECKED_OUT', 'AUTO_CHECKED_OUT', 'AWAY_RELEASED')
                                   AND r.end_at >= c.start_at - :gap::interval
                                   AND r.start_at < c.start_at
                                   AND least(r.end_at, r.checked_out_at) >= c.start_at - :gap::interval

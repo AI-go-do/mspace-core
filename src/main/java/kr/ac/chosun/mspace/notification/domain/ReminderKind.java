@@ -7,5 +7,7 @@ public enum ReminderKind {
     /** FR-NTF-102 종료 N분 전 */
     END_SOON,
     /** FR-NTF-104 노쇼 N분 전 */
-    NO_SHOW_SOON
+    NO_SHOW_SOON,
+    /** FR-DEV-103 자리 비움 N분: 돌아오지 않으면 곧 자동 퇴실 */
+    AWAY_SOON
 }

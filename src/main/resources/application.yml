@@ -69,6 +69,20 @@ mspace:
       start-before-minutes: 10   # FR-NTF-101 "입실 10분 전입니다" (미리 예약, 전원)
       end-before-minutes: 10     # FR-NTF-102 "종료 10분 전입니다" (사용 중, 전원)
       no-show-before-minutes: 5  # FR-NTF-104 "노쇼 5분 전입니다" (입실 마감 5분 전, 대표자만)
+  sensor:                    # 재실·CO2 센서 (FR-DEV-101~104, 11/5 지영·수연 확정. 형식은 mspace-device docs/sensor-events-api.md)
+    offline-after-seconds: 60      # 재실 신호(10초마다)가 1분 안 오면 끊김 → 그 방은 "있음"으로 본다
+    future-tolerance-minutes: 5    # observedAt이 5분 넘게 미래면 400 (장치 시계 오류)
+    away:                    # 자리 비움 (FR-DEV-103)
+      notify-after-minutes: 10     # 사용 중 10분 비어 있으면 대표자에게 "5분 안에 돌아와 주세요"
+      release-after-minutes: 15    # 15분이면 자동 퇴실 AWAY_RELEASED
+      per-no-show: 3               # 30일 안 자리 비움 3번 = 노쇼 1번 (노쇼 벌칙 기간·횟수를 그대로 따름)
+    co2:                     # 환기 알림 (FR-DEV-104)
+      threshold-ppm: 1000
+      consecutive: 3               # 1분마다 3번 연속 = 3분 연속
+      min-gap-seconds: 30          # 이웃한 값 간격 30–90초만 연속으로 센다
+      max-gap-seconds: 90
+      min-span-seconds: 100        # 첫 값과 마지막 값이 100초 이상 떨어져야
+      alert-every-minutes: 30      # 같은 방 30분에 한 번
   rules:                     # 이용 규칙 GET /api/rules (FR-WEB-003). 화면과 비서가 같은 내용을 쓴다. 원본은 docs 요구사항 3.1
     no-show-minutes: 15        # 미리 예약은 시작 15분 안에 입실. DB 트리거(V1 checkin_deadline)와 같은 값이라 바꾸면 Flyway도
     instant-no-show-minutes: 10  # 즉시 시작은 10분. 위와 같음
