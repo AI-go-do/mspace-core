@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import kr.ac.chosun.mspace.common.config.ExtensionPolicy;
+import kr.ac.chosun.mspace.common.config.NoShowPenaltyPolicy;
 import kr.ac.chosun.mspace.common.config.ReservationPolicy;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
@@ -51,7 +52,7 @@ public class CreateReservationService implements CreateReservationUseCase {
     static final int MAX_ATTEMPTS = 3;
 
     /** 정지 끝나는 시각 표시: "11/18 14:30" */
-    private static final DateTimeFormatter UNTIL = DateTimeFormatter.ofPattern("M/d HH:mm");
+    static final DateTimeFormatter UNTIL = DateTimeFormatter.ofPattern("M/d HH:mm");
 
     private final ReservationCommandPort port;
     private final RoomQuery rooms;
@@ -63,12 +64,15 @@ public class CreateReservationService implements CreateReservationUseCase {
     private final UsageChainPort chains;
     private final ExtensionPolicy extension;
     private final SuspensionPort suspensions;
+    private final NoShowPenaltyPolicy penalty;
 
     public CreateReservationService(ReservationCommandPort port, RoomQuery rooms, AccessCodeIssuer codes,
                                     ReservationPolicy policy, Clock clock, TransactionOperations tx,
                                     SweepReservationsUseCase sweeps, UsageChainPort chains,
-                                    ExtensionPolicy extension, SuspensionPort suspensions) {
+                                    ExtensionPolicy extension, SuspensionPort suspensions,
+                                    NoShowPenaltyPolicy penalty) {
         this.suspensions = suspensions;
+        this.penalty = penalty;
         this.sweeps = sweeps;
         this.chains = chains;
         this.extension = extension;
@@ -195,7 +199,8 @@ public class CreateReservationService implements CreateReservationUseCase {
         Instant now = clock.instant();
         suspensions.suspendedUntil(ownerId, now).ifPresent(until -> {
             throw new BusinessException(ErrorCode.USER_SUSPENDED,
-                    "노쇼 2번으로 %s까지 이용이 정지되어 예약할 수 없습니다".formatted(UNTIL.format(until.atZone(SEOUL))));
+                    "노쇼 %d번으로 %s까지 이용이 정지되어 예약할 수 없습니다"
+                            .formatted(penalty.count(), UNTIL.format(until.atZone(SEOUL))));
         });
 
         // 대표자는 서버가 넣는다. 목록에 대표자 학번이 또 있으면 같은 사람 두 번 → 400

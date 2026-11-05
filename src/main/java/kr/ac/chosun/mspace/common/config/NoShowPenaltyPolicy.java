@@ -11,4 +11,12 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @ConfigurationProperties("mspace.reservation.no-show-penalty")
 public record NoShowPenaltyPolicy(int count, int windowDays, int suspendDays) {
+
+    /** 0 이하면 첫 노쇼부터 정지되거나(count) 아무도 안 세지거나(windowDays) 정지 줄이 DB CHECK에 걸려서, 시작할 때 막는다 */
+    public NoShowPenaltyPolicy {
+        if (count < 1 || windowDays < 1 || suspendDays < 1) {
+            throw new IllegalArgumentException("mspace.reservation.no-show-penalty 값은 모두 1 이상이어야 합니다 (count=%d, window-days=%d, suspend-days=%d)"
+                    .formatted(count, windowDays, suspendDays));
+        }
+    }
 }
