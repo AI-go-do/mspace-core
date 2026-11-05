@@ -103,7 +103,11 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
      * 바꾼 UPDATE와 같은 트랜잭션이라, 노쇼만 남고 정지가 빠지는 일은 없다 (둘 다 되거나 둘 다 안 됨).
      * <ul>
      *   <li>노쇼 시각 = 입실 마감과 끝 중 이른 쪽, 자리 비움 시각 = 퇴실 시각 (정리가 늦게 돌아도 기록 기준은 같게)</li>
+     *   <li>30일은 정리가 돈 시각이 아니라 그 사람의 가장 최근 기록 시각부터 거꾸로 센다.
+     *       정리가 오래 멈췄다가 돌아도 "기록끼리 30일 안"이면 정지가 걸린다</li>
      *   <li>지난 정지가 끝난 뒤의 기록만 센다 → 정지가 끝나면 처음부터 다시</li>
+     *   <li>두 정리가 같은 사람의 기록을 하나씩 나눠 바꾸는 일은 없다: 대표자는 끝나지 않은 예약(BOOKED·IN_USE)이
+     *       동시에 1건뿐이라(one_active_per_owner) 한 사람에게서 바뀌는 줄은 한 번에 1줄이고, 그 전 기록은 이미 커밋돼 보인다</li>
      *   <li>이미 정지 중이면 새로 걸지 않는다(NOT EXISTS). 두 정리가 동시에 돌아 둘 다 통과해도
      *       one_suspension_at_a_time(기간 겹침 금지)이 한 줄만 받고 나머지는 ON CONFLICT DO NOTHING</li>
      * </ul>
@@ -120,7 +124,11 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
                                            ELSE r.checked_out_at END AS happened_at
                       FROM reservation r
                       WHERE r.owner_id IN (:owners) AND r.status IN ('NO_SHOW', 'AWAY_RELEASED')) h
-                WHERE h.happened_at > :windowStart
+                WHERE h.happened_at > (SELECT max(CASE r2.status WHEN 'NO_SHOW' THEN least(r2.checkin_deadline, r2.end_at)
+                                                                ELSE r2.checked_out_at END)
+                                       FROM reservation r2
+                                       WHERE r2.owner_id = h.owner_id AND r2.status IN ('NO_SHOW', 'AWAY_RELEASED'))
+                                      - make_interval(days => :windowDays)
                   AND h.happened_at >= coalesce(
                         (SELECT max(s.ends_at) FROM user_suspension s WHERE s.user_id = h.owner_id), '-infinity'::timestamptz)
                   AND NOT EXISTS (SELECT 1 FROM user_suspension s
@@ -132,7 +140,7 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
                 .param("now", at)
                 .param("owners", owners.stream().distinct().toList())
                 .param("until", Timestamp.from(now.plus(Duration.ofDays(penalty.suspendDays()))))
-                .param("windowStart", Timestamp.from(now.minus(Duration.ofDays(penalty.windowDays()))))
+                .param("windowDays", penalty.windowDays())
                 .param("perNoShow", sensor.away().perNoShow())
                 .param("points", penalty.count() * sensor.away().perNoShow())
                 .update();

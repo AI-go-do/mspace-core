@@ -177,6 +177,22 @@ class NoShowPenaltyTest {
     }
 
     @Test
+    @DisplayName("정리가 늦게 돌아도 노쇼 2번이 기록끼리 30일 안이면 정지 (30일은 정리 시각이 아니라 최근 기록부터)")
+    void lateSweepStillCountsByRecordTime() {
+        // given: 03-05 노쇼, 03-20 예약도 오지 않았는데 정리가 멈춰 있다가 04-10에야 돈다 (03-05는 정리 시각에서 36일 전)
+        noShow("03-05");
+        assertThat(book("03-20", 1, 2, 3)).hasStatus(201);
+
+        // when
+        at("04-10", "10:00");
+        sweeps.sweep();
+
+        // then: 두 노쇼 시각(03-05 10:45, 03-20 10:45)은 15일 차이라 정지. 정지는 정리한 때부터 14일
+        assertThat(suspensions(1)).isEqualTo(1);
+        assertThat(book("04-11", 1, 2, 3)).hasStatus(403);
+    }
+
+    @Test
     @DisplayName("수용 기준: 14일이 지나면 다시 예약할 수 있고, 횟수는 처음부터라 그 뒤 노쇼 1번으로는 다시 정지되지 않는다")
     void countResetsAfterSuspension() {
         noShow("03-05");
