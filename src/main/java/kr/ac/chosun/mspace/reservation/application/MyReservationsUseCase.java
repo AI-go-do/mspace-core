@@ -19,10 +19,12 @@ public interface MyReservationsUseCase {
 
     /**
      * @param owner      내가 대표자인지
-     * @param accessCode 키패드 번호. 대표자에게만 주고, 참여자면 null
+     * @param accessCode      키패드 번호. 대표자에게만 주고, 참여자면 null
+     * @param checkinDeadline 입실 마감. 미리 예약은 max(시작, 예약한 시각) + 15분, 즉시 시작은 시작 + 10분
      */
     record MyReservation(long id, int roomId, String roomName, ZonedDateTime startAt, ZonedDateTime endAt,
-                         ReservationStatus status, boolean owner, String accessCode, List<Participant> participants) {
+                         ReservationStatus status, boolean owner, String accessCode, ZonedDateTime checkinDeadline,
+                         List<Participant> participants) {
     }
 
     /** @param name 가린 이름 (김*영) */
