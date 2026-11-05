@@ -19,14 +19,14 @@ class MemberController {
 
     /**
      * 참여자로 넣을 회원을 학번으로 찾는다 (FR-RSV-004). 로그인한 회원만 쓸 수 있다.
-     * 예: GET /api/members?studentId=20230001 → {"studentId":"20230001","name":"김*영"}
+     * 예: GET /api/members?studentId=20230001 → {"studentId":"20230001","name":"김*영","me":false}
      *
-     * @param user      로그인한 회원 (없으면 401). 검색 결과에는 쓰지 않는다
+     * @param user      로그인한 회원 (없으면 401). 찾은 사람이 본인인지(me)만 판단한다
      * @param studentId 찾을 학번
      * @return 학번과 가린 이름. 없거나 학생 인증 전이면 404(MEMBER_NOT_FOUND)
      */
     @GetMapping("/api/members")
     FoundMember find(LoginUser user, @RequestParam(required = false) String studentId) {
-        return search.findByStudentId(studentId);
+        return search.findByStudentId(studentId, user.id());
     }
 }

@@ -63,11 +63,11 @@ class JdbcMemberAdapter implements MemberPort, MemberQueryPort {
     }
 
     @Override
-    public Optional<String> findVerifiedName(String studentId) {
+    public Optional<VerifiedMember> findVerified(String studentId) {
         // student_id는 UNIQUE라 많아야 한 줄. 인덱스(UNIQUE가 만든 것)로 바로 찾는다
-        return jdbc.sql("SELECT name FROM users WHERE student_id = :sid AND verified_at IS NOT NULL")
+        return jdbc.sql("SELECT id, name FROM users WHERE student_id = :sid AND verified_at IS NOT NULL")
                 .param("sid", studentId)
-                .query(String.class)
+                .query((rs, n) -> new VerifiedMember(rs.getLong("id"), rs.getString("name")))
                 .optional();
     }
 }
