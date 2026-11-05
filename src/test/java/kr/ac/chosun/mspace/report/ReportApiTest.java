@@ -138,6 +138,17 @@ class ReportApiTest {
     }
 
     @Test
+    @DisplayName("사용 중지된 옆 방(2번)도 404가 아니라 신고할 수 있다")
+    void inactiveRoomStillReportable() {
+        jdbc.sql("UPDATE rooms SET is_active = false WHERE id = 2").update();
+        try {
+            assertThat(report(1, 2, "WINDOW_OPEN")).hasStatus(201);
+        } finally {
+            jdbc.sql("UPDATE rooms SET is_active = true WHERE id = 2").update();
+        }
+    }
+
+    @Test
     @DisplayName("예약만 하고 입실 전(BOOKED)이거나 예약이 없는 회원은 403")
     void notInUseForbidden() {
         assertThat(report(7, 3, "BROKEN")).hasStatus(403);
