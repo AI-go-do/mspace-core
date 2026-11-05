@@ -62,6 +62,13 @@ mspace:
     sweep:
       enabled: ${MSPACE_SWEEP_ENABLED:true}   # 노쇼·자동 퇴실 정리 (FR-RSV-101, 102)
       interval: PT1M         # 1분마다. 노쇼·자동 퇴실은 최대 이만큼 늦게 반영된다
+  notification:
+    reminder:                # 예약 알림 3종 (11/5 지영 담당. 메일 발송 어댑터는 재웅 담당, 없으면 앱 알림함에만)
+      enabled: ${MSPACE_REMINDER_ENABLED:true}
+      interval: PT1M         # 1분마다. 최대 이만큼 늦게 갈 수 있다
+      start-before-minutes: 10   # FR-NTF-101 "입실 10분 전입니다" (미리 예약, 전원)
+      end-before-minutes: 10     # FR-NTF-102 "종료 10분 전입니다" (사용 중, 전원)
+      no-show-before-minutes: 5  # FR-NTF-104 "노쇼 5분 전입니다" (입실 마감 5분 전, 대표자만)
   rules:                     # 이용 규칙 GET /api/rules (FR-WEB-003). 화면과 비서가 같은 내용을 쓴다. 원본은 docs 요구사항 3.1
     no-show-minutes: 15        # 미리 예약은 시작 15분 안에 입실. DB 트리거(V1 checkin_deadline)와 같은 값이라 바꾸면 Flyway도
     instant-no-show-minutes: 10  # 즉시 시작은 10분. 위와 같음
