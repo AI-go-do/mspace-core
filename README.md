@@ -88,11 +88,19 @@ curl -X POST localhost:8080/api/reservations/1/continue -H 'X-User-Id: 1' -H 'Co
 
 ### 신고 (FR-RPT-101)
 
-지금 사용 중(`IN_USE`)인 예약의 대표자나 참여자가 그 방이나 옆 방을 신고해요. 옆 방은 V8에 넣은 1–2, 2–3, 3–4, 4–5예요(docs Q-05, 현장 확인 필요). 종류는 비품 고장 `BROKEN`, 창문 열림 `WINDOW_OPEN`, 어질러짐 `MESSY`, 소음 `NOISE`예요. 소음은 `"noiseConfirmed": true`가 없으면 `400 REPORT_NOISE_NOT_CONFIRMED`, 없는 방이면 `404 ROOM_NOT_FOUND`(사용 중지된 방은 신고할 수 있어요), 신고할 수 없는 사람이면 `403 REPORT_NOT_ALLOWED`예요. 메모는 선택이고 500자까지예요. 사진, 결과 알림, 관리자 판정(FR-RPT-103)은 아직이에요.
+지금 사용 중(`IN_USE`)인 예약의 대표자나 참여자가 그 방이나 옆 방을 신고해요. 옆 방은 V8에 넣은 1–2, 2–3, 3–4, 4–5예요(docs Q-05, 현장 확인 필요). 종류는 비품 고장 `BROKEN`, 창문 열림 `WINDOW_OPEN`, 어질러짐 `MESSY`, 소음 `NOISE`예요. 소음은 `"noiseConfirmed": true`가 없으면 `400 REPORT_NOISE_NOT_CONFIRMED`, 없는 방이면 `404 ROOM_NOT_FOUND`(사용 중지된 방은 신고할 수 있어요), 신고할 수 없는 사람이면 `403 REPORT_NOT_ALLOWED`예요. 메모는 선택이고 500자까지예요. 사진과 결과 알림은 아직이에요.
 
 ```bash
 curl -X POST localhost:8080/api/reports -H 'X-User-Id: 1' -H 'Content-Type: application/json' \
   -d '{"roomId":2,"category":"NOISE","content":"벽 너머로 계속 소리 질러요","noiseConfirmed":true}'   # → 201, verdict OPEN
+```
+
+관리자(`users.role = ADMIN`)는 신고 목록을 보고 판정해요(FR-RPT-103). 사실 `CONFIRMED`, 확인 불가 `UNVERIFIED`, 허위 `FALSE` 중 하나를 대기(`OPEN`)인 신고에 한 번만 줄 수 있어요. 소음은 판정 대상이 아니라 `409 REPORT_NOT_JUDGEABLE`, 이미 판정했으면 `409 REPORT_ALREADY_JUDGED`예요. 경고·정지는 벌칙이 확정되면 붙여요.
+
+```bash
+curl 'localhost:8080/api/reports?verdict=OPEN' -H 'X-User-Id: 9'                     # 관리자만, 최근 신고가 위
+curl -X POST localhost:8080/api/reports/7/judge -H 'X-User-Id: 9' -H 'Content-Type: application/json' \
+  -d '{"verdict":"FALSE"}'                                                             # → 200
 ```
 
 ### 키패드 (장치)
