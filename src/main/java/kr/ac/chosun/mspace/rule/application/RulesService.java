@@ -46,7 +46,8 @@ public class RulesService {
         for (Map.Entry<String, Integer> e : numbers.entrySet()) {
             out = out.replace("{" + e.getKey() + "}", String.valueOf(e.getValue()));
         }
-        if (out.matches("(?s).*\\{[^{}]*}.*")) {
+        // 닫히지 않은 자리({noShowMinutes 처럼)도 잡는다: 채운 뒤 중괄호가 하나라도 남으면 설정 오류
+        if (out.indexOf('{') >= 0 || out.indexOf('}') >= 0) {
             throw new IllegalStateException("이용 수칙 문구에 채우지 못한 자리가 있습니다: " + out);
         }
         return out;
