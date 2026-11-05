@@ -185,6 +185,25 @@ curl -X POST localhost:8080/api/sensor-events -H 'Authorization: Bearer <장치 
 - 장치·방마다 토큰을 나누는 것(`403 DEVICE_ROOM_MISMATCH`)은 재웅님 답을 기다려요. 지금은 키패드와 같은 토큰 하나예요.
 - 시연용 "아직 있어요" 버튼(FR-NTF-103)은 아직 없어요.
 
+### 방 현황 (FR-DEV-102)
+
+홈 화면 "지금 비어 있는 방 N개 중 M개"와 비서가 쓰는 API예요. 로그인 없이 볼 수 있고, 누가 예약했는지는 내려 주지 않아요.
+
+```bash
+curl localhost:8080/api/rooms/status
+# → {"now":"…+09:00","availableCount":3,"roomCount":5,"rooms":[{"roomId":1,"roomName":"1번 방","minPeople":3,"maxPeople":5,
+#     "status":"IN_USE","currentStartAt":"…","currentEndAt":"…","nextStartAt":null,"presence":"OCCUPIED"}, …]}
+```
+
+| 값 | 뜻 |
+|---|---|
+| `status` | 예약 기준. `AVAILABLE` 지금 걸린 예약 없음 · `RESERVED` 예약 시간인데 입실 전 · `IN_USE` 사용 중. `availableCount`는 `AVAILABLE` 수 |
+| `currentEndAt` | 지금 예약이 끝나는(방이 비는) 시각. 없으면 `null` |
+| `nextStartAt` | 지금 이후 가장 가까운 예약 시작. 없으면 `null` |
+| `presence` | 센서가 본 재실(참고). `OCCUPIED` · `EMPTY` · `UNKNOWN`(1분 넘게 신호 없음이거나 센서 없음) |
+
+- "비었는지"는 예약 기준이에요. 예약을 잡을 수 있는지와 같은 기준이라서요. 센서는 예약 없이 사람이 있거나 사용 중인데 비어 있는 걸 보여 주는 참고값이에요.
+
 ## 폴더 구조
 
 기능별로 나누고, 기능 안은 포트·어댑터로 나눠요 (팀 컨벤션 3절).
