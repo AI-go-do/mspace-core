@@ -34,6 +34,13 @@ public enum ErrorCode {
     // 같은 Idempotency-Key를 다른 내용(방·시각·참여자)에 다시 씀 (#10)
     IDEMPOTENCY_KEY_REUSED(HttpStatus.CONFLICT, "이미 다른 예약에 쓴 Idempotency-Key입니다"),
 
+    // 사진 체크인·아웃 (FR-RPT-102). 선택 기능이라 실패해도 입실·퇴실은 그대로
+    PHOTO_INVALID(HttpStatus.BAD_REQUEST, "사진 종류(CHECK_IN·CHECK_OUT)와 JPEG·PNG 파일이 필요합니다"),
+    PHOTO_TOO_LARGE(HttpStatus.BAD_REQUEST, "사진은 1장 최대 2MB입니다. 줄여서 다시 올려 주세요"),
+    PHOTO_NOT_ALLOWED_NOW(HttpStatus.CONFLICT, "입실 사진은 사용 중에, 퇴실 사진은 사용 중이거나 퇴실 후 30분 안에 올릴 수 있습니다"),
+    PHOTO_ALREADY_UPLOADED(HttpStatus.CONFLICT, "이 예약의 같은 종류 사진이 이미 있습니다"),
+    PHOTO_NOT_FOUND(HttpStatus.NOT_FOUND, "찾을 수 없는 사진입니다"),
+
     // 예약 취소 (FR-RSV-007). 이름은 영준 비서(mspace-assistant #30)와 맞춤
     // 없는 예약과 남의 예약(참여자도 아님)은 둘 다 404: 남의 예약이 있는지 없는지 알려 주지 않으려고
     RESERVATION_NOT_FOUND(HttpStatus.NOT_FOUND, "찾을 수 없는 예약입니다"),
