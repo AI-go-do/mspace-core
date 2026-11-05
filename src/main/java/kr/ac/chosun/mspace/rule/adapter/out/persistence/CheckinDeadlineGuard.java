@@ -31,11 +31,12 @@ class CheckinDeadlineGuard implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         // 함수 이름이 아니라 reservation 표에 실제로 걸린(켜진) 트리거의 함수 본문을 읽는다
+        // 보통 연결(session_replication_role = origin)에서 도는 트리거만: 'O'(기본)·'A'(항상). 'R'(replica 전용)·'D'(꺼짐)는 안 돈다
         String source = jdbc.sql("""
                         SELECT p.prosrc
                         FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
                         WHERE t.tgrelid = 'reservation'::regclass AND t.tgname = 'reservation_set_deadline'
-                          AND t.tgenabled <> 'D'
+                          AND t.tgenabled IN ('O', 'A')
                         """)
                 .query(String.class).optional()
                 .orElseThrow(() -> new IllegalStateException("reservation 표에 켜진 reservation_set_deadline 트리거가 없습니다"));
