@@ -196,11 +196,11 @@ class ReportJudgeApiTest {
             }));
         }
         start.countDown();
+        pool.shutdown();   // 결과 수집(f.get)이 실패해도 스레드가 남지 않게 먼저 닫는다
         List<Integer> statuses = new ArrayList<>();
         for (Future<Integer> f : results) {
             statuses.add(f.get());
         }
-        pool.shutdown();
 
         assertThat(statuses).filteredOn(s -> s == 200).hasSize(1);
         assertThat(statuses).filteredOn(s -> s == 409).hasSize(9);
