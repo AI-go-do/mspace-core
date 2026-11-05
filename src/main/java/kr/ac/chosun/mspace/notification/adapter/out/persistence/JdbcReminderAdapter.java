@@ -87,17 +87,25 @@ class JdbcReminderAdapter implements ReminderPort {
                             .formatted(d.room(), HH_MM.format(d.checkinDeadline()))));
         }
         // FR-DEV-103 자리 비움: 사용 중인데 센서가 N분 연속 비어 있음(끊긴 센서는 "있음"으로 봐서 제외). 대표자만.
-        // 비어 있음 시작 = 비어 있게 된 관측 시각, 끊겼다 돌아온 시각, 입실 시각 중 가장 늦은 것 (V11 room_presence)
+        // 비어 있음 시작 = 비어 있게 된 관측 시각, 끊겼다 돌아온 시각, 입실 시각, "아직 있어요"를 누른 시각 중 가장 늦은 것
+        // (greatest는 NULL을 건너뛴다). 버튼을 안 썼으면 AWAY_SOON(버튼 안내), 썼으면 AWAY_SOON_AGAIN(버튼 없음)
         int away = sensor.away().notifyAfterMinutes();
-        for (Due d : claim(ReminderKind.AWAY_SOON, """
-                r.status = 'IN_USE' AND p.is_owner AND r.end_at > :now
+        int left = sensor.away().releaseAfterMinutes() - away;
+        String awayFor = """
+                r.status = 'IN_USE' AND p.is_owner AND r.end_at > :now AND r.still_here_at IS %s NULL
                 AND EXISTS (SELECT 1 FROM room_presence rp
                             WHERE rp.room_id = r.room_id AND NOT rp.occupied AND rp.last_received_at >= :aliveAfter
-                              AND greatest(rp.changed_at, rp.trusted_from, r.checked_in_at) <= :horizon)""",
-                now, -away)) {
+                              AND greatest(rp.changed_at, rp.trusted_from, r.checked_in_at, r.still_here_at) <= :horizon)""";
+        String stillHereHint = sensor.away().stillHereEnabled() ? " 계시다면 '아직 있어요'를 눌러 주세요(1번만)." : "";
+        for (Due d : claim(ReminderKind.AWAY_SOON, awayFor.formatted(""), now, -away)) {
             created.add(save(d, ReminderKind.AWAY_SOON, now, "자리에 안 계시네요",
-                    "%s이(가) %d분째 비어 있어요. %d분 안에 돌아오지 않으면 자동으로 퇴실돼요.".formatted(d.room(), away,
-                            sensor.away().releaseAfterMinutes() - away)));
+                    "%s이(가) %d분째 비어 있어요. %d분 안에 돌아오지 않으면 자동으로 퇴실돼요.%s"
+                            .formatted(d.room(), away, left, stillHereHint)));
+        }
+        for (Due d : claim(ReminderKind.AWAY_SOON_AGAIN, awayFor.formatted("NOT"), now, -away)) {
+            created.add(save(d, ReminderKind.AWAY_SOON_AGAIN, now, "자리에 안 계시네요",
+                    "%s이(가) 다시 %d분째 비어 있어요. %d분 안에 돌아오지 않으면 자동으로 퇴실돼요."
+                            .formatted(d.room(), away, left)));
         }
         return created;
     }

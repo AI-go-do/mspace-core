@@ -67,14 +67,14 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
     @Transactional
     public int releaseAway(Instant now) {
         // 자리 비움 (FR-DEV-103): 사용 중인데 방이 비어 있음이 15분. 타이머 시작 = 비어 있음이 된 관측 시각,
-        // 끊겼다 돌아온 시각(trusted_from), 체크인 시각 중 늦은 것 (알림 AWAY_SOON과 같은 식)
+        // 끊겼다 돌아온 시각(trusted_from), 체크인 시각, "아직 있어요" 누른 시각 중 늦은 것 (알림 AWAY_SOON과 같은 식)
         // 센서가 1분 넘게 조용하면(끊김) "있음"으로 보고 풀지 않는다 (FR-DEV-101 "틀리면 있음 쪽으로")
         // 끝 시각이 된 예약은 자동 퇴실(autoCheckout)이 맡는다. 퇴실 시각 = 15분이 찬 시각 (정리가 늦게 돌아도 같게)
         // 같은 트랜잭션에서 벌칙도 센다: 자리 비움 3번 = 노쇼 1번
         List<Long> owners = withLockTimeout(() -> jdbc.sql("""
                 UPDATE reservation r
                 SET status = 'AWAY_RELEASED',
-                    checked_out_at = greatest(p.changed_at, p.trusted_from, r.checked_in_at) + make_interval(mins => :release)
+                    checked_out_at = greatest(p.changed_at, p.trusted_from, r.checked_in_at, r.still_here_at) + make_interval(mins => :release)
                 FROM room_presence p
                 WHERE r.id IN (SELECT id FROM reservation
                                WHERE status = 'IN_USE' AND end_at > :now
@@ -83,7 +83,7 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
                   AND p.room_id = r.room_id
                   AND NOT p.occupied
                   AND p.last_received_at >= :aliveAfter
-                  AND greatest(p.changed_at, p.trusted_from, r.checked_in_at) <= :emptySince
+                  AND greatest(p.changed_at, p.trusted_from, r.checked_in_at, r.still_here_at) <= :emptySince
                 RETURNING r.owner_id
                 """)
                 .param("now", Timestamp.from(now))
