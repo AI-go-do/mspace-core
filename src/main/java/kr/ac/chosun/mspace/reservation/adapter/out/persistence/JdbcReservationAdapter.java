@@ -41,12 +41,15 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
 
     /**
      * 회원당 끝나지 않은 예약 1건(V13, FR-RSV-003). 대표자도 참여자 표에 들어가므로 걸린 사람이 대표자인지 참여자인지에 따라
-     * 오류를 나눈다. 걸린 회원 id는 PostgreSQL 오류 상세("Key (user_id)=(7) already exists.")에서 읽는다
+     * 오류를 나눈다. 걸린 회원 id는 PostgreSQL 오류 상세에서 읽는다:
+     * 유일 인덱스 "Key (user_id)=(7) already exists.", 겹침 제약 "Key (user_id, tstzrange(start_at, end_at))=(7, [...)) ..."
      */
     private static final String ONE_ACTIVE_PER_MEMBER = "one_active_per_member";
 
+    private static final String NO_PERSON_OVERLAP = "no_person_overlap";
+
     private static final java.util.regex.Pattern KEY_USER_ID =
-            java.util.regex.Pattern.compile("\\(user_id\\)=\\((\\d+)\\)");
+            java.util.regex.Pattern.compile("^Key \\(user_id(?:,[^=]*)?\\)=\\((\\d+)");
 
     private final JdbcClient jdbc;
 
@@ -149,7 +152,11 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
             // Map.of는 get(null)에서 NullPointerException → 제약 이름이 없으면(연결 끊김 등) 원래 오류를 그대로 던진다
             String constraint = constraintName(e);
             if (ONE_ACTIVE_PER_MEMBER.equals(constraint)) {
-                throw new BusinessException(memberConflict(e, r.ownerId()));
+                throw new BusinessException(memberConflict(e, r.ownerId(), ErrorCode.PARTICIPANT_HAS_ACTIVE_RESERVATION));
+            }
+            // 참여자인 사람이 겹치는 시간에 대표자로 예약하면 사람 겹침이 먼저 걸린다. 대표자 본인이면 대표자 오류로 안내
+            if (NO_PERSON_OVERLAP.equals(constraint)) {
+                throw new BusinessException(memberConflict(e, r.ownerId(), ErrorCode.PARTICIPANT_TIME_TAKEN));
             }
             ErrorCode code = constraint == null ? null : CONSTRAINTS.get(constraint);
             if (code != null) {
@@ -302,7 +309,7 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
     }
 
     /** 걸린 회원이 대표자 본인이면 OWNER_HAS_ACTIVE_RESERVATION, 아니면(또는 상세를 못 읽으면) 참여자 쪽 오류 */
-    private static ErrorCode memberConflict(DataAccessException e, long ownerId) {
+    private static ErrorCode memberConflict(DataAccessException e, long ownerId, ErrorCode participantError) {
         String detail = serverMessage(e).map(ServerErrorMessage::getDetail).orElse(null);
         if (detail != null) {
             java.util.regex.Matcher m = KEY_USER_ID.matcher(detail);
@@ -310,7 +317,7 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
                 return ErrorCode.OWNER_HAS_ACTIVE_RESERVATION;
             }
         }
-        return ErrorCode.PARTICIPANT_HAS_ACTIVE_RESERVATION;
+        return participantError;
     }
 
     private static Optional<ServerErrorMessage> serverMessage(DataAccessException e) {

@@ -208,6 +208,15 @@ class CreateReservationApiTest {
     }
 
     @Test
+    @DisplayName("내가 참여자인 예약과 겹치는 시간에 내가 대표자로 예약해도 → 409 OWNER_HAS_ACTIVE_RESERVATION (참여자 오류 아님)")
+    void participantCannotOwnOverlapping() {
+        assertThat(reserve(1, 1, at("03T15:00"), at("03T17:00"), "20230002", "20230003")).hasStatus(201);
+
+        assertThat(reserve(2, 2, at("03T16:00"), at("03T17:00"), "20230004", "20230005"))
+                .hasStatus(409).bodyJson().extractingPath("$.code").isEqualTo("OWNER_HAS_ACTIVE_RESERVATION");
+    }
+
+    @Test
     @DisplayName("수용 기준: 참여한 예약이 끝나면(노쇼 처리) 바로 대표자로 새 예약 → 201")
     void participantFreedAfterEnd() {
         assertThat(reserve(1, 1, at("03T15:00"), at("03T17:00"), "20230002", "20230003")).hasStatus(201);
