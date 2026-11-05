@@ -120,7 +120,7 @@ class MyReservationsAndCancelApiTest {
     @Test
     @DisplayName("내 예약에 입실 마감(checkinDeadline)을 DB 값 그대로 준다: 미리 예약은 시작 + 15분")
     void checkinDeadline() {
-        long id = reservation(1, 24, "BOOKED", 1, 2);
+        long id = reservation(1, 24, "BOOKED", 1, 2, 3); // 1번 방은 3~5명
         String expected = jdbc.sql("""
                         SELECT to_char(checkin_deadline AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD"T"HH24:MI:SS"+09:00"')
                         FROM reservation WHERE id = :id AND checkin_deadline = start_at + interval '15 minutes'
