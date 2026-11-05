@@ -10,6 +10,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import kr.ac.chosun.mspace.common.config.ReminderPolicy;
+import kr.ac.chosun.mspace.common.config.ReservationPolicy;
 import kr.ac.chosun.mspace.common.config.SensorPolicy;
 import kr.ac.chosun.mspace.notification.application.Notification;
 import kr.ac.chosun.mspace.notification.application.ReminderPort;
@@ -37,11 +38,13 @@ class JdbcReminderAdapter implements ReminderPort {
     private final JdbcClient jdbc;
     private final ReminderPolicy policy;
     private final SensorPolicy sensor;
+    private final ReservationPolicy slots;
 
-    JdbcReminderAdapter(JdbcClient jdbc, ReminderPolicy policy, SensorPolicy sensor) {
+    JdbcReminderAdapter(JdbcClient jdbc, ReminderPolicy policy, SensorPolicy sensor, ReservationPolicy slots) {
         this.jdbc = jdbc;
         this.policy = policy;
         this.sensor = sensor;
+        this.slots = slots;
     }
 
     /** 고른 줄: 예약·사람과 문구에 쓸 방 이름·시각 */
@@ -100,7 +103,7 @@ class JdbcReminderAdapter implements ReminderPort {
     }
 
     private List<Due> claim(ReminderKind kind, String condition, Instant now, int beforeMinutes) {
-        // canExtend: 같은 방에 지금 예약 끝부터 30분 안에 시작하는 끝나지 않은 예약이 없고, 이미 연장한 예약(continued_from_id)이 아님.
+        // canExtend: 같은 방에 지금 예약 끝부터 한 칸(slotMinutes, 30분) 안에 시작하는 끝나지 않은 예약이 없고, 이미 연장한 예약(continued_from_id)이 아님.
         // 실제 연장 가능 여부(1회·시간 창)는 연장 API가 다시 확인한다. 여기는 안내 문구용
         return jdbc.sql("""
                 WITH due AS (
@@ -118,7 +121,7 @@ class JdbcReminderAdapter implements ReminderPort {
                        (r.continued_from_id IS NULL AND NOT EXISTS (
                             SELECT 1 FROM reservation n
                             WHERE n.room_id = r.room_id AND n.id <> r.id AND n.status IN ('BOOKED', 'IN_USE')
-                              AND n.start_at < r.end_at + interval '30 minutes' AND n.end_at > r.end_at)) AS can_extend
+                              AND n.start_at < r.end_at + make_interval(mins => :slot) AND n.end_at > r.end_at)) AS can_extend
                 FROM logged l
                 JOIN reservation r ON r.id = l.reservation_id
                 JOIN rooms rm ON rm.id = r.room_id
@@ -128,6 +131,7 @@ class JdbcReminderAdapter implements ReminderPort {
                 .param("horizon", Timestamp.from(now.plus(Duration.ofMinutes(beforeMinutes))))
                 .param("kind", kind.name())
                 .param("aliveAfter", Timestamp.from(now.minusSeconds(sensor.offlineAfterSeconds())))
+                .param("slot", slots.slotMinutes())
                 .query(JdbcReminderAdapter::due)
                 .list();
     }

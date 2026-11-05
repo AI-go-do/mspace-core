@@ -104,8 +104,8 @@ mspace:
         penalty: 다음 사람이 어질러짐을 신고하고 사실로 판정되면 경고·이용 제한
       - key: NO_SHOW
         title: 노쇼
-        rule: 시작 15분 안에 키패드로 입실해요(지금 바로 쓰기는 10분)
-        penalty: 예약이 자동으로 풀려요. 30일 안에 2번이면 14일 동안 예약·참여 모두 못 해요
+        rule: 시작 {noShowMinutes}분 안에 키패드로 입실해요(지금 바로 쓰기는 {instantNoShowMinutes}분)
+        penalty: 예약이 자동으로 풀려요. {penaltyWindowDays}일 안에 {penaltyCount}번이면 {suspendDays}일 동안 예약·참여 모두 못 해요
       - key: AWAY
         title: 자리 비움
         rule: 짐만 두고 자리를 맡아 두지 않아요. 사용 중에 오래 비우지 않아요

@@ -226,6 +226,33 @@ class ReminderTest {
     }
 
     @Test
+    @DisplayName("연장하면 새 예약에 종료 10분 전 안내가 한 번 더 간다 (연장은 1회라 연장 안내는 빼고). 원래 예약은 퇴실이라 다시 안 간다")
+    void endSoonAgainAfterContinue() {
+        // given: 11:20에 종료 안내를 받고 11:25에 12:00까지 연장
+        long id = book(1, "10:30", "11:30");
+        checkIn(id);
+        assertThat(sendAt("11:20")).isEqualTo(3);
+        at("11:25");
+        MvcTestResult r = mvc.post().uri("/api/reservations/" + id + "/continue").header("X-User-Id", "1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"endAt":"2030-03-05T12:00:00+09:00"}""")
+                .exchange();
+        assertThat(r).hasStatus(201);
+        long next = idOf(r);
+
+        // when
+        assertThat(sendAt("11:49")).isZero();
+        int sent = sendAt("11:50");
+
+        // then: 새 예약 전원(3명)에게만, 연장 안내 없이
+        assertThat(sent).isEqualTo(3);
+        assertThat(inbox()).filteredOn(row -> row.reservationId() == next).extracting(Row::body)
+                .hasSize(3).containsOnly("1번 방 12:00에 끝나요. 퇴실 전에 자리를 정리해 주세요.");
+        assertThat(inbox()).filteredOn(row -> row.reservationId() == id).hasSize(3);
+    }
+
+    @Test
     @DisplayName("수용 기준: 입실하지 않으면 노쇼 5분 전(시작 + 10분)에 대표자에게만 \"노쇼 5분 전입니다\"")
     void noShowSoonOwnerOnly() {
         book(1, "10:30", "11:30");

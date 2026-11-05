@@ -172,6 +172,11 @@ class ContinueReservationApiTest {
         assertThat(jdbc.sql("SELECT continued_from_id FROM reservation WHERE id = :id").param("id", next)
                 .query(Long.class).single()).isEqualTo(ours);
         assertThat(code(next)).isNotEqualTo(code(ours));
+        // 지금 예약 퇴실 시각 = 새 예약 시작·입실 시각 (둘 다 앱 시계, 틈도 겹침도 없다)
+        assertThat(jdbc.sql("""
+                        SELECT (SELECT checked_out_at FROM reservation WHERE id = :ours) = start_at AND checked_in_at = start_at
+                        FROM reservation WHERE id = :next""")
+                .param("ours", ours).param("next", next).query(Boolean.class).single()).isTrue();
         assertThat(jdbc.sql("SELECT count(*) FROM reservation_participant WHERE reservation_id = :id AND active")
                 .param("id", next).query(Integer.class).single()).isEqualTo(3);
     }
@@ -353,5 +358,44 @@ class ContinueReservationApiTest {
                 .content("{\"endAt\":\"2030-03-05T15:00:00+09:00\"}").exchange());
         assertThat(jdbc.sql("SELECT created_via FROM reservation WHERE id = :id").param("id", next)
                 .query(String.class).single()).isEqualTo("AGENT");
+    }
+
+    void suspend(int userId) {
+        jdbc.sql("""
+                INSERT INTO user_suspension (user_id, reason, starts_at, ends_at)
+                VALUES (:id, 'NO_SHOW', CAST(:s AS timestamptz), CAST(:s AS timestamptz) + interval '14 days')
+                """).param("id", userId).param("s", "2030-03-05T13:00:00+09:00").update();
+    }
+
+    @Test
+    @DisplayName("연장도 새 예약이라 정지 중인 대표자는 못 한다 (403 USER_SUSPENDED, 지금 예약은 그대로)")
+    void suspendedOwnerCannotContinue() {
+        // given: 쓰는 중에 대표자가 정지됨
+        suspend(1);
+        now("13:55");
+
+        // when
+        MvcTestResult r = extend(ours, "14:30");
+
+        // then
+        assertThat(r).hasStatus(403);
+        assertThat(r).bodyJson().extractingPath("$.code").isEqualTo("USER_SUSPENDED");
+        assertThat(status(ours)).isEqualTo("IN_USE");
+    }
+
+    @Test
+    @DisplayName("정지 중인 참여자가 있으면 연장할 수 없다 (403 PARTICIPANT_SUSPENDED)")
+    void suspendedParticipantBlocksContinue() {
+        // given: 참여자 2번이 정지됨
+        suspend(2);
+        now("13:55");
+
+        // when
+        MvcTestResult r = extend(ours, "14:30");
+
+        // then
+        assertThat(r).hasStatus(403);
+        assertThat(r).bodyJson().extractingPath("$.code").isEqualTo("PARTICIPANT_SUSPENDED");
+        assertThat(status(ours)).isEqualTo("IN_USE");
     }
 }
