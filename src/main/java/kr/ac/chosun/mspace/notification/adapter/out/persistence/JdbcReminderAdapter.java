@@ -102,14 +102,18 @@ class JdbcReminderAdapter implements ReminderPort {
                               AND greatest(rp.changed_at, rp.trusted_from, r.checked_in_at) <= :horizon)""",
                 now, -away)) {
             // 분은 설정값이 아니라 실제 값: 정리가 늦게 돌면 비어 있던 시간은 더 길고, 퇴실까지는 더 짧다.
-            // 예약 끝이 자리 비움 퇴실보다 먼저면 끝 시각까지 (그때 자동 퇴실)
+            // 비어 있던 분도 퇴실 타이머와 같은 시작 시각(입실·재연결 뒤부터)으로 센다. 입실 전부터 빈 시간은 그 사람 몫이 아니라서
+            // 예약 끝이 자리 비움 퇴실보다 먼저면, 돌아와도 끝 시각에 자동 퇴실이라 끝 시각으로 안내 (버튼 안내도 뺀다)
             Instant since = d.awaySince() != null ? d.awaySince() : now.minus(Duration.ofMinutes(away));
             Instant releaseAt = since.plus(Duration.ofMinutes(sensor.away().releaseAfterMinutes()));
-            Instant outAt = releaseAt.isBefore(d.endAt()) ? releaseAt : d.endAt();
             long emptyMinutes = Math.max(away, Duration.between(since, now).toMinutes());
-            created.add(save(d, ReminderKind.AWAY_SOON, now, "자리에 안 계시네요",
-                    "%s이(가) %d분째 비어 있어요. %d분 안에 돌아오지 않으면 자동으로 퇴실돼요.%s".formatted(d.room(), emptyMinutes,
-                            minutesLeft(now, outAt, sensor.away().releaseAfterMinutes()), stillHereHint)));
+            String body = releaseAt.isBefore(d.endAt())
+                    ? "%s이(가) %d분째 비어 있어요. %d분 안에 돌아오지 않으면 자동으로 퇴실돼요.%s".formatted(d.room(), emptyMinutes,
+                            minutesLeft(now, releaseAt, sensor.away().releaseAfterMinutes()), stillHereHint)
+                    : "%s이(가) %d분째 비어 있어요. 예약은 %s에 끝나요(%d분 남음)."
+                            .formatted(d.room(), emptyMinutes, HH_MM.format(d.endAt()),
+                                    minutesLeft(now, d.endAt(), sensor.away().releaseAfterMinutes()));
+            created.add(save(d, ReminderKind.AWAY_SOON, now, "자리에 안 계시네요", body));
         }
         return created;
     }
@@ -118,11 +122,10 @@ class JdbcReminderAdapter implements ReminderPort {
      * 제목에 쓸 "N분 전"의 N: 설정값이 아니라 지금부터 그 시각까지 실제로 남은 분.
      * 구간 중간에 들어온 예약(예: 즉시 시작으로 55분에 입실, 6시 종료)은 첫 정리에서 바로 고르므로
      * 설정값(10분)을 그대로 쓰면 "종료 10분 전"인데 실제로는 5분 남는다 (11/5 지영 테스트).
-     * 초는 올림(4분 30초 → 5분), 1분 ~ 설정값 사이로 자른다.
+     * 1초라도 남으면 올림(4분 30초 → 5분, 2분 0.5초 → 3분), 1분 ~ 설정값 사이로 자른다.
      */
     static int minutesLeft(Instant now, Instant target, int maxMinutes) {
-        long seconds = Duration.between(now, target).toSeconds();
-        long minutes = (seconds + 59) / 60;
+        long minutes = Math.ceilDiv(Duration.between(now, target).toNanos(), Duration.ofMinutes(1).toNanos());
         return (int) Math.max(1, Math.min(maxMinutes, minutes));
     }
 

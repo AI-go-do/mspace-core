@@ -318,14 +318,14 @@ class SensorEventApiTest {
     }
 
     @Test
-    @DisplayName("예약 끝이 자리 비움 퇴실보다 먼저면 끝 시각까지 남은 분으로 안내")
+    @DisplayName("예약 끝이 자리 비움 퇴실보다 먼저면 돌아와도 끝에 퇴실이라, 끝 시각과 남은 분으로 안내 (버튼 안내 없음)")
     void awayBeforeEndShowsMinutesToEnd() {
         bookAndCheckIn("10:30", "11:00");
         occupancy("10:46", false);
         heartbeat("10:47", "10:56", false);
         reminders.sendDue();
 
-        assertThat(awayBody()).startsWith("1번 방이(가) 10분째 비어 있어요. 4분 안에 돌아오지 않으면 자동으로 퇴실돼요.");
+        assertThat(awayBody()).isEqualTo("1번 방이(가) 10분째 비어 있어요. 예약은 11:00에 끝나요(4분 남음).");
     }
 
     String awayBody() {

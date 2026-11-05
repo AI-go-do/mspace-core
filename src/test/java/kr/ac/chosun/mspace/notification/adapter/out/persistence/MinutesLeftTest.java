@@ -17,6 +17,8 @@ class MinutesLeftTest {
         assertThat(JdbcReminderAdapter.minutesLeft(END.minusSeconds(270), END, 10)).isEqualTo(5);   // 4분 30초
         assertThat(JdbcReminderAdapter.minutesLeft(END.minusSeconds(300), END, 10)).isEqualTo(5);
         assertThat(JdbcReminderAdapter.minutesLeft(END.minusSeconds(5), END, 10)).isEqualTo(1);
+        assertThat(JdbcReminderAdapter.minutesLeft(END.minusMillis(120_500), END, 10)).isEqualTo(3);   // 2분 0.5초
+        assertThat(JdbcReminderAdapter.minutesLeft(END.minusSeconds(120), END, 10)).isEqualTo(2);
         assertThat(JdbcReminderAdapter.minutesLeft(END.minusSeconds(900), END, 10)).isEqualTo(10);
     }
 }
