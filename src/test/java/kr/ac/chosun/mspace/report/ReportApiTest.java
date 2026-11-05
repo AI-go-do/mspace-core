@@ -126,6 +126,18 @@ class ReportApiTest {
     }
 
     @Test
+    @DisplayName("없는 방(0번·99번)은 권한 403이 아니라 404 ROOM_NOT_FOUND")
+    void unknownRoomNotFound() {
+        for (int roomId : new int[] {0, 99}) {
+            MvcTestResult r = report(1, roomId, "BROKEN");
+
+            assertThat(r).hasStatus(404);
+            assertThat(r).bodyJson().extractingPath("$.code").isEqualTo("ROOM_NOT_FOUND");
+        }
+        assertThat(reportCount()).isZero();
+    }
+
+    @Test
     @DisplayName("예약만 하고 입실 전(BOOKED)이거나 예약이 없는 회원은 403")
     void notInUseForbidden() {
         assertThat(report(7, 3, "BROKEN")).hasStatus(403);
