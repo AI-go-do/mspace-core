@@ -398,4 +398,22 @@ class ContinueReservationApiTest {
         assertThat(r).bodyJson().extractingPath("$.code").isEqualTo("PARTICIPANT_SUSPENDED");
         assertThat(status(ours)).isEqualTo("IN_USE");
     }
+
+    @Test
+    @DisplayName("같은 초 안에 입실한 직후 연장해도 퇴실 시각이 입실 시각보다 앞서지 않는다")
+    void checkoutNotBeforeCheckIn() {
+        // given: 13:55:10.5에 입실한 것으로 두고, 13:55:10.7에 연장
+        jdbc.sql("UPDATE reservation SET checked_in_at = CAST(:t AS timestamptz) WHERE id = :id")
+                .param("t", "2030-03-05T13:55:10.5+09:00").param("id", ours).update();
+        now("13:55:10.7");
+
+        // when
+        long next = id(extend(ours, "14:30"));
+
+        // then
+        assertThat(jdbc.sql("""
+                        SELECT o.checked_out_at >= o.checked_in_at AND o.checked_out_at = n.start_at
+                        FROM reservation o, reservation n WHERE o.id = :ours AND n.id = :next""")
+                .param("ours", ours).param("next", next).query(Boolean.class).single()).isTrue();
+    }
 }

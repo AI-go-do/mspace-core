@@ -168,17 +168,19 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
     @Override
     public Optional<ContinueTarget> findContinueTarget(long reservationId) {
         return jdbc.sql("""
-                        SELECT id, room_id, owner_id, start_at, end_at, status, continued_from_id
+                        SELECT id, room_id, owner_id, start_at, end_at, status, continued_from_id, checked_in_at
                         FROM reservation WHERE id = :id
                         """)
                 .param("id", reservationId)
                 .query((rs, n) -> new ContinueTarget(rs.getLong("id"), rs.getInt("room_id"), rs.getLong("owner_id"),
                         rs.getTimestamp("start_at").toInstant(), rs.getTimestamp("end_at").toInstant(),
                         ReservationStatus.valueOf(rs.getString("status")),
-                        rs.getObject("continued_from_id", Long.class), List.of()))
+                        rs.getObject("continued_from_id", Long.class),
+                        rs.getTimestamp("checked_in_at") == null ? null : rs.getTimestamp("checked_in_at").toInstant(),
+                        List.of()))
                 .optional()
                 .map(t -> new ContinueTarget(t.id(), t.roomId(), t.ownerId(), t.startAt(), t.endAt(), t.status(),
-                        t.continuedFromId(), jdbc.sql(
+                        t.continuedFromId(), t.checkedInAt(), jdbc.sql(
                                 "SELECT user_id FROM reservation_participant WHERE reservation_id = :id ORDER BY user_id")
                         .param("id", t.id()).query(Long.class).list()));
     }
