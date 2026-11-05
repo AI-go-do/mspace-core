@@ -105,15 +105,16 @@ class MyReservationsAndCancelApiTest {
     @Test
     @DisplayName("수용 기준: 내 예약은 대표자·참여자 예약 모두, 끝나지 않은 것(시작 빠른 순) → 끝난 것(최근 순)")
     void listOrder() {
-        long later = reservation(2, 72, "BOOKED", 4, 2, 5);           // 사흘 뒤, 2번은 참여자
+        // 끝나지 않은 예약은 1인 1건(FR-RSV-003, 11/5)이라 2번의 끝나지 않은 예약은 하나뿐이다
         long sooner = reservation(1, 24, "BOOKED", 1, 2, 3);          // 내일, 2번은 참여자
         long oldDone = reservation(3, -72, "CANCELED", 4, 2, 5);      // 사흘 전 취소
         long recentDone = reservation(3, -24, "CHECKED_OUT", 6, 2, 3); // 어제 퇴실
-        reservation(4, 48, "BOOKED", 7, 3, 5);                        // 2번이 없는 예약은 안 나온다
+        long olderDone = reservation(2, -48, "CHECKED_OUT", 4, 2, 5);  // 그제 퇴실
+        reservation(4, 48, "BOOKED", 7, 5, 6);                        // 2번이 없는 예약은 안 나온다
 
         assertThat(mine(2)).hasStatusOk().bodyJson()
                 .extractingPath("$[*].id")
-                .asArray().containsExactly((int) sooner, (int) later, (int) recentDone, (int) oldDone);
+                .asArray().containsExactly((int) sooner, (int) recentDone, (int) olderDone, (int) oldDone);
         assertThat(mine(2)).bodyJson().extractingPath("$[2].status").isEqualTo("CHECKED_OUT");
     }
 
