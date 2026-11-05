@@ -30,8 +30,15 @@ class CheckinDeadlineGuard implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        String source = jdbc.sql("SELECT prosrc FROM pg_proc WHERE proname = 'reservation_set_deadline'")
-                .query(String.class).single();
+        // 함수 이름이 아니라 reservation 표에 실제로 걸린(켜진) 트리거의 함수 본문을 읽는다
+        String source = jdbc.sql("""
+                        SELECT p.prosrc
+                        FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
+                        WHERE t.tgrelid = 'reservation'::regclass AND t.tgname = 'reservation_set_deadline'
+                          AND t.tgenabled <> 'D'
+                        """)
+                .query(String.class).optional()
+                .orElseThrow(() -> new IllegalStateException("reservation 표에 켜진 reservation_set_deadline 트리거가 없습니다"));
         check(source, props.instantNoShowMinutes(), props.noShowMinutes());
     }
 
