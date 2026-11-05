@@ -85,7 +85,7 @@ class MemberSearchApiTest {
     }
 
     @Test
-    @DisplayName("내 학번을 찾으면 me=true (화면이 \"추가\" 대신 \"추가됨\"을 보여 줌), 남은 false")
+    @DisplayName("내 학번을 찾으면 me=true (화면이 \"추가\" 대신 \"추가됨\"을 보여 줌), 남은 false. 계정마다 달라 캐시 금지")
     void marksMe() {
         // given: 로그인한 회원은 1번 김지영(20230001)
         // when
@@ -93,7 +93,8 @@ class MemberSearchApiTest {
         MvcTestResult other = search("20230002");
 
         // then
-        assertThat(mine).hasStatusOk().bodyJson().extractingPath("$.me").isEqualTo(true);
+        assertThat(mine).hasStatusOk().hasHeader("Cache-Control", "no-store")
+                .bodyJson().extractingPath("$.me").isEqualTo(true);
         assertThat(other).hasStatusOk().bodyJson().extractingPath("$.me").isEqualTo(false);
     }
 }

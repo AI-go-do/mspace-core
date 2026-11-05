@@ -3,6 +3,8 @@ package kr.ac.chosun.mspace.member.adapter.in.web;
 import kr.ac.chosun.mspace.common.auth.LoginUser;
 import kr.ac.chosun.mspace.member.application.MemberSearchUseCase;
 import kr.ac.chosun.mspace.member.application.MemberSearchUseCase.FoundMember;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -26,7 +28,9 @@ class MemberController {
      * @return 학번과 가린 이름. 없거나 학생 인증 전이면 404(MEMBER_NOT_FOUND)
      */
     @GetMapping("/api/members")
-    FoundMember find(LoginUser user, @RequestParam(required = false) String studentId) {
-        return search.findByStudentId(studentId, user.id());
+    ResponseEntity<FoundMember> find(LoginUser user, @RequestParam(required = false) String studentId) {
+        // me가 로그인한 사람마다 달라서, 계정을 바꾼 뒤 브라우저가 옛 응답을 다시 쓰지 않게 저장 금지
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(search.findByStudentId(studentId, user.id()));
     }
 }
