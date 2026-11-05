@@ -183,7 +183,7 @@ curl -X POST localhost:8080/api/sensor-events -H 'Authorization: Bearer <장치 
 
 - 숫자는 `mspace.sensor`에 있어요.
 - 장치·방마다 토큰을 나누는 것(`403 DEVICE_ROOM_MISMATCH`)은 재웅님 답을 기다려요. 지금은 키패드와 같은 토큰 하나예요.
-- "아직 있어요"(FR-DEV-103): `POST /api/reservations/{id}/still-here`. 대표자, 사용 중, **예약당 1번**(11/5 지영 "docs대로", 실제 서비스에도 넣음). 누르면 자리 비움 10분 알림·15분 퇴실을 누른 시각부터 다시 재요. 다시 10분 비면 버튼 없는 알림 `AWAY_SOON_AGAIN`, 15분이면 퇴실. 기본으로 켜져 있고 `MSPACE_STILL_HERE_ENABLED=false`로 끌 수 있어요(끄면 404 `STILL_HERE_DISABLED`). 두 번째는 409 `STILL_HERE_ALREADY_USED`.
+- "아직 있어요"(FR-DEV-103): `POST /api/reservations/{id}/still-here`. 대표자, 사용 중, **예약당 1번**(11/5 지영 "docs대로", 실제 서비스에도 넣음). 누르면 자리 비움 시계를 누른 시각부터 다시 재고, **누른 뒤에는 10분 비면 알림 없이 바로 퇴실**해요(11/5 지영, `release-after-still-here-minutes`). 돌아왔다 다시 나가면 그때부터 10분이에요. 기본으로 켜져 있고 `MSPACE_STILL_HERE_ENABLED=false`로 끌 수 있어요(끄면 404 `STILL_HERE_DISABLED`). 두 번째는 409 `STILL_HERE_ALREADY_USED`.
 
 ## 폴더 구조
 

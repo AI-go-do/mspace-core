@@ -76,6 +76,7 @@ mspace:
       notify-after-minutes: 10     # 사용 중 10분 비어 있으면 대표자에게 "5분 안에 돌아와 주세요"
       release-after-minutes: 15    # 15분이면 자동 퇴실 AWAY_RELEASED
       per-no-show: 3               # 30일 안 자리 비움 3번 = 노쇼 1번 (노쇼 벌칙 기간·횟수를 그대로 따름)
+      release-after-still-here-minutes: 10   # "아직 있어요"를 누른 뒤에는 10분 비면 알림 없이 바로 퇴실 (11/5 지영)
       still-here-enabled: ${MSPACE_STILL_HERE_ENABLED:true}   # "아직 있어요"(예약당 1번). 11/5 지영: 실제 서비스에도 넣음
     co2:                     # 환기 알림 (FR-DEV-104)
       threshold-ppm: 1000

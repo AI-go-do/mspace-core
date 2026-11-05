@@ -9,7 +9,5 @@ public enum ReminderKind {
     /** FR-NTF-104 노쇼 N분 전 */
     NO_SHOW_SOON,
     /** FR-DEV-103 자리 비움 N분: 돌아오지 않으면 곧 자동 퇴실 */
-    AWAY_SOON,
-    /** FR-DEV-103 "아직 있어요"를 쓴 뒤 다시 자리 비움 N분. 버튼은 예약당 1번이라 이 알림에는 없다 */
-    AWAY_SOON_AGAIN
+    AWAY_SOON
 }
