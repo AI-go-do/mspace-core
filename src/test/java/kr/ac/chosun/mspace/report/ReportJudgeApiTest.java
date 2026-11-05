@@ -185,21 +185,23 @@ class ReportJudgeApiTest {
     @Test
     @DisplayName("같은 신고를 동시에 10번 판정해도 200은 1번, 나머지는 409")
     void concurrentJudge() throws Exception {
-        ExecutorService pool = Executors.newFixedThreadPool(10);
         CountDownLatch start = new CountDownLatch(1);
-        List<Future<Integer>> results = new ArrayList<>();
-        for (int i = 0; i < 10; i++) {
-            String v = i % 2 == 0 ? "CONFIRMED" : "FALSE";
-            results.add(pool.submit(() -> {
-                start.await();
-                return judge(ADMIN, broken, v).getResponse().getStatus();
-            }));
-        }
-        start.countDown();
-        pool.shutdown();   // 결과 수집(f.get)이 실패해도 스레드가 남지 않게 먼저 닫는다
         List<Integer> statuses = new ArrayList<>();
-        for (Future<Integer> f : results) {
-            statuses.add(f.get());
+        // try-with-resources: 결과 수집(f.get)이 실패해도 close()가 남은 요청이 끝날 때까지 기다린다
+        // (다음 테스트의 @BeforeEach가 데이터를 지우는 동안 이전 요청이 돌지 않게)
+        try (ExecutorService pool = Executors.newFixedThreadPool(10)) {
+            List<Future<Integer>> results = new ArrayList<>();
+            for (int i = 0; i < 10; i++) {
+                String v = i % 2 == 0 ? "CONFIRMED" : "FALSE";
+                results.add(pool.submit(() -> {
+                    start.await();
+                    return judge(ADMIN, broken, v).getResponse().getStatus();
+                }));
+            }
+            start.countDown();
+            for (Future<Integer> f : results) {
+                statuses.add(f.get());
+            }
         }
 
         assertThat(statuses).filteredOn(s -> s == 200).hasSize(1);
