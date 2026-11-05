@@ -29,7 +29,7 @@ class JdbcReservationQueryAdapter implements ReservationQueryPort {
         Map<Long, Row> rows = new LinkedHashMap<>();
         jdbc.sql("""
                         SELECT r.id, r.room_id, rm.name AS room_name, r.start_at, r.end_at, r.status, r.owner_id,
-                               r.access_code, p.user_id, u.name AS person_name, p.is_owner
+                               r.access_code, r.checkin_deadline, p.user_id, u.name AS person_name, p.is_owner
                         FROM reservation r
                         JOIN rooms rm ON rm.id = r.room_id
                         JOIN reservation_participant p ON p.reservation_id = r.id
@@ -45,7 +45,8 @@ class JdbcReservationQueryAdapter implements ReservationQueryPort {
                         row = new Row(id, rs.getInt("room_id"), rs.getString("room_name"),
                                 rs.getTimestamp("start_at").toInstant(), rs.getTimestamp("end_at").toInstant(),
                                 ReservationStatus.valueOf(rs.getString("status")), rs.getLong("owner_id"),
-                                rs.getString("access_code"), new ArrayList<>());
+                                rs.getString("access_code"), rs.getTimestamp("checkin_deadline").toInstant(),
+                                new ArrayList<>());
                         rows.put(id, row);
                     }
                     row.participants().add(new ParticipantRow(rs.getLong("user_id"), rs.getString("person_name"),
