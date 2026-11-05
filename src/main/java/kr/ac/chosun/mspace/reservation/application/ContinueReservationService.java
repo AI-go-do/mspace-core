@@ -138,11 +138,12 @@ public class ContinueReservationService implements ContinueReservationUseCase {
             throw new BusinessException(ErrorCode.RESERVATION_EXTENSION_LIMIT,
                     "연장은 %d회만 할 수 있습니다".formatted(policy.maxCount()));
         }
-        if (!statuses.checkoutIfInUse(reservationId, userId)) {
+        // 지금 예약 퇴실 시각 = 새 예약 시작 시각 (둘 다 앱 Clock, 틈도 겹침도 없게)
+        Instant start = now.truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+        if (!statuses.checkoutIfInUse(reservationId, userId, start)) {
             // 읽은 뒤 그 사이 퇴실·자동 퇴실됨 (같은 버튼 두 번 등)
             throw new BusinessException(ErrorCode.RESERVATION_NOT_IN_USE, "이미 끝난 예약입니다");
         }
-        Instant start = now.truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
         String code = codes.issue();
         long id = port.insert(new NewReservation(r.roomId(), userId, start, command.endAt(), code, r.participantIds(),
                 command.idempotencyKey(), true, command.createdVia(), true, reservationId));
