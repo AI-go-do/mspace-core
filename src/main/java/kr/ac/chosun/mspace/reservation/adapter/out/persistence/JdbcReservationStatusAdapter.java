@@ -43,13 +43,14 @@ class JdbcReservationStatusAdapter implements ReservationStatusPort {
     }
 
     @Override
-    public boolean checkoutIfInUse(long reservationId, long ownerId) {
+    public boolean checkoutIfInUse(long reservationId, long ownerId, Instant now) {
         return jdbc.sql("""
-                        UPDATE reservation SET status = 'CHECKED_OUT', checked_out_at = now()
+                        UPDATE reservation SET status = 'CHECKED_OUT', checked_out_at = :now
                         WHERE id = :id AND owner_id = :owner AND status = 'IN_USE'
                         """)
                 .param("id", reservationId)
                 .param("owner", ownerId)
+                .param("now", Timestamp.from(now))
                 .update() == 1;
     }
 }
