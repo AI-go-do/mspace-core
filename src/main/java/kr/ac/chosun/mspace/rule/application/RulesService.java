@@ -46,7 +46,7 @@ public class RulesService {
         for (Map.Entry<String, Integer> e : numbers.entrySet()) {
             out = out.replace("{" + e.getKey() + "}", String.valueOf(e.getValue()));
         }
-        if (out.matches("(?s).*\\{[A-Za-z]+}.*")) {
+        if (out.matches("(?s).*\\{[^{}]*}.*")) {
             throw new IllegalStateException("이용 수칙 문구에 채우지 못한 자리가 있습니다: " + out);
         }
         return out;
