@@ -3,6 +3,7 @@ package kr.ac.chosun.mspace.reservation.adapter.out.persistence;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -10,7 +11,9 @@ import java.util.Map;
 import java.util.Optional;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
+import kr.ac.chosun.mspace.reservation.application.ContinuationPort;
 import kr.ac.chosun.mspace.reservation.application.ReservationCommandPort;
+import kr.ac.chosun.mspace.reservation.application.UsageChainPort;
 import kr.ac.chosun.mspace.reservation.domain.ReservationStatus;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.ServerErrorMessage;
@@ -25,7 +28,7 @@ import org.springframework.stereotype.Component;
  * (서비스는 "no_room_overlap" 같은 DB 단어를 몰라도 된다).
  */
 @Component
-class JdbcReservationAdapter implements ReservationCommandPort {
+class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort, UsageChainPort {
 
     /** DB 제약 이름 → 응답 오류. V1__init_schema.sql의 이름과 같아야 한다 */
     private static final Map<String, ErrorCode> CONSTRAINTS = Map.of(
@@ -33,7 +36,8 @@ class JdbcReservationAdapter implements ReservationCommandPort {
             "one_active_per_owner", ErrorCode.OWNER_HAS_ACTIVE_RESERVATION,
             "no_person_overlap", ErrorCode.PARTICIPANT_TIME_TAKEN,
             "one_reservation_per_key", ErrorCode.IDEMPOTENCY_KEY_REUSED,
-            "one_active_code_per_room", ErrorCode.ACCESS_CODE_TAKEN);
+            "one_active_code_per_room", ErrorCode.ACCESS_CODE_TAKEN,
+            "one_continuation_per_reservation", ErrorCode.RESERVATION_EXTENSION_LIMIT);
 
     private final JdbcClient jdbc;
 
@@ -90,10 +94,15 @@ class JdbcReservationAdapter implements ReservationCommandPort {
             lockInOrder(r);
             long id = jdbc.sql("""
                             INSERT INTO reservation (room_id, owner_id, start_at, end_at, headcount, access_code,
-                                                     idempotency_key, is_instant, created_via)
-                            VALUES (:room, :owner, :start, :end, :headcount, :code, :key, :instant, :via)
+                                                     idempotency_key, is_instant, created_via,
+                                                     status, checked_in_at, continued_from_id)
+                            VALUES (:room, :owner, :start, :end, :headcount, :code, :key, :instant, :via,
+                                    CASE WHEN :inUse THEN 'IN_USE' ELSE 'BOOKED' END,
+                                    CASE WHEN :inUse THEN now() END, :from)
                             RETURNING id
                             """)
+                    .param("inUse", r.inUse())
+                    .param("from", r.continuedFromId(), java.sql.Types.BIGINT)
                     .param("room", r.roomId())
                     .param("owner", r.ownerId())
                     .param("start", Timestamp.from(r.startAt()))
@@ -154,6 +163,64 @@ class JdbcReservationAdapter implements ReservationCommandPort {
                 .optional()
                 .map(k -> new KeyedReservation(k.id(), k.roomId(), k.startAt(), k.endAt(), k.status(), k.headcount(),
                         k.accessCode(), otherStudentIds(k.id()), k.instant()));
+    }
+
+    @Override
+    public Optional<ContinueTarget> findContinueTarget(long reservationId) {
+        return jdbc.sql("""
+                        SELECT id, room_id, owner_id, start_at, end_at, status, continued_from_id
+                        FROM reservation WHERE id = :id
+                        """)
+                .param("id", reservationId)
+                .query((rs, n) -> new ContinueTarget(rs.getLong("id"), rs.getInt("room_id"), rs.getLong("owner_id"),
+                        rs.getTimestamp("start_at").toInstant(), rs.getTimestamp("end_at").toInstant(),
+                        ReservationStatus.valueOf(rs.getString("status")),
+                        rs.getObject("continued_from_id", Long.class), List.of()))
+                .optional()
+                .map(t -> new ContinueTarget(t.id(), t.roomId(), t.ownerId(), t.startAt(), t.endAt(), t.status(),
+                        t.continuedFromId(), jdbc.sql(
+                                "SELECT user_id FROM reservation_participant WHERE reservation_id = :id ORDER BY user_id")
+                        .param("id", t.id()).query(Long.class).list()));
+    }
+
+    /**
+     * 거슬러 올라가기: 지금 시작 바로 앞에, 같은 대표자가 실제로 쓰고(퇴실·자동 퇴실) gap 안에 끝낸 예약이 있으면 그 예약으로 옮겨
+     * 다시 본다. 시작 시각이 계속 줄어서 반드시 멈춘다. 실제로 끝난 시각은 일찍 퇴실했으면 퇴실 시각이다.
+     * end_at 조건은 (owner_id, end_at) 인덱스를 타게 하려고 둔다 (실제 끝 ≤ end_at이라 결과는 같다)
+     */
+    @Override
+    public int extensionsBefore(long ownerId, Instant startAt, Duration gap) {
+        return jdbc.sql("""
+                        WITH RECURSIVE chain(id, start_at, continued_from_id) AS (
+                            SELECT NULL::bigint, :start::timestamptz, NULL::bigint
+                            UNION ALL
+                            SELECT p.id, p.start_at, p.continued_from_id
+                            FROM chain c
+                            CROSS JOIN LATERAL (
+                                SELECT r.id, r.start_at, r.continued_from_id FROM reservation r
+                                WHERE r.owner_id = :owner
+                                  AND r.status IN ('CHECKED_OUT', 'AUTO_CHECKED_OUT')
+                                  AND r.end_at >= c.start_at - :gap::interval
+                                  AND r.start_at < c.start_at
+                                  AND least(r.end_at, r.checked_out_at) >= c.start_at - :gap::interval
+                                ORDER BY r.start_at DESC LIMIT 1
+                            ) p
+                        )
+                        SELECT count(*) FROM chain WHERE continued_from_id IS NOT NULL
+                        """)
+                .param("start", Timestamp.from(startAt))
+                .param("owner", ownerId)
+                .param("gap", gap.toMinutes() + " minutes")
+                .query(Integer.class)
+                .single();
+    }
+
+    @Override
+    public Optional<Long> continuedFrom(long reservationId) {
+        return jdbc.sql("SELECT continued_from_id FROM reservation WHERE id = :id AND continued_from_id IS NOT NULL")
+                .param("id", reservationId)
+                .query(Long.class)
+                .optional();
     }
 
     /** 예약의 참여자 학번 (대표자 제외) */

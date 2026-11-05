@@ -24,7 +24,7 @@ import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.assertj.MvcTestResult;
 
 /**
- * 즉시 시작(FR-RSV-103)과 끝난 뒤 다시 예약(FR-RSV-104, 연장 버튼은 없음). 날짜는 2030-03-05(화), 1번 방(3–5명).
+ * 즉시 시작(FR-RSV-103)과 끝난 뒤 다시 예약(FR-RSV-104. 사용 중 이어 쓰기는 ContinueReservationApiTest). 날짜는 2030-03-05(화), 1번 방(3–5명).
  * 대표자 1번 + 2·3번(우리 팀), 대표자 4번 + 5·6번(다른 팀).
  */
 @SpringBootTest(properties = {"mspace.auth.dev-header=true", "mspace.access.device-token=test-device-token"})

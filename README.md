@@ -68,7 +68,7 @@ curl -X POST localhost:8080/api/reservations/1/checkout -H 'X-User-Id: 1' # 퇴�
 
 ### 지금 바로 쓰기 (즉시 시작)
 
-버튼 누른 시각부터 시작하고, 끝은 30분 칸으로 골라요. 끝은 최대 (지금 + 2시간)을 30분 칸으로 올린 시각이에요(14:17 → 16:30). 다음 예약이 있으면 그 전까지만 돼요(아니면 409). 10분 안에 키패드로 입실하지 않으면 노쇼예요. 연장 버튼은 없고, 끝난 뒤나 일찍 퇴실한 뒤에 다시 누르면 새 예약 1건이에요.
+버튼 누른 시각부터 시작하고, 끝은 30분 칸으로 골라요. 끝은 최대 (지금 + 2시간)을 30분 칸으로 올린 시각이에요(14:17 → 16:30). 다음 예약이 있으면 그 전까지만 돼요(아니면 409). 10분 안에 키패드로 입실하지 않으면 노쇼예요. 끝난 뒤나 일찍 퇴실한 뒤에 다시 누르면 새 예약 1건이에요. 사용 중에 이어 쓰려면 아래 연장하기를 써요.
 
 ```bash
 curl -X POST localhost:8080/api/reservations/instant -H 'X-User-Id: 1' -H 'Content-Type: application/json' \
@@ -76,6 +76,15 @@ curl -X POST localhost:8080/api/reservations/instant -H 'X-User-Id: 1' -H 'Conte
 ```
 
 예약을 만들기(미리 예약·즉시 시작) 직전에는 지난 예약 정리(노쇼·자동 퇴실)를 한 번 돌려요. 그래서 끝나자마자 이어서 누르거나 노쇼된 방을 바로 잡을 때, 1분 정리를 기다리지 않아도 돼요.
+
+### 연장하기 (FR-RSV-105)
+
+사용 중(`IN_USE`)인 예약의 대표자가 종료 10분 전부터 종료 전까지 누를 수 있어요. 한 번에 지금 예약을 퇴실하고, 누른 시각부터 고른 끝까지 새 예약을 바로 사용 중으로 만들어요(키패드·노쇼 없음). 끝은 지금 종료 + 30분 단위, 최대 2시간이에요. 새 입실 번호가 나오고 예전 번호는 바로 무효예요. 다음 칸을 남이 잡았으면 `409 RESERVATION_TIME_TAKEN`이고 지금 예약은 그대로예요. 연장은 1회만 돼요(`409 RESERVATION_EXTENSION_LIMIT`). 연장까지 쓴 뒤 30분 안에 시작하는 새 예약도 같은 409예요. 숫자는 `mspace.reservation.extension`에 있어요.
+
+```bash
+curl -X POST localhost:8080/api/reservations/1/continue -H 'X-User-Id: 1' -H 'Content-Type: application/json' \
+  -d '{"endAt":"2026-11-03T16:00:00+09:00"}'   # → 201, 새 예약(IN_USE)과 새 번호
+```
 
 ### 키패드 (장치)
 

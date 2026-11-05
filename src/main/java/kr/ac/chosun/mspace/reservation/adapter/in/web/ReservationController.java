@@ -10,6 +10,7 @@ import kr.ac.chosun.mspace.reservation.application.CancelReservationUseCase;
 import kr.ac.chosun.mspace.reservation.application.CancelReservationUseCase.Canceled;
 import kr.ac.chosun.mspace.reservation.application.CheckoutReservationUseCase;
 import kr.ac.chosun.mspace.reservation.application.CheckoutReservationUseCase.CheckedOut;
+import kr.ac.chosun.mspace.reservation.application.ContinueReservationUseCase;
 import kr.ac.chosun.mspace.reservation.application.CreateReservationUseCase;
 import kr.ac.chosun.mspace.reservation.application.CreateReservationUseCase.Command;
 import kr.ac.chosun.mspace.reservation.application.CreateReservationUseCase.Created;
@@ -31,9 +32,12 @@ class ReservationController {
     private final MyReservationsUseCase myReservations;
     private final CancelReservationUseCase cancels;
     private final CheckoutReservationUseCase checkouts;
+    private final ContinueReservationUseCase continuations;
 
     ReservationController(CreateReservationUseCase service, MyReservationsUseCase myReservations,
-                          CancelReservationUseCase cancels, CheckoutReservationUseCase checkouts) {
+                          CancelReservationUseCase cancels, CheckoutReservationUseCase checkouts,
+                          ContinueReservationUseCase continuations) {
+        this.continuations = continuations;
         this.service = service;
         this.myReservations = myReservations;
         this.cancels = cancels;
@@ -139,6 +143,36 @@ class ReservationController {
     StatusChangeResponse checkout(LoginUser user, @PathVariable long id) {
         CheckedOut c = checkouts.checkout(id, user.id());
         return new StatusChangeResponse(c.id(), c.status().name());
+    }
+
+    /**
+     * 연장하기 (FR-RSV-105). 대표자, 사용 중(IN_USE), 종료 10분 전–종료 전에만. 지금 예약을 퇴실하고 지금부터 endAt까지
+     * 새 예약을 바로 사용 중으로 만든다(키패드·노쇼 없음). 새 입실 번호를 주고 예전 번호는 바로 무효다.
+     * 예: POST /api/reservations/12/continue {"endAt":"2026-11-03T16:00:00+09:00"}  (지금 끝 15:00 → 30분 단위, 최대 2시간)
+     * 201 새 예약 / 200 같은 Idempotency-Key 재요청 / 400 끝 시각이 틀림 / 403 참여자 / 404 없거나 내 예약 아님
+     * / 409 사용 중 아님·시간 밖·연장 1회 넘음·다음 칸이 이미 예약됨(이때 지금 예약은 그대로)
+     */
+    @PostMapping("/api/reservations/{id}/continue")
+    ResponseEntity<CreateReservationResponse> continueUse(LoginUser user, @PathVariable long id,
+                                                          @RequestHeader(name = "Idempotency-Key", required = false)
+                                                          String idempotencyKey,
+                                                          @RequestHeader(name = CREATED_VIA_HEADER, required = false)
+                                                          String client,
+                                                          @RequestBody ContinueRequest request) {
+        if (request.endAt() == null) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        Created created = continuations.continueUse(id, user.id(), new ContinueReservationUseCase.Command(
+                request.endAt().toInstant(), checkKey(idempotencyKey), via(client)));
+        CreateReservationResponse body = CreateReservationResponse.from(created);
+        if (created.replayed()) {
+            return ResponseEntity.ok(body);
+        }
+        return ResponseEntity.created(URI.create("/api/reservations/" + created.id())).body(body);
+    }
+
+    /** 연장하기 요청 본문. 시작은 서버 시계(누른 시각) */
+    record ContinueRequest(OffsetDateTime endAt) {
     }
 
     /** 즉시 시작 요청 본문. 시작은 서버 시계라 받지 않는다 */

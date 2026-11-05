@@ -3,12 +3,14 @@ package kr.ac.chosun.mspace.reservation.application;
 import static kr.ac.chosun.mspace.common.config.TimeConfig.SEOUL;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import kr.ac.chosun.mspace.common.config.ExtensionPolicy;
 import kr.ac.chosun.mspace.common.config.ReservationPolicy;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
@@ -35,7 +37,8 @@ import org.springframework.transaction.support.TransactionOperations;
  * 즉시 시작(FR-RSV-103)도 같은 길로 만든다. 다른 점은 시각 규칙({@link ReservationTime#instant})과 is_instant뿐이다.
  * <p>
  * 만들기 전에 지난 예약 정리(노쇼·자동 퇴실)를 한 번 돌린다. 1분 정리를 기다리지 않고, 끝났는데 아직 IN_USE인 내 예약이나
- * 마감이 지났는데 아직 BOOKED인 예약 때문에 409가 나지 않게 하려고 (끝나자마자 이어서 즉시 시작하는 연장, FR-RSV-104).
+ * 마감이 지났는데 아직 BOOKED인 예약 때문에 409가 나지 않게 하려고 (끝나자마자 이어서 다시 잡을 때, FR-RSV-104).
+ * 사용 중에 이어 쓰는 것은 "연장하기"({@link ContinueReservationService}, FR-RSV-105)가 따로 한다.
  */
 @Service
 public class CreateReservationService implements CreateReservationUseCase {
@@ -52,11 +55,16 @@ public class CreateReservationService implements CreateReservationUseCase {
     private final Clock clock;
     private final TransactionOperations tx;
     private final SweepReservationsUseCase sweeps;
+    private final UsageChainPort chains;
+    private final ExtensionPolicy extension;
 
     public CreateReservationService(ReservationCommandPort port, RoomQuery rooms, AccessCodeIssuer codes,
                                     ReservationPolicy policy, Clock clock, TransactionOperations tx,
-                                    SweepReservationsUseCase sweeps) {
+                                    SweepReservationsUseCase sweeps, UsageChainPort chains,
+                                    ExtensionPolicy extension) {
         this.sweeps = sweeps;
+        this.chains = chains;
+        this.extension = extension;
         this.port = port;
         this.rooms = rooms;
         this.codes = codes;
@@ -189,6 +197,13 @@ public class CreateReservationService implements CreateReservationUseCase {
         Map<String, Long> ids = port.findVerifiedUserIds(others);
         if (ids.size() != others.size()) {
             throw new BusinessException(ErrorCode.PARTICIPANT_NOT_FOUND);
+        }
+
+        // 연장 제한 우회 막기 (FR-RSV-104·105): 연장까지 쓴 직후 30분 안에 같은 대표자가 새로 잡으면 이어진 사용이라 409
+        if (chains.extensionsBefore(ownerId, time.start(), Duration.ofMinutes(extension.chainGapMinutes()))
+                >= extension.maxCount()) {
+            throw new BusinessException(ErrorCode.RESERVATION_EXTENSION_LIMIT,
+                    "연장까지 쓴 뒤 %d분 안에는 새로 예약할 수 없습니다".formatted(extension.chainGapMinutes()));
         }
 
         int headcount = others.size() + 1;
