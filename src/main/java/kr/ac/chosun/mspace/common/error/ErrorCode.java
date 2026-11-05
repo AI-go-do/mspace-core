@@ -21,7 +21,10 @@ public enum ErrorCode {
     PARTICIPANT_NOT_FOUND(HttpStatus.BAD_REQUEST, "학생 인증을 마친 회원의 학번만 넣을 수 있습니다"),
     HEADCOUNT_OUT_OF_RANGE(HttpStatus.BAD_REQUEST, "방의 이용 인원을 벗어났습니다"),
     RESERVATION_TIME_TAKEN(HttpStatus.CONFLICT, "이미 예약된 시간입니다"),
+    // FR-RSV-003 (11/5): 대표자든 참여자든 끝나지 않은 예약은 1건. 나(대표자)가 걸리면 이 코드
     OWNER_HAS_ACTIVE_RESERVATION(HttpStatus.CONFLICT, "끝나지 않은 예약이 이미 있습니다"),
+    // 넣으려는 참여자 중 누가 다른 끝나지 않은 예약에 들어가 있음. 누구인지는 알려 주지 않는다
+    PARTICIPANT_HAS_ACTIVE_RESERVATION(HttpStatus.CONFLICT, "참여자 중 끝나지 않은 예약이 이미 있는 사람이 있습니다"),
     PARTICIPANT_TIME_TAKEN(HttpStatus.CONFLICT, "참여자 중 같은 시간에 다른 방 예약이 있는 사람이 있습니다"),
     // 노쇼 벌칙 (FR-RSV-106): 30일 안 노쇼 2번 → 14일 정지. 참여자는 누구인지 알려 주지 않는다(남의 제재 기록이라)
     USER_SUSPENDED(HttpStatus.FORBIDDEN, "노쇼가 쌓여 이용이 정지되어 예약할 수 없습니다"),

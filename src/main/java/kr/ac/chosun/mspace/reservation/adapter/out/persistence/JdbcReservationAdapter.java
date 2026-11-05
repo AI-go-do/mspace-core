@@ -39,6 +39,15 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
             "one_active_code_per_room", ErrorCode.ACCESS_CODE_TAKEN,
             "one_continuation_per_reservation", ErrorCode.RESERVATION_EXTENSION_LIMIT);
 
+    /**
+     * 회원당 끝나지 않은 예약 1건(V13, FR-RSV-003). 대표자도 참여자 표에 들어가므로 걸린 사람이 대표자인지 참여자인지에 따라
+     * 오류를 나눈다. 걸린 회원 id는 PostgreSQL 오류 상세("Key (user_id)=(7) already exists.")에서 읽는다
+     */
+    private static final String ONE_ACTIVE_PER_MEMBER = "one_active_per_member";
+
+    private static final java.util.regex.Pattern KEY_USER_ID =
+            java.util.regex.Pattern.compile("\\(user_id\\)=\\((\\d+)\\)");
+
     private final JdbcClient jdbc;
 
     private final Duration lockTimeout;
@@ -139,6 +148,9 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
             }
             // Map.of는 get(null)에서 NullPointerException → 제약 이름이 없으면(연결 끊김 등) 원래 오류를 그대로 던진다
             String constraint = constraintName(e);
+            if (ONE_ACTIVE_PER_MEMBER.equals(constraint)) {
+                throw new BusinessException(memberConflict(e, r.ownerId()));
+            }
             ErrorCode code = constraint == null ? null : CONSTRAINTS.get(constraint);
             if (code != null) {
                 throw new BusinessException(code);
@@ -277,7 +289,6 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
         jdbc.sql("SELECT pg_advisory_xact_lock(:key)").param("key", key).query((rs, n) -> 1).list();
     }
 
-    /** PostgreSQL이 알려 준 위반 제약 이름. 없으면 null */
     /** PostgreSQL 오류 코드: 잠금을 기다리다 lock_timeout을 넘음 */
     private static final String LOCK_NOT_AVAILABLE = "55P03";
 
@@ -290,17 +301,32 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
         return null;
     }
 
-    private static String constraintName(DataAccessException e) {
-        for (Throwable t = e; t != null; t = t.getCause()) {
-            if (t instanceof PSQLException p) {
-                ServerErrorMessage m = p.getServerErrorMessage();
-                return m == null ? null : m.getConstraint();
-            }
-            if (t instanceof SQLException s && s.getNextException() instanceof PSQLException p) {
-                ServerErrorMessage m = p.getServerErrorMessage();
-                return m == null ? null : m.getConstraint();
+    /** 걸린 회원이 대표자 본인이면 OWNER_HAS_ACTIVE_RESERVATION, 아니면(또는 상세를 못 읽으면) 참여자 쪽 오류 */
+    private static ErrorCode memberConflict(DataAccessException e, long ownerId) {
+        String detail = serverMessage(e).map(ServerErrorMessage::getDetail).orElse(null);
+        if (detail != null) {
+            java.util.regex.Matcher m = KEY_USER_ID.matcher(detail);
+            if (m.find() && Long.parseLong(m.group(1)) == ownerId) {
+                return ErrorCode.OWNER_HAS_ACTIVE_RESERVATION;
             }
         }
-        return null;
+        return ErrorCode.PARTICIPANT_HAS_ACTIVE_RESERVATION;
+    }
+
+    private static Optional<ServerErrorMessage> serverMessage(DataAccessException e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof PSQLException p) {
+                return Optional.ofNullable(p.getServerErrorMessage());
+            }
+            if (t instanceof SQLException s && s.getNextException() instanceof PSQLException p) {
+                return Optional.ofNullable(p.getServerErrorMessage());
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** PostgreSQL이 알려 준 위반 제약 이름. 없으면 null */
+    private static String constraintName(DataAccessException e) {
+        return serverMessage(e).map(ServerErrorMessage::getConstraint).orElse(null);
     }
 }

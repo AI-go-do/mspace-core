@@ -184,13 +184,37 @@ class CreateReservationApiTest {
     }
 
     @Test
-    @DisplayName("수용 기준: A가 1번 방 14–16시 참여 중이면 A를 넣은 2번 방 15–16시 → 409, 16–17시 → 201")
+    @DisplayName("수용 기준: A가 1번 방 14–16시 참여 중이면 A를 넣은 2번 방 15–16시도 16–17시도 409 (1인 1건, 11/5)")
     void personOverlap() {
         assertThat(reserve(1, 1, at("03T14:00"), at("03T16:00"), "20230002", "20230003")).hasStatus(201);
 
+        // 같은 시간: 사람 겹침(no_person_overlap)과 1인 1건(one_active_per_member) 중 먼저 걸리는 쪽. 둘 다 409
         assertThat(reserve(4, 2, at("03T15:00"), at("03T16:00"), "20230002", "20230005"))
-                .hasStatus(409).bodyJson().extractingPath("$.code").isEqualTo("PARTICIPANT_TIME_TAKEN");
-        assertThat(reserve(4, 2, at("03T16:00"), at("03T17:00"), "20230002", "20230005")).hasStatus(201);
+                .hasStatus(409).bodyJson().extractingPath("$.code").asString()
+                .isIn("PARTICIPANT_TIME_TAKEN", "PARTICIPANT_HAS_ACTIVE_RESERVATION");
+        assertThat(reserve(4, 2, at("03T16:00"), at("03T17:00"), "20230002", "20230005"))
+                .hasStatus(409).bodyJson().extractingPath("$.code").isEqualTo("PARTICIPANT_HAS_ACTIVE_RESERVATION");
+        assertThat(count("SELECT count(*) FROM reservation")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("수용 기준: 내가 참여자인 예약이 15–17시 BOOKED면 내가 대표자로 19–21시 예약 → 409 OWNER_HAS_ACTIVE_RESERVATION")
+    void participantCannotOwnAnother() {
+        assertThat(reserve(1, 1, at("03T15:00"), at("03T17:00"), "20230002", "20230003")).hasStatus(201);
+
+        assertThat(reserve(2, 2, at("03T19:00"), at("03T21:00"), "20230004", "20230005"))
+                .hasStatus(409).bodyJson().extractingPath("$.code").isEqualTo("OWNER_HAS_ACTIVE_RESERVATION");
+        assertThat(count("SELECT count(*) FROM reservation")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("수용 기준: 참여한 예약이 끝나면(노쇼 처리) 바로 대표자로 새 예약 → 201")
+    void participantFreedAfterEnd() {
+        assertThat(reserve(1, 1, at("03T15:00"), at("03T17:00"), "20230002", "20230003")).hasStatus(201);
+        // 테스트 시계는 고정이고 DB now()는 실제 시각이라 취소 대신 노쇼로 끝낸다. 트리거가 참여자 줄 active를 false로 바꾼다
+        jdbc.sql("UPDATE reservation SET status = 'NO_SHOW'").update();
+
+        assertThat(reserve(2, 2, at("03T19:00"), at("03T21:00"), "20230004", "20230005")).hasStatus(201);
     }
 
     @Test
