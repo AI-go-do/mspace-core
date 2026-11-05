@@ -204,6 +204,22 @@ curl localhost:8080/api/rooms/status
 
 - "비었는지"는 예약 기준이에요. 예약을 잡을 수 있는지와 같은 기준이라서요. 센서는 예약 없이 사람이 있거나 사용 중인데 비어 있는 걸 보여 주는 참고값이에요.
 
+### 사진 체크인·아웃 (FR-RPT-102, 선택)
+
+입실·퇴실 때 방 사진을 남기는 선택 기능이에요. 사진이 없어도 입실·퇴실은 그대로 돼요. 사진은 core DB(`reservation_photo.data`, V14)에 담아요.
+
+```bash
+curl -X POST localhost:8080/api/reservations/12/photos -H 'X-User-Id: 1' -F kind=CHECK_IN -F file=@room.jpg
+# → 201 {"reservationId":12,"kind":"CHECK_IN","uploadedAt":"…+09:00","sizeBytes":123456}
+curl localhost:8080/api/reservations/12/photos/CHECK_IN -H 'X-User-Id: 1' -o room.jpg   # 사진 그대로
+```
+
+- 올리기: 그 예약의 대표자·참여자, 종류별 1장(두 번째는 409 `PHOTO_ALREADY_UPLOADED`). 입실 사진은 사용 중일 때, 퇴실 사진은 사용 중이거나 퇴실한 뒤 30분 안(그 밖엔 409 `PHOTO_NOT_ALLOWED_NOW`)
+- 파일: JPEG·PNG, 1장 최대 2MB. 형식은 파일 앞부분으로 봐요(400 `PHOTO_INVALID`, 크면 400 `PHOTO_TOO_LARGE`)
+- 보기: 그 예약 사람들과 관리자(신고 판정)만. 아니면 404 `PHOTO_NOT_FOUND`
+- 올린 지 30일 지나면 1시간마다 지워요. 숫자는 `mspace.photo`에서 바꿔요
+- 배포: nginx 기본 업로드 상한이 1MB라 `client_max_body_size 4m`이 필요해요 (재웅님 확인)
+
 ## 폴더 구조
 
 기능별로 나누고, 기능 안은 포트·어댑터로 나눠요 (팀 컨벤션 3절).

@@ -6,6 +6,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 /** 모든 컨트롤러의 오류를 팀 형식 {"code": "...", "message": "..."}으로 바꾼다 */
 @RestControllerAdvice
@@ -22,6 +23,13 @@ public class GlobalExceptionHandler {
             HttpMessageNotReadableException.class})
     ResponseEntity<ErrorResponse> handleBadRequest(Exception e) {
         ErrorCode code = ErrorCode.INVALID_REQUEST;
+        return ResponseEntity.status(code.status()).body(ErrorResponse.of(code));
+    }
+
+    /** 업로드가 spring.servlet.multipart 상한(3MB)을 넘음 → 사진 크기 오류 (FR-RPT-102) */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    ResponseEntity<ErrorResponse> handleTooLarge(MaxUploadSizeExceededException e) {
+        ErrorCode code = ErrorCode.PHOTO_TOO_LARGE;
         return ResponseEntity.status(code.status()).body(ErrorResponse.of(code));
     }
 }
