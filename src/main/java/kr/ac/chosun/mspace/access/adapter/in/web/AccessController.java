@@ -1,11 +1,9 @@
 package kr.ac.chosun.mspace.access.adapter.in.web;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import kr.ac.chosun.mspace.access.application.Verdict;
 import kr.ac.chosun.mspace.access.application.VerifyAccessService;
-import kr.ac.chosun.mspace.common.config.AccessPolicy;
+import kr.ac.chosun.mspace.common.auth.DeviceTokenVerifier;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,11 +19,11 @@ import org.springframework.web.bind.annotation.RestController;
 class AccessController {
 
     private final VerifyAccessService service;
-    private final AccessPolicy policy;
+    private final DeviceTokenVerifier devices;
 
-    AccessController(VerifyAccessService service, AccessPolicy policy) {
+    AccessController(VerifyAccessService service, DeviceTokenVerifier devices) {
         this.service = service;
-        this.policy = policy;
+        this.devices = devices;
     }
 
     /**
@@ -37,25 +35,13 @@ class AccessController {
     @PostMapping("/api/access/verify")
     VerifyResponse verify(@RequestHeader(name = "Authorization", required = false) String authorization,
                           @RequestBody VerifyRequest request) {
-        checkDevice(authorization);
+        devices.verify(authorization);
         if (request.eventId() == null || request.eventId().isBlank() || request.eventId().length() > 64
                 || request.roomId() == null || (request.deviceId() != null && request.deviceId().length() > 50)) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
         Verdict v = service.verify(request.eventId(), request.roomId(), request.deviceId(), request.code());
         return new VerifyResponse(v.result(), v.reason());
-    }
-
-    /** 토큰은 길이·내용을 시간 차 없이 비교한다(MessageDigest.isEqual). 설정이 비어 있으면 항상 401 */
-    private void checkDevice(String authorization) {
-        String expected = policy.deviceToken();
-        if (expected == null || expected.isBlank() || authorization == null || !authorization.startsWith("Bearer ")) {
-            throw new BusinessException(ErrorCode.DEVICE_UNAUTHORIZED);
-        }
-        byte[] given = authorization.substring("Bearer ".length()).getBytes(StandardCharsets.UTF_8);
-        if (!MessageDigest.isEqual(given, expected.getBytes(StandardCharsets.UTF_8))) {
-            throw new BusinessException(ErrorCode.DEVICE_UNAUTHORIZED);
-        }
     }
 
     record VerifyRequest(String eventId, Integer roomId, String deviceId, String code) {

@@ -29,11 +29,15 @@ class SweepReservationsService implements SweepReservationsUseCase {
     @Override
     public Swept sweep() {
         var now = clock.instant();
-        // 두 UPDATE는 서로 다른 상태(BOOKED / IN_USE)만 건드려서 순서가 결과를 바꾸지 않는다. 각각 따로 커밋.
+        // 노쇼는 BOOKED만, 나머지 둘은 IN_USE만 건드린다. 각각 따로 커밋.
+        // 자동 퇴실을 자리 비움보다 먼저: 끝 시각이 된 예약은 자리 비움으로 세지 않는다 (자리 비움 쪽도 end_at > now만 본다)
         // 한쪽이 잠금 대기 상한을 넘어도 다른 쪽은 돌고, 넘은 쪽은 다음 번(1분 뒤)에 다시 한다
-        var swept = new Swept(step("노쇼", sweeps::markNoShows, now), step("자동 퇴실", sweeps::autoCheckout, now));
-        if (swept.noShows() > 0 || swept.autoCheckedOut() > 0) {
-            log.info("예약 정리: 노쇼 {}건, 자동 퇴실 {}건", swept.noShows(), swept.autoCheckedOut());
+        int noShows = step("노쇼", sweeps::markNoShows, now);
+        int autoCheckedOut = step("자동 퇴실", sweeps::autoCheckout, now);
+        var swept = new Swept(noShows, autoCheckedOut, step("자리 비움", sweeps::releaseAway, now));
+        if (swept.noShows() > 0 || swept.autoCheckedOut() > 0 || swept.awayReleased() > 0) {
+            log.info("예약 정리: 노쇼 {}건, 자동 퇴실 {}건, 자리 비움 퇴실 {}건",
+                    swept.noShows(), swept.autoCheckedOut(), swept.awayReleased());
         }
         return swept;
     }

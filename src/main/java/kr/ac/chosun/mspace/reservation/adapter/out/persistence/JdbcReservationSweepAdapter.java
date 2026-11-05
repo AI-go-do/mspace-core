@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.function.Supplier;
 import kr.ac.chosun.mspace.common.config.NoShowPenaltyPolicy;
+import kr.ac.chosun.mspace.common.config.SensorPolicy;
 import kr.ac.chosun.mspace.reservation.application.ReservationSweepPort;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.CannotAcquireLockException;
@@ -29,11 +30,13 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
     private final JdbcClient jdbc;
     private final String lockTimeout;
     private final NoShowPenaltyPolicy penalty;
+    private final SensorPolicy sensor;
 
     JdbcReservationSweepAdapter(JdbcClient jdbc, @Value("${mspace.reservation.lock-timeout:3s}") Duration lockTimeout,
-                                NoShowPenaltyPolicy penalty) {
+                                NoShowPenaltyPolicy penalty, SensorPolicy sensor) {
         this.jdbc = jdbc;
         this.penalty = penalty;
+        this.sensor = sensor;
         this.lockTimeout = Math.max(1, lockTimeout.toMillis()) + "ms";   // 0은 PostgreSQL에서 "무한 대기"라 1ms 이상
     }
 
@@ -60,39 +63,78 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
         return owners.size();
     }
 
+    @Override
+    @Transactional
+    public int releaseAway(Instant now) {
+        // 자리 비움 (FR-DEV-103): 사용 중인데 방이 비어 있음이 15분. 타이머 시작 = 비어 있음이 된 관측 시각,
+        // 끊겼다 돌아온 시각(trusted_from), 체크인 시각 중 늦은 것 (알림 AWAY_SOON과 같은 식)
+        // 센서가 1분 넘게 조용하면(끊김) "있음"으로 보고 풀지 않는다 (FR-DEV-101 "틀리면 있음 쪽으로")
+        // 끝 시각이 된 예약은 자동 퇴실(autoCheckout)이 맡는다. 퇴실 시각 = 15분이 찬 시각 (정리가 늦게 돌아도 같게)
+        // 같은 트랜잭션에서 벌칙도 센다: 자리 비움 3번 = 노쇼 1번
+        List<Long> owners = withLockTimeout(() -> jdbc.sql("""
+                UPDATE reservation r
+                SET status = 'AWAY_RELEASED',
+                    checked_out_at = greatest(p.changed_at, p.trusted_from, r.checked_in_at) + make_interval(mins => :release)
+                FROM room_presence p
+                WHERE r.id IN (SELECT id FROM reservation
+                               WHERE status = 'IN_USE' AND end_at > :now
+                               FOR UPDATE SKIP LOCKED)
+                  AND r.status = 'IN_USE'
+                  AND p.room_id = r.room_id
+                  AND NOT p.occupied
+                  AND p.last_received_at >= :aliveAfter
+                  AND greatest(p.changed_at, p.trusted_from, r.checked_in_at) <= :emptySince
+                RETURNING r.owner_id
+                """)
+                .param("now", Timestamp.from(now))
+                .param("release", sensor.away().releaseAfterMinutes())
+                .param("aliveAfter", Timestamp.from(now.minusSeconds(sensor.offlineAfterSeconds())))
+                .param("emptySince", Timestamp.from(now.minus(Duration.ofMinutes(sensor.away().releaseAfterMinutes()))))
+                .query(Long.class).list());
+        if (!owners.isEmpty()) {
+            suspendRepeatedNoShows(owners, now);
+        }
+        return owners.size();
+    }
+
     /**
-     * 노쇼 벌칙 (FR-RSV-106): 방금 노쇼가 된 대표자 중 30일 안 노쇼가 2번 이상이면 지금부터 14일 정지.
-     * 노쇼를 바꾼 UPDATE와 같은 트랜잭션이라, 노쇼만 남고 정지가 빠지는 일은 없다 (둘 다 되거나 둘 다 안 됨).
+     * 노쇼 벌칙 (FR-RSV-106): 방금 노쇼·자리 비움이 된 대표자 중 30일 안 노쇼가 2번 이상이면 지금부터 14일 정지.
+     * 자리 비움(FR-DEV-103)은 3번 = 노쇼 1번으로 센다: 노쇼 1번은 3점, 자리 비움 1번은 1점, 합이 2 × 3 = 6점 이상이면 정지.
+     * 바꾼 UPDATE와 같은 트랜잭션이라, 노쇼만 남고 정지가 빠지는 일은 없다 (둘 다 되거나 둘 다 안 됨).
      * <ul>
-     *   <li>노쇼 시각 = 입실 마감과 끝 중 이른 쪽 (정리가 늦게 돌아도 기록 기준은 같게)</li>
-     *   <li>지난 정지가 끝난 뒤의 노쇼만 센다 → 정지가 끝나면 처음부터 다시</li>
+     *   <li>노쇼 시각 = 입실 마감과 끝 중 이른 쪽, 자리 비움 시각 = 퇴실 시각 (정리가 늦게 돌아도 기록 기준은 같게)</li>
+     *   <li>지난 정지가 끝난 뒤의 기록만 센다 → 정지가 끝나면 처음부터 다시</li>
      *   <li>이미 정지 중이면 새로 걸지 않는다(NOT EXISTS). 두 정리가 동시에 돌아 둘 다 통과해도
      *       one_suspension_at_a_time(기간 겹침 금지)이 한 줄만 받고 나머지는 ON CONFLICT DO NOTHING</li>
      * </ul>
-     * 대표자 기록만 센다 (참여자는 체크인 번호가 없어 노쇼 책임이 대표자에게 있음)
+     * 대표자 기록만 센다 (참여자는 체크인 번호가 없어 노쇼 책임이 대표자에게 있음). 정지 사유는 둘 다 NO_SHOW
      */
     private void suspendRepeatedNoShows(List<Long> owners, Instant now) {
         Timestamp at = Timestamp.from(now);
         jdbc.sql("""
                 INSERT INTO user_suspension (user_id, reason, starts_at, ends_at)
-                SELECT r.owner_id, 'NO_SHOW', :now, :until
-                FROM reservation r
-                WHERE r.owner_id IN (:owners)
-                  AND r.status = 'NO_SHOW'
-                  AND least(r.checkin_deadline, r.end_at) > :windowStart
-                  AND least(r.checkin_deadline, r.end_at) >= coalesce(
-                        (SELECT max(s.ends_at) FROM user_suspension s WHERE s.user_id = r.owner_id), '-infinity'::timestamptz)
+                SELECT h.owner_id, 'NO_SHOW', :now, :until
+                FROM (SELECT r.owner_id,
+                             CASE r.status WHEN 'NO_SHOW' THEN :perNoShow ELSE 1 END AS points,
+                             CASE r.status WHEN 'NO_SHOW' THEN least(r.checkin_deadline, r.end_at)
+                                           ELSE r.checked_out_at END AS happened_at
+                      FROM reservation r
+                      WHERE r.owner_id IN (:owners) AND r.status IN ('NO_SHOW', 'AWAY_RELEASED')) h
+                WHERE h.happened_at > :windowStart
+                  AND h.happened_at >= coalesce(
+                        (SELECT max(s.ends_at) FROM user_suspension s WHERE s.user_id = h.owner_id), '-infinity'::timestamptz)
                   AND NOT EXISTS (SELECT 1 FROM user_suspension s
-                                  WHERE s.user_id = r.owner_id AND s.ends_at > :now)
-                GROUP BY r.owner_id
-                HAVING count(*) >= :count
+                                  WHERE s.user_id = h.owner_id AND s.ends_at > :now)
+                GROUP BY h.owner_id
+                HAVING sum(h.points) >= :points
                 ON CONFLICT DO NOTHING
                 """)
                 .param("now", at)
                 .param("owners", owners.stream().distinct().toList())
                 .param("until", Timestamp.from(now.plus(Duration.ofDays(penalty.suspendDays()))))
                 .param("windowStart", Timestamp.from(now.minus(Duration.ofDays(penalty.windowDays()))))
-                .param("count", penalty.count())
+                .param("perNoShow", sensor.away().perNoShow())
+                .param("points", penalty.count() * sensor.away().perNoShow())
                 .update();
     }
 

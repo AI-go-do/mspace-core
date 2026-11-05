@@ -133,11 +133,11 @@ class ReservationSweepTest {
     @DisplayName("수용 기준: 체크인 마감 10:45까지는 BOOKED 그대로, 10:45를 넘기면 NO_SHOW")
     void noShowAfterDeadline() {
         now("10:45");
-        assertThat(sweeps.sweep()).isEqualTo(new Swept(0, 0));
+        assertThat(sweeps.sweep()).isEqualTo(new Swept(0, 0, 0));
         assertThat(status()).isEqualTo("BOOKED");
 
         now("10:45:01");
-        assertThat(sweeps.sweep()).isEqualTo(new Swept(1, 0));
+        assertThat(sweeps.sweep()).isEqualTo(new Swept(1, 0, 0));
         assertThat(status()).isEqualTo("NO_SHOW");
     }
 
@@ -174,11 +174,11 @@ class ReservationSweepTest {
         assertThat(press()).hasStatusOk().bodyJson().extractingPath("$.result").isEqualTo("OPENED");
 
         now("11:29");
-        assertThat(sweeps.sweep()).isEqualTo(new Swept(0, 0));
+        assertThat(sweeps.sweep()).isEqualTo(new Swept(0, 0, 0));
         assertThat(status()).isEqualTo("IN_USE");
 
         now("11:31");
-        assertThat(sweeps.sweep()).isEqualTo(new Swept(0, 1));
+        assertThat(sweeps.sweep()).isEqualTo(new Swept(0, 1, 0));
         assertThat(status()).isEqualTo("AUTO_CHECKED_OUT");
         assertThat(jdbc.sql("SELECT checked_out_at FROM reservation WHERE id = 1").query(OffsetDateTime.class).single()
                 .toInstant()).isEqualTo(OffsetDateTime.parse("2030-03-05T11:30:00+09:00").toInstant());
@@ -191,8 +191,8 @@ class ReservationSweepTest {
     @DisplayName("두 번 돌려도 한 번만 바뀐다 (서버 두 대가 같이 돌려도 같음)")
     void sweepTwice() {
         now("10:46");
-        assertThat(sweeps.sweep()).isEqualTo(new Swept(1, 0));
-        assertThat(sweeps.sweep()).isEqualTo(new Swept(0, 0));
+        assertThat(sweeps.sweep()).isEqualTo(new Swept(1, 0, 0));
+        assertThat(sweeps.sweep()).isEqualTo(new Swept(0, 0, 0));
         assertThat(status()).isEqualTo("NO_SHOW");
     }
 
@@ -204,7 +204,7 @@ class ReservationSweepTest {
         assertThat(mvc.post().uri("/api/reservations/1/checkout").header("X-User-Id", "1").exchange()).hasStatusOk();
 
         now("12:00");
-        assertThat(sweeps.sweep()).isEqualTo(new Swept(0, 0));
+        assertThat(sweeps.sweep()).isEqualTo(new Swept(0, 0, 0));
         assertThat(status()).isEqualTo("CHECKED_OUT");
     }
 
@@ -214,7 +214,7 @@ class ReservationSweepTest {
         now("10:45:01");
         assertThat(press()).bodyJson().extractingPath("$.reason").isEqualTo("WRONG_CODE");
         assertThat(status()).isEqualTo("BOOKED");   // 상태는 다음 정리에서 바뀐다
-        assertThat(sweeps.sweep()).isEqualTo(new Swept(1, 0));
+        assertThat(sweeps.sweep()).isEqualTo(new Swept(1, 0, 0));
     }
 
     @Test
@@ -226,7 +226,7 @@ class ReservationSweepTest {
 
         now("11:10");
         assertThat(press()).bodyJson().extractingPath("$.result").isEqualTo("OPENED");
-        assertThat(sweeps.sweep()).isEqualTo(new Swept(0, 0));
+        assertThat(sweeps.sweep()).isEqualTo(new Swept(0, 0, 0));
     }
 
     @Test
@@ -273,8 +273,8 @@ class ReservationSweepTest {
             now("11:01");   // 1번은 노쇼 대상(잠김), 3번도 노쇼 대상(안 잠김), 2번은 자동 퇴실 대상
             Swept swept = sweeps.sweep();
 
-            // 잠긴 줄을 기다렸다면 노쇼 단계가 잠금 대기 상한(3초)에 걸려 Swept(0, 1)이 된다. 1이면 건너뛰고 처리한 것
-            assertThat(swept).isEqualTo(new Swept(1, 1));
+            // 잠긴 줄을 기다렸다면 노쇼 단계가 잠금 대기 상한(3초)에 걸려 Swept(0, 1, 0)이 된다. 1이면 건너뛰고 처리한 것
+            assertThat(swept).isEqualTo(new Swept(1, 1, 0));
             assertThat(jdbc.sql("SELECT status FROM reservation WHERE id = 3").query(String.class).single())
                     .isEqualTo("NO_SHOW");
             holder.get(10, TimeUnit.SECONDS);
@@ -283,7 +283,7 @@ class ReservationSweepTest {
         }
         assertThat(status()).isEqualTo("BOOKED");
         // 잠금이 풀린 뒤 다음 번에는 처리된다
-        assertThat(sweeps.sweep()).isEqualTo(new Swept(1, 0));
+        assertThat(sweeps.sweep()).isEqualTo(new Swept(1, 0, 0));
         assertThat(status()).isEqualTo("NO_SHOW");
     }
 }
