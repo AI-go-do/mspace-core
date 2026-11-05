@@ -14,8 +14,9 @@ public interface ContinuationPort {
     /** 이 예약이 어느 예약에서 연장됐나. 연장이 아니면 빈 값 */
     Optional<Long> continuedFrom(long reservationId);
 
-    /** participantIds에는 대표자도 들어 있다 */
+    /** participantIds에는 대표자도 들어 있다. checkedInAt은 입실 전이면 null */
     record ContinueTarget(long id, int roomId, long ownerId, Instant startAt, Instant endAt,
-                          ReservationStatus status, Long continuedFromId, List<Long> participantIds) {
+                          ReservationStatus status, Long continuedFromId, Instant checkedInAt,
+                          List<Long> participantIds) {
     }
 }

@@ -150,7 +150,11 @@ public class ContinueReservationService implements ContinueReservationUseCase {
                     "연장은 %d회만 할 수 있습니다".formatted(policy.maxCount()));
         }
         // 지금 예약 퇴실 시각 = 새 예약 시작 시각 (둘 다 앱 Clock, 틈도 겹침도 없게)
+        // 초 단위로 내리되, 같은 초 안에 입실한 직후 연장하면 퇴실이 입실보다 앞서지 않게 입실 시각보다 이르게 하지 않는다
         Instant start = now.truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+        if (r.checkedInAt() != null && start.isBefore(r.checkedInAt())) {
+            start = r.checkedInAt();
+        }
         if (!statuses.checkoutIfInUse(reservationId, userId, start)) {
             // 읽은 뒤 그 사이 퇴실·자동 퇴실됨 (같은 버튼 두 번 등)
             throw new BusinessException(ErrorCode.RESERVATION_NOT_IN_USE, "이미 끝난 예약입니다");
