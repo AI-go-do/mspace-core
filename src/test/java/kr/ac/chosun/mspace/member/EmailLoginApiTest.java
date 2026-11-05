@@ -345,7 +345,7 @@ class EmailLoginApiTest {
         assertThat(verifications.markUsed(older, t.plusSeconds(62))).isFalse();
         assertThat(verifications.markUsed(newer, t.plusSeconds(62))).isTrue();
     }
-    // ---------- 자동 로그인 (refresh 토큰) ----------
+    // ---------- 자동 로그인 (refresh 토큰, HttpOnly 쿠키) ----------
 
     String json(MvcTestResult r, String path) throws Exception {
         return com.jayway.jsonpath.JsonPath.read(
@@ -358,24 +358,38 @@ class EmailLoginApiTest {
         return login(EMAIL, mail.last.get(EMAIL), "홍길동", "20230001");
     }
 
+    /** 응답이 넣은 refresh 쿠키 값(자동 로그인 켬 → mspace_rt, 끔 → mspace_rt_s) */
+    static String rt(MvcTestResult r) {
+        jakarta.servlet.http.Cookie c = r.getResponse().getCookie("mspace_rt");
+        if (c == null || c.getValue().isEmpty()) {
+            c = r.getResponse().getCookie("mspace_rt_s");
+        }
+        return c == null ? null : c.getValue();
+    }
+
     MvcTestResult refresh(String refreshToken) {
-        return mvc.post().uri("/api/auth/refresh").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"refreshToken\": \"%s\"}".formatted(refreshToken)).exchange();
+        return mvc.post().uri("/api/auth/refresh").cookie(new jakarta.servlet.http.Cookie("mspace_rt", refreshToken))
+                .exchange();
     }
 
     MvcTestResult logout(String refreshToken) {
-        return mvc.post().uri("/api/auth/logout").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"refreshToken\": \"%s\"}".formatted(refreshToken)).exchange();
+        return mvc.post().uri("/api/auth/logout").cookie(new jakarta.servlet.http.Cookie("mspace_rt", refreshToken))
+                .exchange();
     }
 
     @Test
-    @DisplayName("로그인하면 액세스 토큰 1시간 + refresh 토큰 14일, DB에는 refresh 토큰 해시만")
-    void loginGivesRefreshToken() throws Exception {
+    @DisplayName("로그인하면 액세스 토큰 1시간은 본문으로, refresh 토큰 14일은 HttpOnly 쿠키로만. DB에는 해시만")
+    void loginGivesRefreshCookie() throws Exception {
         MvcTestResult r = signUp();
         assertThat(r).hasStatusOk();
         assertThat(Instant.parse(json(r, "$.expiresAt"))).isEqualTo(START.plus(Duration.ofHours(1)));
         assertThat(Instant.parse(json(r, "$.refreshExpiresAt"))).isEqualTo(START.plus(Duration.ofDays(14)));
-        String refreshToken = json(r, "$.refreshToken");
+        assertThat(r.getResponse().getContentAsString()).doesNotContain("refreshToken");
+
+        String cookie = r.getResponse().getHeaders("Set-Cookie").stream()
+                .filter(h -> h.startsWith("mspace_rt=")).findFirst().orElseThrow();
+        assertThat(cookie).contains("HttpOnly", "Secure", "SameSite=Strict", "Path=/api/auth", "Max-Age=");
+        String refreshToken = rt(r);
         assertThat(refreshToken).hasSizeGreaterThanOrEqualTo(43);
 
         assertThat(jdbc.sql("SELECT count(*) FROM refresh_token WHERE token_hash = :raw")
@@ -385,9 +399,29 @@ class EmailLoginApiTest {
     }
 
     @Test
-    @DisplayName("자동 로그인: 액세스 토큰이 끝나도 refresh 토큰으로 새 한 쌍을 받고, 받은 refresh 토큰은 다시 못 쓴다")
+    @DisplayName("자동 로그인을 끄면 refresh 쿠키는 브라우저를 닫으면 사라지는 쿠키(Max-Age 없음)이고, refresh해도 그대로다")
+    void sessionCookieWhenNotRemembered() throws Exception {
+        sendCode(EMAIL);
+        MvcTestResult r = mvc.post().uri("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"email": "%s", "code": "%s", "name": "홍길동", "studentId": "20230001", "remember": false}
+                        """.formatted(EMAIL, mail.last.get(EMAIL))).exchange();
+        assertThat(r).hasStatusOk();
+        String session = r.getResponse().getHeaders("Set-Cookie").stream()
+                .filter(h -> h.startsWith("mspace_rt_s=")).findFirst().orElseThrow();
+        assertThat(session).contains("HttpOnly", "SameSite=Strict").doesNotContain("Max-Age");
+
+        MvcTestResult again = mvc.post().uri("/api/auth/refresh")
+                .cookie(new jakarta.servlet.http.Cookie("mspace_rt_s", rt(r))).exchange();
+        assertThat(again).hasStatusOk();
+        assertThat(again.getResponse().getHeaders("Set-Cookie"))
+                .anySatisfy(h -> assertThat(h).startsWith("mspace_rt_s=").doesNotContain("Max-Age"));
+    }
+
+    @Test
+    @DisplayName("자동 로그인: 쿠키로 새 액세스 토큰을 받고, refresh 토큰은 새 쿠키로 바뀌며 받은 것은 다시 못 쓴다")
     void refreshRotates() throws Exception {
-        String first = json(signUp(), "$.refreshToken");
+        String first = rt(signUp());
         clock.plus(Duration.ofHours(2));   // 액세스 토큰은 끝남
 
         MvcTestResult r = refresh(first);
@@ -397,7 +431,7 @@ class EmailLoginApiTest {
             j.assertThat().extractingPath("$.tokenType").isEqualTo("Bearer");
         });
         assertThat(tokens.verify(json(r, "$.accessToken"))).hasValueSatisfying(v -> assertThat(v.memberId()).isEqualTo(1L));
-        String second = json(r, "$.refreshToken");
+        String second = rt(r);
         assertThat(second).isNotEqualTo(first);
 
         assertThat(refresh(second)).hasStatusOk();
@@ -423,12 +457,12 @@ class EmailLoginApiTest {
     @Test
     @DisplayName("쓸 때마다 14일이 새로 시작: 13일마다 쓰면 계속 이어지고, 14일 동안 안 쓰면 401")
     void slidingExpiry() throws Exception {
-        String t = json(signUp(), "$.refreshToken");
+        String t = rt(signUp());
         for (int i = 0; i < 3; i++) {
             clock.plus(Duration.ofDays(13));
             MvcTestResult r = refresh(t);
             assertThat(r).hasStatusOk();
-            t = json(r, "$.refreshToken");
+            t = rt(r);
         }
         clock.plus(Duration.ofDays(14));
         assertThat(refresh(t)).hasStatus(401).bodyJson()
@@ -438,8 +472,8 @@ class EmailLoginApiTest {
     @Test
     @DisplayName("이미 쓴 refresh 토큰이 다시 오면 도난으로 보고 그 회원 토큰을 모두 끊는다")
     void reusedTokenRevokesAll() throws Exception {
-        String stolen = json(signUp(), "$.refreshToken");
-        String current = json(refresh(stolen), "$.refreshToken");   // 진짜 학생이 먼저 바꿈
+        String stolen = rt(signUp());
+        String current = rt(refresh(stolen));   // 진짜 학생이 먼저 바꿈
 
         assertThat(refresh(stolen)).hasStatus(401);                  // 훔친 쪽이 옛 토큰을 씀
         assertThat(refresh(current)).hasStatus(401).bodyJson()       // 진짜 학생도 다시 로그인해야 함
@@ -449,18 +483,25 @@ class EmailLoginApiTest {
     }
 
     @Test
-    @DisplayName("로그아웃하면 그 refresh 토큰은 바로 못 쓴다. 모르는 토큰이어도 204")
+    @DisplayName("로그아웃하면 그 refresh 토큰은 바로 못 쓰고 쿠키도 지운다. 모르는 토큰·쿠키 없음이어도 204")
     void logoutRevokes() throws Exception {
-        String t = json(signUp(), "$.refreshToken");
-        assertThat(logout(t)).hasStatus(204);
+        String t = rt(signUp());
+        MvcTestResult out = logout(t);
+        assertThat(out).hasStatus(204);
+        assertThat(out.getResponse().getHeaders("Set-Cookie"))
+                .anySatisfy(h -> assertThat(h).startsWith("mspace_rt=").contains("Max-Age=0"));
         assertThat(refresh(t)).hasStatus(401);
         assertThat(logout("not-a-token")).hasStatus(204);
+        assertThat(mvc.post().uri("/api/auth/logout")).hasStatus(204);
     }
 
     @Test
-    @DisplayName("없는 토큰·빈 값이면 401")
+    @DisplayName("쿠키가 없거나 모르는 토큰이면 401이고, 못 쓰는 쿠키는 지운다")
     void unknownRefreshToken() {
-        assertThat(refresh("nope")).hasStatus(401);
-        assertThat(refresh("")).hasStatus(401);
+        MvcTestResult r = refresh("nope");
+        assertThat(r).hasStatus(401).bodyJson().extractingPath("$.code").isEqualTo("REFRESH_TOKEN_INVALID");
+        assertThat(r.getResponse().getHeaders("Set-Cookie"))
+                .anySatisfy(h -> assertThat(h).startsWith("mspace_rt=").contains("Max-Age=0"));
+        assertThat(mvc.post().uri("/api/auth/refresh")).hasStatus(401);
     }
 }
