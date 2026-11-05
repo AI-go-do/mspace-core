@@ -212,4 +212,32 @@ class ConcurrentReservationTest {
         assertThat(counts).containsExactlyInAnyOrderEntriesOf(Map.of(201, 1, 409, N - 1));
         assertThat(saved).isEqualTo(1);
     }
+
+    /**
+     * 회원당 끝나지 않은 예약 1건(one_active_per_member, FR-RSV-003 11/5) 확인: 대표자는 모두 다르고 방·시간도 모두 달라
+     * 방 겹침·사람 겹침(같은 시간)에는 안 걸린다. 같은 참여자 2명이 모든 팀에 들어 있어서 1팀만 남아야 한다.
+     */
+    @Test
+    @DisplayName("같은 참여자 2명을 넣은 100팀이 서로 다른 방·다른 시간을 동시에 예약해도 1건만 201 (1인 1건)")
+    void sameParticipantsDifferentTimes() throws Exception {
+        List<Callable<Integer>> requests = new ArrayList<>();
+        for (int k = 0; k < N; k++) {
+            int owner = k + 1;                    // 대표자 1~100, 모두 다름
+            int room = k % 4 + 1;                 // 1~4번 방
+            int day = 4 + (k / 4) / 10;           // 11/4 ~ 11/6
+            int hour = 8 + (k / 4) % 10;          // 08시 ~ 17시
+            String start = "2026-11-0%dT%02d:00:00+09:00".formatted(day, hour);
+            String end = "2026-11-0%dT%02d:00:00+09:00".formatted(day, hour + 1);
+            requests.add(() -> post(owner, room, start, end, sid(299), sid(300)));
+        }
+
+        Map<Integer, Integer> counts = fire(requests);
+
+        int saved = jdbc.sql("SELECT count(*) FROM reservation WHERE status = 'BOOKED'")
+                .query(Integer.class).single();
+        System.out.printf("[동시 100건] 같은 참여자·다른 방·다른 시간: %s, DB 저장 %d건%n", counts, saved);
+
+        assertThat(counts).containsExactlyInAnyOrderEntriesOf(Map.of(201, 1, 409, N - 1));
+        assertThat(saved).isEqualTo(1);
+    }
 }

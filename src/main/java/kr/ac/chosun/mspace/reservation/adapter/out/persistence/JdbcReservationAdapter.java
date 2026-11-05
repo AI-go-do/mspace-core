@@ -39,6 +39,11 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
             "one_active_code_per_room", ErrorCode.ACCESS_CODE_TAKEN,
             "one_continuation_per_reservation", ErrorCode.RESERVATION_EXTENSION_LIMIT);
 
+    /** 회원당 끝나지 않은 예약 1건(V13, FR-RSV-003). 대표자도 참여자 표에 들어가므로 걸린 사람이 대표자인지에 따라 오류를 나눈다 */
+    private static final String ONE_ACTIVE_PER_MEMBER = "one_active_per_member";
+
+    private static final String NO_PERSON_OVERLAP = "no_person_overlap";
+
     private final JdbcClient jdbc;
 
     private final Duration lockTimeout;
@@ -119,14 +124,24 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
             // 순서를 맞춰 한쪽이 기다렸다가 no_person_overlap(409)으로 끝나게 한다
             for (Long userId : r.participantIds().stream().sorted().toList()) {
                 // 시간·활성 여부는 트리거(participant_copy_times)가 예약에서 복사한다. 여기 값은 자리만 채움
-                jdbc.sql("""
-                                INSERT INTO reservation_participant (reservation_id, user_id, start_at, end_at)
-                                VALUES (:rid, :uid, :start, :end)
-                                """)
-                        .param("rid", id).param("uid", userId)
-                        .param("start", Timestamp.from(r.startAt()))
-                        .param("end", Timestamp.from(r.endAt()))
-                        .update();
+                try {
+                    jdbc.sql("""
+                                    INSERT INTO reservation_participant (reservation_id, user_id, start_at, end_at)
+                                    VALUES (:rid, :uid, :start, :end)
+                                    """)
+                            .param("rid", id).param("uid", userId)
+                            .param("start", Timestamp.from(r.startAt()))
+                            .param("end", Timestamp.from(r.endAt()))
+                            .update();
+                } catch (DataAccessException e) {
+                    // 사람 제약 두 개는 이 줄을 넣을 때 바로 검사된다. 걸린 사람 = 지금 넣는 userId라서
+                    // 오류 문장(서버 언어 설정에 따라 바뀜)을 읽지 않고 대표자인지 참여자인지 나눈다
+                    ErrorCode code = memberConflict(constraintName(e), userId == r.ownerId());
+                    if (code != null) {
+                        throw new BusinessException(code);
+                    }
+                    throw e;
+                }
             }
             // 인원 확인 트리거는 원래 커밋 때 돈다. 여기서 바로 돌려서, 실패하면 커밋 전에 이 메서드 안에서 오류가 나게 한다
             jdbc.sql("SET CONSTRAINTS ALL IMMEDIATE").update();
@@ -277,7 +292,6 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
         jdbc.sql("SELECT pg_advisory_xact_lock(:key)").param("key", key).query((rs, n) -> 1).list();
     }
 
-    /** PostgreSQL이 알려 준 위반 제약 이름. 없으면 null */
     /** PostgreSQL 오류 코드: 잠금을 기다리다 lock_timeout을 넘음 */
     private static final String LOCK_NOT_AVAILABLE = "55P03";
 
@@ -290,17 +304,34 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
         return null;
     }
 
-    private static String constraintName(DataAccessException e) {
-        for (Throwable t = e; t != null; t = t.getCause()) {
-            if (t instanceof PSQLException p) {
-                ServerErrorMessage m = p.getServerErrorMessage();
-                return m == null ? null : m.getConstraint();
-            }
-            if (t instanceof SQLException s && s.getNextException() instanceof PSQLException p) {
-                ServerErrorMessage m = p.getServerErrorMessage();
-                return m == null ? null : m.getConstraint();
-            }
+    /**
+     * 참여자 줄을 넣다가 사람 제약에 걸렸을 때의 오류. 걸린 사람이 대표자 본인이면 "내 예약이 이미 있음"으로 안내한다
+     * (참여자인 사람이 대표자로 또 잡는 경우, 겹치는 시간이면 사람 겹침이 먼저 걸린다). 사람 제약이 아니면 null
+     */
+    private static ErrorCode memberConflict(String constraint, boolean isOwner) {
+        if (ONE_ACTIVE_PER_MEMBER.equals(constraint)) {
+            return isOwner ? ErrorCode.OWNER_HAS_ACTIVE_RESERVATION : ErrorCode.PARTICIPANT_HAS_ACTIVE_RESERVATION;
+        }
+        if (NO_PERSON_OVERLAP.equals(constraint)) {
+            return isOwner ? ErrorCode.OWNER_HAS_ACTIVE_RESERVATION : ErrorCode.PARTICIPANT_TIME_TAKEN;
         }
         return null;
+    }
+
+    private static Optional<ServerErrorMessage> serverMessage(DataAccessException e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof PSQLException p) {
+                return Optional.ofNullable(p.getServerErrorMessage());
+            }
+            if (t instanceof SQLException s && s.getNextException() instanceof PSQLException p) {
+                return Optional.ofNullable(p.getServerErrorMessage());
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** PostgreSQL이 알려 준 위반 제약 이름. 없으면 null */
+    private static String constraintName(DataAccessException e) {
+        return serverMessage(e).map(ServerErrorMessage::getConstraint).orElse(null);
     }
 }
