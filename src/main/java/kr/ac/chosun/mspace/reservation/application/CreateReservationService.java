@@ -204,7 +204,7 @@ public class CreateReservationService implements CreateReservationUseCase {
 
         String accessCode = codes.issue();
         long id = port.insert(new NewReservation(room.id(), ownerId, time.start(), time.end(), accessCode,
-                participantIds, command.idempotencyKey(), instant));
+                participantIds, command.idempotencyKey(), instant, command.createdVia()));
         return new Created(id, room.id(), time.start().atZone(SEOUL), time.end().atZone(SEOUL),
                 ReservationStatus.BOOKED, headcount, accessCode, false);
     }

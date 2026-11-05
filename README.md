@@ -35,6 +35,14 @@ curl localhost:8080/actuator/health   # {"status":"UP"}이면 정상
 
 설정값은 `.env.example`을 `.env`로 복사해서 채워요. `.env`는 커밋하지 않아요.
 
+### 관리자 지정 (시연 준비)
+
+관리자 화면이 아직 없어서 SQL로 정해요. 메일 인증으로 먼저 가입한 뒤에 바꿔요. 관리자만 `GET /api/reservations/stats`(WEB/AGENT 예약 건수)를 볼 수 있어요.
+
+```bash
+docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "UPDATE users SET role = '"'"'ADMIN'"'"' WHERE email = '"'"'내메일@chosun.ac.kr'"'"'"'
+```
+
 ### 로그인 붙기 전 임시 방법
 
 로그인(재웅님 담당)이 붙기 전까지는 `X-User-Id` 헤더에 회원 id를 넣어서 "누가 보낸 요청인지"를 알려 줘요. `MSPACE_DEV_HEADER=true`일 때만 켜지고, 기본값은 꺼짐이라 운영에서는 항상 401이에요.

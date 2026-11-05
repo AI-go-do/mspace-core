@@ -14,6 +14,7 @@ import kr.ac.chosun.mspace.reservation.application.CreateReservationUseCase;
 import kr.ac.chosun.mspace.reservation.application.CreateReservationUseCase.Command;
 import kr.ac.chosun.mspace.reservation.application.CreateReservationUseCase.Created;
 import kr.ac.chosun.mspace.reservation.application.MyReservationsUseCase;
+import kr.ac.chosun.mspace.reservation.domain.CreatedVia;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -58,8 +59,9 @@ class ReservationController {
     ResponseEntity<CreateReservationResponse> create(LoginUser user,
                                                      @RequestHeader(name = "Idempotency-Key", required = false)
                                                      String idempotencyKey,
+                                                     @RequestHeader(name = CREATED_VIA_HEADER, required = false) String client,
                                                      @RequestBody CreateReservationRequest request) {
-        Created created = service.create(user.id(), request.toCommand(checkKey(idempotencyKey)));
+        Created created = service.create(user.id(), request.toCommand(checkKey(idempotencyKey), via(client)));
         CreateReservationResponse body = CreateReservationResponse.from(created);
         if (created.replayed()) {
             return ResponseEntity.ok(body);
@@ -77,13 +79,29 @@ class ReservationController {
     ResponseEntity<CreateReservationResponse> startNow(LoginUser user,
                                                        @RequestHeader(name = "Idempotency-Key", required = false)
                                                        String idempotencyKey,
+                                                       @RequestHeader(name = CREATED_VIA_HEADER, required = false) String client,
                                                        @RequestBody StartNowRequest request) {
-        Created created = service.startNow(user.id(), request.toCommand(checkKey(idempotencyKey)));
+        Created created = service.startNow(user.id(), request.toCommand(checkKey(idempotencyKey), via(client)));
         CreateReservationResponse body = CreateReservationResponse.from(created);
         if (created.replayed()) {
             return ResponseEntity.ok(body);
         }
         return ResponseEntity.created(URI.create("/api/reservations/" + created.id())).body(body);
+    }
+
+    /**
+     * 어디서 보낸 요청인지 알리는 헤더. 비서(mspace-assistant)는 "AGENT"를 붙이고, 웹 화면은 안 붙인다(= WEB). 이름은 DB 칸 created_via와 맞췄다(영준 #43, 11/4 지영 결정).
+     * WEB/AGENT 예약 건수를 따로 세는 통계용 표시라, 권한 검사에는 쓰지 않는다 (11/3 영준 요청)
+     */
+    static final String CREATED_VIA_HEADER = "X-Created-Via";
+
+    /** X-Created-Via 값을 고른다. "WEB"·"AGENT"(대소문자 무시) 말고 다른 값이면 400: 오타가 WEB으로 잘못 세지지 않게 */
+    private static CreatedVia via(String client) {
+        CreatedVia via = CreatedVia.fromHeader(client);
+        if (via == null) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST, "X-Created-Via는 WEB 또는 AGENT여야 합니다");
+        }
+        return via;
     }
 
     /** 멱등 키는 1~64자 (DB 칸 varchar(64)). 빈 값이나 너무 길면 400 */
@@ -126,13 +144,13 @@ class ReservationController {
     /** 즉시 시작 요청 본문. 시작은 서버 시계라 받지 않는다 */
     record StartNowRequest(Integer roomId, OffsetDateTime endAt, List<String> participantStudentIds) {
 
-        Command toCommand(String idempotencyKey) {
+        Command toCommand(String idempotencyKey, CreatedVia via) {
             if (roomId == null || endAt == null || participantStudentIds == null
                     || participantStudentIds.stream().anyMatch(s -> s == null || s.isBlank())) {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST);
             }
             return new Command(roomId, null, endAt.toInstant(),
-                    participantStudentIds.stream().map(String::trim).toList(), idempotencyKey);
+                    participantStudentIds.stream().map(String::trim).toList(), idempotencyKey, via);
         }
     }
 
@@ -145,13 +163,13 @@ class ReservationController {
          *
          * @throws BusinessException 빠진 값이 있거나 빈 학번이 있으면 400(INVALID_REQUEST)
          */
-        Command toCommand(String idempotencyKey) {
+        Command toCommand(String idempotencyKey, CreatedVia via) {
             if (roomId == null || startAt == null || endAt == null || participantStudentIds == null
                     || participantStudentIds.stream().anyMatch(s -> s == null || s.isBlank())) {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST);
             }
             return new Command(roomId, startAt.toInstant(), endAt.toInstant(),
-                    participantStudentIds.stream().map(String::trim).toList(), idempotencyKey);
+                    participantStudentIds.stream().map(String::trim).toList(), idempotencyKey, via);
         }
     }
 }
