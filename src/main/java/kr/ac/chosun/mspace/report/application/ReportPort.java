@@ -15,6 +15,9 @@ public interface ReportPort {
      */
     Optional<Long> findBasisReservation(long userId, int roomId);
 
+    /** 방이 있는지 (사용 중지된 방도 있음으로 본다) */
+    boolean roomExists(int roomId);
+
     Saved save(int roomId, long reporterId, long basisReservationId, ReportCategory category, String content);
 
     record Saved(long id, Instant createdAt) {

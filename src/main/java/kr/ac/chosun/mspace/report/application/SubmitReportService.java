@@ -4,7 +4,6 @@ import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.report.domain.ReportCategory;
 import kr.ac.chosun.mspace.report.domain.ReportVerdict;
-import kr.ac.chosun.mspace.room.application.RoomQuery;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,11 +23,9 @@ public class SubmitReportService implements SubmitReportUseCase {
     static final int MAX_CONTENT_LENGTH = 500;
 
     private final ReportPort reports;
-    private final RoomQuery rooms;
 
-    public SubmitReportService(ReportPort reports, RoomQuery rooms) {
+    public SubmitReportService(ReportPort reports) {
         this.reports = reports;
-        this.rooms = rooms;
     }
 
     @Override
@@ -45,7 +42,8 @@ public class SubmitReportService implements SubmitReportUseCase {
             throw new BusinessException(ErrorCode.INVALID_REQUEST,
                     "메모는 %d자 이내로 적어 주세요".formatted(MAX_CONTENT_LENGTH));
         }
-        if (rooms.findActive(report.roomId()).isEmpty()) {
+        // 사용 중지(is_active = false)된 방도 신고는 받는다: 지금 쓰는 사람이나 옆 방 이용자가 알릴 수 있어야 해서
+        if (!reports.roomExists(report.roomId())) {
             throw new BusinessException(ErrorCode.ROOM_NOT_FOUND);
         }
         long basis = reports.findBasisReservation(userId, report.roomId())
