@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import kr.ac.chosun.mspace.common.config.ExtensionPolicy;
+import kr.ac.chosun.mspace.common.config.NoShowPenaltyPolicy;
 import kr.ac.chosun.mspace.common.config.ReservationPolicy;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
@@ -66,6 +67,19 @@ class CreateReservationRetryTest {
 
     static final ExtensionPolicy EXTENSION = new ExtensionPolicy(1, 10, 120, 30);
 
+    /** 정지된 사람 없음 */
+    static final SuspensionPort NO_SUSPENSION = new SuspensionPort() {
+        @Override
+        public Optional<Instant> suspendedUntil(long userId, Instant now) {
+            return Optional.empty();
+        }
+
+        @Override
+        public boolean anySuspended(Collection<Long> userIds, Instant now) {
+            return false;
+        }
+    };
+
     // 지금 = 2026-11-03 10:10 서울, 예약 = 11/04 14:00~16:00
     final Clock clock = Clock.fixed(Instant.parse("2026-11-03T01:10:00Z"), ZoneId.of("Asia/Seoul"));
     final Command command = new Command(1, Instant.parse("2026-11-04T05:00:00Z"), Instant.parse("2026-11-04T07:00:00Z"),
@@ -93,7 +107,7 @@ class CreateReservationRetryTest {
         // 번호 발급은 인터페이스라 테스트에서 고정 번호를 끼운다
         return new CreateReservationService(port, new RoomQuery(rooms), () -> "123456",
                 new ReservationPolicy(7, 30, 120), clock, TransactionOperations.withoutTransaction(),
-                () -> new SweepReservationsUseCase.Swept(0, 0), (o, t, g) -> 0, EXTENSION);
+                () -> new SweepReservationsUseCase.Swept(0, 0), (o, t, g) -> 0, EXTENSION, NO_SUSPENSION, new NoShowPenaltyPolicy(2, 30, 14));
     }
 
     @Test
@@ -120,7 +134,7 @@ class CreateReservationRetryTest {
                 new ReservationPolicy(7, 30, 120), clock, TransactionOperations.withoutTransaction(),
                 () -> {
                     throw new DataAccessResourceFailureException("DB 연결 끊김");
-                }, (o, t, g) -> 0, EXTENSION);
+                }, (o, t, g) -> 0, EXTENSION, NO_SUSPENSION, new NoShowPenaltyPolicy(2, 30, 14));
 
         // when
         CreateReservationUseCase.Created created = service.create(1, command);
@@ -178,7 +192,7 @@ class CreateReservationRetryTest {
         int[] issued = {0};
         CreateReservationService service = new CreateReservationService(port, new RoomQuery(rooms),
                 () -> "00000" + (++issued[0]), new ReservationPolicy(7, 30, 120), clock,
-                TransactionOperations.withoutTransaction(), () -> new SweepReservationsUseCase.Swept(0, 0), (o, t, g) -> 0, EXTENSION);
+                TransactionOperations.withoutTransaction(), () -> new SweepReservationsUseCase.Swept(0, 0), (o, t, g) -> 0, EXTENSION, NO_SUSPENSION, new NoShowPenaltyPolicy(2, 30, 14));
 
         // when
         CreateReservationUseCase.Created created = service.create(1, command);

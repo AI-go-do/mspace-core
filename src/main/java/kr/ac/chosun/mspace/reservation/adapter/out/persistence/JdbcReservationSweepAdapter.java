@@ -4,6 +4,9 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
+import java.util.function.Supplier;
+import kr.ac.chosun.mspace.common.config.NoShowPenaltyPolicy;
 import kr.ac.chosun.mspace.reservation.application.ReservationSweepPort;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.CannotAcquireLockException;
@@ -25,9 +28,12 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
 
     private final JdbcClient jdbc;
     private final String lockTimeout;
+    private final NoShowPenaltyPolicy penalty;
 
-    JdbcReservationSweepAdapter(JdbcClient jdbc, @Value("${mspace.reservation.lock-timeout:3s}") Duration lockTimeout) {
+    JdbcReservationSweepAdapter(JdbcClient jdbc, @Value("${mspace.reservation.lock-timeout:3s}") Duration lockTimeout,
+                                NoShowPenaltyPolicy penalty) {
         this.jdbc = jdbc;
+        this.penalty = penalty;
         this.lockTimeout = Math.max(1, lockTimeout.toMillis()) + "ms";   // 0은 PostgreSQL에서 "무한 대기"라 1ms 이상
     }
 
@@ -40,13 +46,54 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
         // 상관없는 사람의 지난 예약도 BOOKED로 남아 그 사람의 새 예약(대표자 1건)을 막기 때문. 건너뛴 줄은 다음 번에.
         // 키패드 체크인(BOOKED → IN_USE)과 겹치면: 체크인이 먼저 잡았으면 여기서 건너뛰고,
         // 여기가 먼저 잡았으면 체크인이 기다렸다가 WHERE(status = 'BOOKED')를 다시 보고 0줄. 둘 중 하나만 바뀐다
-        return update("""
+        List<Long> owners = withLockTimeout(() -> jdbc.sql("""
                 UPDATE reservation SET status = 'NO_SHOW'
                 WHERE id IN (SELECT id FROM reservation
                              WHERE status = 'BOOKED' AND (checkin_deadline < :now OR end_at <= :now)
                              FOR UPDATE SKIP LOCKED)
                   AND status = 'BOOKED'
-                """, now);
+                RETURNING owner_id
+                """).param("now", Timestamp.from(now)).query(Long.class).list());
+        if (!owners.isEmpty()) {
+            suspendRepeatedNoShows(owners, now);
+        }
+        return owners.size();
+    }
+
+    /**
+     * 노쇼 벌칙 (FR-RSV-106): 방금 노쇼가 된 대표자 중 30일 안 노쇼가 2번 이상이면 지금부터 14일 정지.
+     * 노쇼를 바꾼 UPDATE와 같은 트랜잭션이라, 노쇼만 남고 정지가 빠지는 일은 없다 (둘 다 되거나 둘 다 안 됨).
+     * <ul>
+     *   <li>노쇼 시각 = 입실 마감과 끝 중 이른 쪽 (정리가 늦게 돌아도 기록 기준은 같게)</li>
+     *   <li>지난 정지가 끝난 뒤의 노쇼만 센다 → 정지가 끝나면 처음부터 다시</li>
+     *   <li>이미 정지 중이면 새로 걸지 않는다(NOT EXISTS). 두 정리가 동시에 돌아 둘 다 통과해도
+     *       one_suspension_at_a_time(기간 겹침 금지)이 한 줄만 받고 나머지는 ON CONFLICT DO NOTHING</li>
+     * </ul>
+     * 대표자 기록만 센다 (참여자는 체크인 번호가 없어 노쇼 책임이 대표자에게 있음)
+     */
+    private void suspendRepeatedNoShows(List<Long> owners, Instant now) {
+        Timestamp at = Timestamp.from(now);
+        jdbc.sql("""
+                INSERT INTO user_suspension (user_id, reason, starts_at, ends_at)
+                SELECT r.owner_id, 'NO_SHOW', :now, :until
+                FROM reservation r
+                WHERE r.owner_id IN (:owners)
+                  AND r.status = 'NO_SHOW'
+                  AND least(r.checkin_deadline, r.end_at) > :windowStart
+                  AND least(r.checkin_deadline, r.end_at) >= coalesce(
+                        (SELECT max(s.ends_at) FROM user_suspension s WHERE s.user_id = r.owner_id), '-infinity'::timestamptz)
+                  AND NOT EXISTS (SELECT 1 FROM user_suspension s
+                                  WHERE s.user_id = r.owner_id AND s.ends_at > :now)
+                GROUP BY r.owner_id
+                HAVING count(*) >= :count
+                ON CONFLICT DO NOTHING
+                """)
+                .param("now", at)
+                .param("owners", owners.stream().distinct().toList())
+                .param("until", Timestamp.from(now.plus(Duration.ofDays(penalty.suspendDays()))))
+                .param("windowStart", Timestamp.from(now.minus(Duration.ofDays(penalty.windowDays()))))
+                .param("count", penalty.count())
+                .update();
     }
 
     @Override
@@ -64,10 +111,14 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
     }
 
     private int update(String sql, Instant now) {
+        return withLockTimeout(() -> jdbc.sql(sql).param("now", Timestamp.from(now)).update());
+    }
+
+    private <T> T withLockTimeout(Supplier<T> work) {
         try {
             // true = 이 트랜잭션 안에서만 (커넥션 풀로 돌아가면 원래 값)
             jdbc.sql("SELECT set_config('lock_timeout', :ms, true)").param("ms", lockTimeout).query((rs, n) -> 1).list();
-            return jdbc.sql(sql).param("now", Timestamp.from(now)).update();
+            return work.get();
         } catch (DataAccessException e) {
             // Spring이 55P03을 분류하지 못해서 직접 잠금 실패로 바꾼다 (JdbcReservationAdapter와 같음)
             if (LOCK_NOT_AVAILABLE.equals(sqlState(e))) {
