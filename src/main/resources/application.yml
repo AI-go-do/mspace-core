@@ -58,6 +58,45 @@ mspace:
     sweep:
       enabled: ${MSPACE_SWEEP_ENABLED:true}   # 노쇼·자동 퇴실 정리 (FR-RSV-101, 102)
       interval: PT1M         # 1분마다. 노쇼·자동 퇴실은 최대 이만큼 늦게 반영된다
+  rules:                     # 이용 규칙 GET /api/rules (FR-WEB-003). 화면과 비서가 같은 내용을 쓴다. 원본은 docs 요구사항 3.1
+    no-show-minutes: 15        # 미리 예약은 시작 15분 안에 입실. DB 트리거(V1 checkin_deadline)와 같은 값이라 바꾸면 Flyway도
+    instant-no-show-minutes: 10  # 즉시 시작은 10분. 위와 같음
+    reminders:
+      checkin: 음식물은 반입 금지예요
+      checkout: 자리 정리하셨나요?
+    conduct:
+      - key: NOISE
+        title: 소음
+        rule: 회의·대화는 괜찮아요. 옆 방에 들릴 만큼 떠들거나 장난치지 않아요
+        penalty: 신고가 사실로 판정되면 경고. 심하거나 반복되면 이용 정지
+      - key: FOOD
+        title: 음식
+        rule: 음식물 반입 금지예요. 먹을 것과 마실 것(음료 포함) 모두 가져올 수 없어요
+        penalty: 신고가 사실로 판정되면 경고. 기기·비품이 고장 나면 배상을 요구해요
+      - key: TIDY
+        title: 정리
+        rule: 퇴실 전에 쓰레기를 버리고 자리를 정리해요
+        penalty: 다음 사람이 어질러짐을 신고하고 사실로 판정되면 경고·이용 제한
+      - key: NO_SHOW
+        title: 노쇼
+        rule: 시작 15분 안에 키패드로 입실해요(지금 바로 쓰기는 10분)
+        penalty: 예약이 자동으로 풀려요
+      - key: AWAY
+        title: 자리 비움
+        rule: 짐만 두고 자리를 맡아 두지 않아요. 사용 중에 오래 비우지 않아요
+        penalty: 10분 비어 있으면 "5분 안에 돌아와 주세요" 알림, 15분이면 자동 퇴실. 30일 안에 3번이면 노쇼 1번
+      - key: PHOTO
+        title: 증빙
+        rule: 체크인·퇴실 때 방 사진을 찍어 두기를 권해요(선택)
+        penalty: 사진이 없으면 분쟁 때 정리했다는 증빙이 없어 불리할 수 있어요
+      - key: DOOR
+        title: 문
+        rule: 나갈 때 문이 닫혔는지 확인해요. 문을 괴어 두거나 번호를 예약자 밖 사람에게 알려 주지 않아요
+        penalty: 무단 사용이 확인되면 그 예약 대표자에게 경고
+      - key: BELONGINGS
+        title: 소지품
+        rule: 퇴실 전에 챙겨요. 잠깐 나갈 때도 귀중품은 들고 나가요
+        penalty: 예약이 끝나 문이 잠기면 다시 예약해야 들어갈 수 있어요
   access:
     open-before-minutes: 10  # 번호는 시작 10분 전부터 끝나기 전까지 (FR-ACC-001)
     lock-after-failures: 5   # 5번 연속 틀리면
