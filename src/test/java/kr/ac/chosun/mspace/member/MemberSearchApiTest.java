@@ -53,6 +53,7 @@ class MemberSearchApiTest {
         assertThat(result).hasStatusOk().bodyJson().satisfies(json -> {
             json.assertThat().extractingPath("$.studentId").isEqualTo("20230002");
             json.assertThat().extractingPath("$.name").isEqualTo("홍*동");
+            json.assertThat().extractingPath("$.me").isEqualTo(false);
             json.assertThat().doesNotHavePath("$.email");
             json.assertThat().doesNotHavePath("$.id");
         });
@@ -81,5 +82,19 @@ class MemberSearchApiTest {
     void stripsSpaces() {
         assertThat(search(" 20230001 ")).hasStatusOk().bodyJson()
                 .extractingPath("$.name").isEqualTo("김*영");
+    }
+
+    @Test
+    @DisplayName("내 학번을 찾으면 me=true (화면이 \"추가\" 대신 \"추가됨\"을 보여 줌), 남은 false. 계정마다 달라 캐시 금지")
+    void marksMe() {
+        // given: 로그인한 회원은 1번 김지영(20230001)
+        // when
+        MvcTestResult mine = search("20230001");
+        MvcTestResult other = search("20230002");
+
+        // then
+        assertThat(mine).hasStatusOk().hasHeader("Cache-Control", "no-store")
+                .bodyJson().extractingPath("$.me").isEqualTo(true);
+        assertThat(other).hasStatusOk().bodyJson().extractingPath("$.me").isEqualTo(false);
     }
 }
