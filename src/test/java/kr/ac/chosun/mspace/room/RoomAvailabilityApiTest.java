@@ -117,6 +117,26 @@ class RoomAvailabilityApiTest {
     }
 
     @Test
+    @DisplayName("오늘 10:10에 걸친 끝나지 않은 예약이 있는 방만 occupiedNow=true. 10:00에 끝난 예약·다른 날은 false")
+    void occupiedNow() {
+        reserve(1, "2026-11-03 09:30+09", "2026-11-03 10:30+09", "BOOKED");   // 지금(10:10) 사용 중
+        reserve(2, "2026-11-03 09:00+09", "2026-11-03 10:00+09", "BOOKED");   // 이미 끝남
+        reserve(3, "2026-11-03 09:30+09", "2026-11-03 10:30+09", "CANCELED"); // 취소는 안 침
+
+        assertThat(mvc.get().uri("/api/rooms/availability?date=2026-11-03"))
+                .bodyJson()
+                .satisfies(json -> {
+                    json.assertThat().extractingPath("$.rooms[0].occupiedNow").isEqualTo(true);
+                    json.assertThat().extractingPath("$.rooms[1].occupiedNow").isEqualTo(false);
+                    json.assertThat().extractingPath("$.rooms[2].occupiedNow").isEqualTo(false);
+                    json.assertThat().extractingPath("$.rooms[3].occupiedNow").isEqualTo(false);
+                });
+        assertThat(mvc.get().uri("/api/rooms/availability?date=2026-11-04"))
+                .bodyJson()
+                .extractingPath("$.rooms[0].occupiedNow").isEqualTo(false);
+    }
+
+    @Test
     @DisplayName("오늘 10:10이면 10:00 칸까지는 지난 칸이라 막히고 10:30부터 비어 있다")
     void pastSlots() {
         assertThat(mvc.get().uri("/api/rooms/availability?date=2026-11-03"))

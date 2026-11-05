@@ -29,9 +29,12 @@ public interface ReservationQueryPort {
     record CodeMatch(long id, ReservationStatus status, Instant startAt, Instant endAt, Instant checkinDeadline) {
     }
 
-    /** 참여자 이름은 실명 그대로. 가리는 건 서비스가 한다 */
+    /**
+     * 참여자 이름은 실명 그대로. 가리는 건 서비스가 한다.
+     * checkinDeadline: 입실 마감 (DB 트리거가 채운 값 그대로)
+     */
     record Row(long id, int roomId, String roomName, Instant startAt, Instant endAt, ReservationStatus status,
-               long ownerId, String accessCode, List<ParticipantRow> participants) {
+               long ownerId, String accessCode, Instant checkinDeadline, List<ParticipantRow> participants) {
     }
 
     record ParticipantRow(long userId, String name, boolean owner) {
