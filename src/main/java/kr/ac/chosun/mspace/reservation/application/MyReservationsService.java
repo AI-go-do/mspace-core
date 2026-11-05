@@ -36,7 +36,8 @@ public class MyReservationsService implements MyReservationsUseCase {
                             .map(p -> new Participant(MaskedName.of(p.name()), p.owner()))
                             .toList();
                     return new MyReservation(r.id(), r.roomId(), r.roomName(), r.startAt().atZone(SEOUL),
-                            r.endAt().atZone(SEOUL), r.status(), owner, codeFor(owner, r.status(), r.accessCode()), people);
+                            r.endAt().atZone(SEOUL), r.status(), owner, codeFor(owner, r.status(), r.accessCode()),
+                            r.checkinDeadline().atZone(SEOUL), people);
                 })
                 .toList();
     }
