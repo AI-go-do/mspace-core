@@ -45,11 +45,13 @@ public class ContinueReservationService implements ContinueReservationUseCase {
     private final ReservationPolicy slots;
     private final Clock clock;
     private final TransactionOperations tx;
+    private final SuspensionPort suspensions;
 
     public ContinueReservationService(ReservationCommandPort port, ContinuationPort continuations,
                                       UsageChainPort chains, ReservationStatusPort statuses,
                                       AccessCodeIssuer codes, ExtensionPolicy policy, ReservationPolicy slots,
-                                      Clock clock, TransactionOperations tx) {
+                                      Clock clock, TransactionOperations tx, SuspensionPort suspensions) {
+        this.suspensions = suspensions;
         this.port = port;
         this.continuations = continuations;
         this.chains = chains;
@@ -132,9 +134,18 @@ public class ContinueReservationService implements ContinueReservationUseCase {
                     "연장은 종료 %d분 전부터 종료 전까지만 할 수 있습니다".formatted(policy.openBeforeMinutes()));
         }
         checkEnd(r.endAt(), command.endAt());
-        if (r.continuedFromId() != null
-                || chains.extensionsBefore(userId, r.startAt(), Duration.ofMinutes(policy.chainGapMinutes()))
-                        >= policy.maxCount()) {
+        // 연장도 새 예약이라 예약 만들기와 같이 정지 중인 대표자·참여자는 못 들어간다 (FR-RSV-106)
+        suspensions.suspendedUntil(userId, now).ifPresent(until -> {
+            throw new BusinessException(ErrorCode.USER_SUSPENDED, "노쇼로 %s까지 이용이 정지되어 연장할 수 없습니다"
+                    .formatted(CreateReservationService.UNTIL.format(until.atZone(SEOUL))));
+        });
+        if (suspensions.anySuspended(r.participantIds().stream().filter(id -> id != userId).toList(), now)) {
+            throw new BusinessException(ErrorCode.PARTICIPANT_SUSPENDED);
+        }
+        // 사슬 조회는 지금 예약 자신을 세지 않아서, 지금 예약이 연장으로 만든 것이면 1을 더한다
+        long used = chains.extensionsBefore(userId, r.startAt(), Duration.ofMinutes(policy.chainGapMinutes()))
+                + (r.continuedFromId() != null ? 1 : 0);
+        if (used >= policy.maxCount()) {
             throw new BusinessException(ErrorCode.RESERVATION_EXTENSION_LIMIT,
                     "연장은 %d회만 할 수 있습니다".formatted(policy.maxCount()));
         }
