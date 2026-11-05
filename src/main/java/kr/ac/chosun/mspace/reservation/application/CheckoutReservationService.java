@@ -1,5 +1,6 @@
 package kr.ac.chosun.mspace.reservation.application;
 
+import java.time.Clock;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.reservation.application.ReservationQueryPort.Access;
@@ -16,16 +17,18 @@ public class CheckoutReservationService implements CheckoutReservationUseCase {
 
     private final ReservationStatusPort statuses;
     private final ReservationQueryPort queries;
+    private final Clock clock;
 
-    public CheckoutReservationService(ReservationStatusPort statuses, ReservationQueryPort queries) {
+    public CheckoutReservationService(ReservationStatusPort statuses, ReservationQueryPort queries, Clock clock) {
         this.statuses = statuses;
         this.queries = queries;
+        this.clock = clock;
     }
 
     @Override
     @Transactional
     public CheckedOut checkout(long reservationId, long userId) {
-        if (statuses.checkoutIfInUse(reservationId, userId)) {
+        if (statuses.checkoutIfInUse(reservationId, userId, clock.instant())) {
             return new CheckedOut(reservationId, ReservationStatus.CHECKED_OUT);
         }
         Access access = queries.findAccess(reservationId, userId)

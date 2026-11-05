@@ -98,7 +98,7 @@ curl -X POST localhost:8080/api/reports -H 'X-User-Id: 1' -H 'Content-Type: appl
 관리자(`users.role = ADMIN`)는 신고 목록을 보고 판정해요(FR-RPT-103). 사실 `CONFIRMED`, 확인 불가 `UNVERIFIED`, 허위 `FALSE` 중 하나를 대기(`OPEN`)인 신고에 한 번만 줄 수 있어요. 소음은 판정 대상이 아니라 `409 REPORT_NOT_JUDGEABLE`, 이미 판정했으면 `409 REPORT_ALREADY_JUDGED`예요. 경고·정지는 벌칙이 확정되면 붙여요.
 
 ```bash
-curl localhost:8080/api/reports?verdict=OPEN -H 'X-User-Id: 9'                       # 관리자만, 최근 신고가 위
+curl 'localhost:8080/api/reports?verdict=OPEN' -H 'X-User-Id: 9'                     # 관리자만, 최근 신고가 위
 curl -X POST localhost:8080/api/reports/7/judge -H 'X-User-Id: 9' -H 'Content-Type: application/json' \
   -d '{"verdict":"FALSE"}'                                                             # → 200
 ```
