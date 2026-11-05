@@ -328,6 +328,17 @@ class SensorEventApiTest {
         assertThat(awayBody()).isEqualTo("1번 방이(가) 10분째 비어 있어요. 예약은 11:00에 끝나요(4분 남음).");
     }
 
+    @Test
+    @DisplayName("알림이 퇴실 기한(15분)을 넘겨 돌면 자리 비움 알림은 보내지 않는다")
+    void awayNotSentAfterReleaseTime() {
+        bookAndCheckIn("10:30", "12:30");
+        occupancy("10:35", false);
+        heartbeat("10:36", "10:50", false);
+        reminders.sendDue();
+
+        assertThat(kindsSentTo(1)).doesNotContain("AWAY_SOON");
+    }
+
     String awayBody() {
         return jdbc.sql("SELECT body FROM notification WHERE user_id = 1 AND kind = 'AWAY_SOON'").query(String.class).single();
     }
