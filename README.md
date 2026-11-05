@@ -6,6 +6,12 @@ M-SPACE 예약 시스템의 백엔드(core)예요. 조선대 IT융합대학 M-SP
 - 요구사항: [요구사항 명세 v0.4](https://github.com/AI-go-do/docs/blob/main/requirements/requirements.md)
 - 팀 규칙: [팀 컨벤션](https://github.com/AI-go-do/docs/blob/main/conventions.md) · [인프라 · CI/CD](https://github.com/AI-go-do/docs/blob/main/infra/infra-cicd.md) · [팀 공통 맥락](TEAM.md)
 
+## 문서
+
+- [결정 기록](docs/결정.md): 왜 이렇게 했나 (A vs B → 결정)
+- [트러블슈팅](docs/트러블슈팅.md): 막힌 것, 원인, 해결, 결과 숫자
+- API·요구사항은 팀 문서 [AI-go-do/docs](https://github.com/AI-go-do/docs)가 기준이에요
+
 ## 기술 스택
 
 | 영역 | 사용 기술 |
