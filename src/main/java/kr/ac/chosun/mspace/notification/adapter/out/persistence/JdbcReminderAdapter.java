@@ -88,16 +88,21 @@ class JdbcReminderAdapter implements ReminderPort {
         }
         // FR-DEV-103 자리 비움: 사용 중인데 센서가 N분 연속 비어 있음(끊긴 센서는 "있음"으로 봐서 제외). 대표자만.
         // 비어 있음 시작 = 비어 있게 된 관측 시각, 끊겼다 돌아온 시각, 입실 시각 중 가장 늦은 것 (V11 room_presence)
+        // "아직 있어요"를 이미 누른 예약은 알림 없이 정리(releaseAway)가 바로 퇴실시킨다 (11/5 지영)
         int away = sensor.away().notifyAfterMinutes();
+        String stillHereHint = sensor.away().stillHereEnabled()
+                ? " 계시다면 '아직 있어요'를 눌러 주세요(1번만, 누른 뒤 %d분 더 비면 바로 퇴실돼요)."
+                        .formatted(sensor.away().releaseAfterStillHereMinutes())
+                : "";
         for (Due d : claim(ReminderKind.AWAY_SOON, """
-                r.status = 'IN_USE' AND p.is_owner AND r.end_at > :now
+                r.status = 'IN_USE' AND p.is_owner AND r.end_at > :now AND r.still_here_at IS NULL
                 AND EXISTS (SELECT 1 FROM room_presence rp
                             WHERE rp.room_id = r.room_id AND NOT rp.occupied AND rp.last_received_at >= :aliveAfter
                               AND greatest(rp.changed_at, rp.trusted_from, r.checked_in_at) <= :horizon)""",
                 now, -away)) {
             created.add(save(d, ReminderKind.AWAY_SOON, now, "자리에 안 계시네요",
-                    "%s이(가) %d분째 비어 있어요. %d분 안에 돌아오지 않으면 자동으로 퇴실돼요.".formatted(d.room(), away,
-                            sensor.away().releaseAfterMinutes() - away)));
+                    "%s이(가) %d분째 비어 있어요. %d분 안에 돌아오지 않으면 자동으로 퇴실돼요.%s".formatted(d.room(), away,
+                            sensor.away().releaseAfterMinutes() - away, stillHereHint)));
         }
         return created;
     }
