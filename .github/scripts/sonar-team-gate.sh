@@ -22,8 +22,12 @@ deadline=$((SECONDS + 300))
 while [ "$SECONDS" -lt "$deadline" ]; do
   # 한 번 못 읽어도(네트워크 순간 끊김) 멈추지 않고 다시 묻는다
   # 응답이 JSON이 아니면 앞부분을 남겨 원인을 보이게 한다 (5분 동안 조용히 기다리지 않게)
-  body=$(api "ce/task?id=$task_id" || true)
-  status=$(echo "$body" | jq -r '.task.status' 2>/dev/null || { echo "참고: ce/task 응답이 JSON이 아니에요: $(echo "$body" | head -c 120)" >&2; echo PENDING; })
+  if ! body=$(api "ce/task?id=$task_id"); then
+    echo "참고: ce/task를 읽지 못했어요 (다시 물어요)" >&2; status=PENDING
+  else
+    status=$(echo "$body" | jq -r '.task.status // empty' 2>/dev/null || true)
+    [ -n "$status" ] || { echo "참고: ce/task 응답에 상태가 없어요: $(echo "$body" | head -c 120)" >&2; status=PENDING; }
+  fi
   case "$status" in
     SUCCESS) break ;;
     FAILED|CANCELED) echo "Sonar 서버가 분석을 처리하지 못했어요: $status"; exit 1 ;;
@@ -48,7 +52,7 @@ issues=$(cond new_violations)
 count_type() {
   local out code
   out=$(curl -sS -m 30 -u "$SONAR_TOKEN:" -w '\n%{http_code}' \
-        "$SONAR_HOST_URL/api/issues/search?componentKeys=$SONAR_PROJECT&inNewCodePeriod=true&resolved=false&types=$1&ps=1" 2>/dev/null) || true
+        "$SONAR_HOST_URL/api/issues/search?componentKeys=$SONAR_PROJECT&inNewCodePeriod=true&resolved=false&types=$1&ps=1") || true
   code=$(echo "$out" | tail -n1)
   if [ "$code" != "200" ]; then
     echo "참고: 유형 $1 이슈 수를 읽지 못했어요 (상태 $code: $(echo "$out" | sed '$d' | head -c 200))" >&2
