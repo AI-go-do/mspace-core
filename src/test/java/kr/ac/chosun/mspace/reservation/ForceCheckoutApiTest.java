@@ -92,9 +92,9 @@ class ForceCheckoutApiTest {
         assertThat(r).bodyJson().extractingPath("$.status").isEqualTo("CHECKED_OUT");
         var row = jdbc.sql("SELECT forced_by, forced_reason, checked_out_at IS NOT NULL AS out FROM reservation WHERE id = :id")
                 .param("id", inUse).query().singleRow();
-        assertThat(row.get("forced_by")).isEqualTo(ADMIN);
-        assertThat(row.get("forced_reason")).isEqualTo("소음 신고 확인");
-        assertThat(row.get("out")).isEqualTo(true);
+        assertThat(row).containsEntry("forced_by", ADMIN)
+                .containsEntry("forced_reason", "소음 신고 확인")
+                .containsEntry("out", true);
         List<Long> notified = jdbc.sql("SELECT user_id FROM notification WHERE kind = 'FORCED_CHECKOUT' ORDER BY user_id")
                 .query(Long.class).list();
         assertThat(notified).containsExactly(1L, 2L, 3L);

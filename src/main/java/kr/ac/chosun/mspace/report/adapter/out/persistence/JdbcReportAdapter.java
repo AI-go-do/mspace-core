@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 @Component
 class JdbcReportAdapter implements ReportPort, ReportJudgePort {
 
+    private static final String CONTENT = "content";
     private static final String COLUMNS =
             "id, room_id, category, content, verdict, source, reporter_reservation_id, created_at, judged_at";
 
@@ -63,7 +64,7 @@ class JdbcReportAdapter implements ReportPort, ReportJudgePort {
                 .param("reporter", reporterId)
                 .param("basis", basisReservationId)
                 .param("category", category.name())
-                .param("content", content)
+                .param(CONTENT, content)
                 .query((rs, n) -> new Saved(rs.getLong("id"), rs.getTimestamp("created_at").toInstant()))
                 .single();
     }
@@ -75,7 +76,7 @@ class JdbcReportAdapter implements ReportPort, ReportJudgePort {
                         VALUES (:room, 'CAMERA', :target, 'MESSY', :content)
                         RETURNING id
                         """)
-                .param("room", roomId).param("target", targetReservationId).param("content", content)
+                .param("room", roomId).param("target", targetReservationId).param(CONTENT, content)
                 .query((rs, n) -> rs.getLong(1)).single();
     }
 
@@ -114,7 +115,7 @@ class JdbcReportAdapter implements ReportPort, ReportJudgePort {
     private static ReportItem item(ResultSet rs, int n) throws SQLException {
         Timestamp judged = rs.getTimestamp("judged_at");
         return new ReportItem(rs.getLong("id"), rs.getInt("room_id"), ReportCategory.valueOf(rs.getString("category")),
-                rs.getString("content"), ReportVerdict.valueOf(rs.getString("verdict")),
+                rs.getString(CONTENT), ReportVerdict.valueOf(rs.getString("verdict")),
                 rs.getString("source"), rs.getObject("reporter_reservation_id", Long.class),
                 rs.getTimestamp("created_at").toInstant(),
                 judged == null ? null : judged.toInstant());

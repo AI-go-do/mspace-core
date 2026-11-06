@@ -43,8 +43,11 @@ class UsageStatsService implements UsageStatsUseCase {
             throw new BusinessException(ErrorCode.ADMIN_ONLY);
         }
         LocalDate today = LocalDate.now(clock.withZone(SEOUL));
-        LocalDate end = to != null ? to : from != null ? from.plusDays(DEFAULT_DAYS - 1) : today;
-        LocalDate start = from != null ? from : end.minusDays(DEFAULT_DAYS - 1);
+        LocalDate end = to;
+        if (end == null) {
+            end = from == null ? today : from.plusDays(DEFAULT_DAYS - 1L);
+        }
+        LocalDate start = from != null ? from : end.minusDays(DEFAULT_DAYS - 1L);
         if (start.getYear() < 2000 || end.getYear() > 2100) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST, "날짜는 2000–2100년 사이여야 합니다");
         }
@@ -119,7 +122,14 @@ class UsageStatsService implements UsageStatsUseCase {
     }
 
     private static SensorRow add(SensorRow a, SensorRow b) {
-        Integer max = a.co2Max() == null ? b.co2Max() : b.co2Max() == null ? a.co2Max() : Math.max(a.co2Max(), b.co2Max());
+        Integer max;
+        if (a.co2Max() == null) {
+            max = b.co2Max();
+        } else if (b.co2Max() == null) {
+            max = a.co2Max();
+        } else {
+            max = Math.max(a.co2Max(), b.co2Max());
+        }
         return new SensorRow(a.co2Readings() + b.co2Readings(), a.co2Sum() + b.co2Sum(), max, a.co2Over() + b.co2Over(),
                 a.ventilationAlerts() + b.ventilationAlerts(), a.occupiedMinutes() + b.occupiedMinutes(),
                 a.occupiedWithoutReservationMinutes() + b.occupiedWithoutReservationMinutes());

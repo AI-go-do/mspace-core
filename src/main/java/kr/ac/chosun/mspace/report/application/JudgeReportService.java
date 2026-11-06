@@ -37,6 +37,7 @@ import org.springframework.transaction.support.TransactionOperations;
 @Service
 public class JudgeReportService implements JudgeReportUseCase {
 
+    private static final String REPORT_RESULT = "REPORT_RESULT";
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter UNTIL = DateTimeFormatter.ofPattern("M월 d일 HH:mm");
 
@@ -96,7 +97,7 @@ public class JudgeReportService implements JudgeReportUseCase {
         String what = label(report.category()) + " 신고";
         switch (report.verdict()) {
             case CONFIRMED -> {
-                reporter.ifPresent(r -> out.add(new NewNotification(r, null, "REPORT_RESULT", "신고 결과가 나왔어요",
+                reporter.ifPresent(r -> out.add(new NewNotification(r, null, REPORT_RESULT, "신고 결과가 나왔어요",
                         what + "가 사실로 확인됐어요. 알려 줘서 고마워요.")));
                 penalties.findViolator(report.id()).ifPresent(v -> {
                     Penalty p = warn(v.userId(), WarningReason.VIOLATION, report.id(), v.reservationId(), now);
@@ -105,11 +106,11 @@ public class JudgeReportService implements JudgeReportUseCase {
                             "이용하신 방의 " + what + "가 사실로 확인됐어요. " + p.describe("예약·참여")));
                 });
             }
-            case UNVERIFIED -> reporter.ifPresent(r -> out.add(new NewNotification(r, null, "REPORT_RESULT",
+            case UNVERIFIED -> reporter.ifPresent(r -> out.add(new NewNotification(r, null, REPORT_RESULT,
                     "신고 결과가 나왔어요", what + "는 확인할 수 없어 처리하지 않았어요. 벌칙은 없어요.")));
             case FALSE -> reporter.ifPresent(r -> {
                 Penalty p = warn(r, WarningReason.FALSE_REPORT, report.id(), null, now);
-                out.add(new NewNotification(r, null, "REPORT_RESULT",
+                out.add(new NewNotification(r, null, REPORT_RESULT,
                         p.suspendedUntil == null ? "신고가 허위로 판정됐어요" : "신고가 정지됐어요",
                         what + "가 허위로 판정됐어요. " + p.describe("신고")));
             });
