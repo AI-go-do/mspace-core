@@ -24,13 +24,14 @@ public interface ReportPenaltyPort {
     /** 같은 사람의 경고·정지를 한 줄로 세운다 (트랜잭션이 끝나면 풀림). 두 판정이 동시에 3번째를 세다 놓치지 않게 */
     void lockUser(long userId);
 
-    void warn(long userId, WarningReason reason, long reportId, Long reservationId, Instant now);
+    /** @return 새 경고 id (정지를 걸면 다음 집계 경계로 남긴다) */
+    long warn(long userId, WarningReason reason, long reportId, Long reservationId, Instant now);
 
-    /** windowDays 안의 경고 수. 같은 종류 정지가 시작된 뒤의 경고만 센다 (정지가 끝나면 처음부터) */
+    /** windowDays 안의 경고 수. 같은 종류의 지난 정지를 건 경고보다 뒤의 경고만 센다 (정지가 끝나면 처음부터) */
     int countWarnings(long userId, WarningReason reason, Instant now, int windowDays);
 
     /** VIOLATION → 이용 정지, FALSE_REPORT → 신고 정지. 이미 기간이 겹치는 정지가 있으면 넣지 않는다 */
-    boolean suspend(long userId, WarningReason reason, Instant from, Instant until);
+    boolean suspend(long userId, WarningReason reason, long warningId, Instant from, Instant until);
 
     /** 신고 정지 중이면 끝나는 시각 */
     Optional<Instant> reportSuspendedUntil(long userId, Instant now);

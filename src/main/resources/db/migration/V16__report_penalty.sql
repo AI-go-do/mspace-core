@@ -21,6 +21,8 @@ CREATE INDEX user_warning_recent ON user_warning (user_id, reason, created_at DE
 --    노쇼 정지와 경고 정지가 동시에 생기려 하면 한 줄만 남는다
 ALTER TABLE user_suspension DROP CONSTRAINT user_suspension_reason_check;
 ALTER TABLE user_suspension ADD CONSTRAINT user_suspension_reason_check CHECK (reason IN ('NO_SHOW', 'WARNINGS'));
+-- 경고 정지를 건 경고. 다음 집계는 이 경고보다 뒤(id가 큰) 경고만 센다 (시각은 잠금 전에 읽혀 순서가 어긋날 수 있어 id로)
+ALTER TABLE user_suspension ADD COLUMN warning_id bigint REFERENCES user_warning(id);
 
 -- 3) 신고 정지: 예약은 되고 신고만 못 한다. 이용 정지와 따로 두어 두 정지가 서로 막지 않게
 CREATE TABLE report_suspension (
@@ -28,6 +30,7 @@ CREATE TABLE report_suspension (
     user_id     bigint       NOT NULL REFERENCES users(id),
     starts_at   timestamptz  NOT NULL,
     ends_at     timestamptz  NOT NULL,
+    warning_id  bigint       NOT NULL REFERENCES user_warning(id),   -- 정지를 건 허위 신고 경고 (다음 집계 경계)
     created_at  timestamptz  NOT NULL DEFAULT now(),
     CONSTRAINT report_suspension_period CHECK (starts_at < ends_at),
     CONSTRAINT one_report_suspension_at_a_time EXCLUDE USING gist (user_id WITH =, tstzrange(starts_at, ends_at) WITH &&)

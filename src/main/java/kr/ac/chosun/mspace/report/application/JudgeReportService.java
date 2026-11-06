@@ -134,12 +134,12 @@ public class JudgeReportService implements JudgeReportUseCase {
 
     private Penalty warn(long userId, WarningReason reason, long reportId, Long reservationId, Instant now) {
         penalties.lockUser(userId);
-        penalties.warn(userId, reason, reportId, reservationId, now);
+        long warningId = penalties.warn(userId, reason, reportId, reservationId, now);
         int warnings = penalties.countWarnings(userId, reason, now, policy.windowDays());
         Instant until = null;
         if (warnings >= policy.count()) {
             Instant end = now.plus(Duration.ofDays(policy.suspendDays()));
-            if (penalties.suspend(userId, reason, now, end)) {
+            if (penalties.suspend(userId, reason, warningId, now, end)) {
                 until = end;
             }
         }

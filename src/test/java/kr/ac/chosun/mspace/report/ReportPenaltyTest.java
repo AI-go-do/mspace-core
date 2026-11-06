@@ -213,6 +213,27 @@ class ReportPenaltyTest {
     }
 
     @Test
+    @DisplayName("정지 뒤에 들어온 경고는 시각이 정지보다 이르더라도 다음 집계에 센다 (잠금 전에 읽은 시각 때문에 순서가 어긋나도)")
+    void lateWarningAfterSuspensionCounts() {
+        judge(report("MESSY"), "CONFIRMED");
+        judge(report("BROKEN"), "CONFIRMED");
+        judge(report("WINDOW_OPEN"), "CONFIRMED");   // 정지
+        // 잠금을 기다리던 다른 판정이 정지 뒤에 경고를 넣었는데, 시각은 정지 시작보다 1분 이른 경우
+        jdbc.sql("""
+                INSERT INTO user_warning (user_id, reason, report_id, created_at)
+                SELECT 2, 'VIOLATION', :r, starts_at - interval '1 minute' FROM user_suspension
+                """).param("r", report("MESSY")).update();
+        jdbc.sql("UPDATE user_suspension SET starts_at = starts_at - interval '15 days', ends_at = now() - interval '1 day'")
+                .update();
+        jdbc.sql("UPDATE user_warning SET created_at = created_at - interval '15 days'").update();
+
+        judge(report("BROKEN"), "CONFIRMED");
+        judge(report("WINDOW_OPEN"), "CONFIRMED");   // 정지 뒤 경고 3번째 (늦게 들어온 것 포함)
+
+        assertThat(jdbc.sql("SELECT count(*) FROM user_suspension").query(Integer.class).single()).isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("30일보다 오래된 경고는 세지 않는다")
     void oldWarningsDoNotCount() {
         for (int i = 0; i < 2; i++) {
