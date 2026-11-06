@@ -28,13 +28,18 @@ public class DeviceTokenVerifier {
         this.registered = parse(policy.devices());
         String shared = policy.deviceToken();
         this.sharedToken = shared == null || shared.isBlank() ? null : shared;
+        if (sharedToken != null && registered.stream().anyMatch(r -> r.token().equals(sharedToken))) {
+            // 같은 값이면 방 묶기가 먼저 걸려 다른 방의 옛 장치가 403이 된다. 설정 실수라 띄우지 않는다
+            throw new IllegalStateException("MSPACE_DEVICES에 예전 공용 토큰(MSPACE_DEVICE_TOKEN)과 같은 토큰이 있습니다");
+        }
     }
 
     /**
      * 토큰이 맞고 그 방에 쓸 수 있는지 확인한다. 토큰은 시간 차 없이 비교한다(MessageDigest.isEqual).
-     * roomId가 없으면(형식 오류) 토큰만 확인하고, 400은 부르는 쪽이 낸다.
+     * 장치별 토큰이면 요청의 deviceId도 등록된 이름과 같아야 한다(기록이 다른 장치 이름으로 남지 않게).
+     * roomId·deviceId가 없으면(형식 오류이거나 GET) 그 값은 건너뛰고, 400은 부르는 쪽이 낸다.
      */
-    public void verify(String authorization, Integer roomId) {
+    public void verify(String authorization, Integer roomId, String deviceId) {
         if (authorization == null || !authorization.startsWith(BEARER)) {
             throw new BusinessException(ErrorCode.DEVICE_UNAUTHORIZED);
         }
@@ -48,6 +53,9 @@ public class DeviceTokenVerifier {
         if (found != null) {
             if (roomId != null && found.roomId() != roomId) {
                 throw new BusinessException(ErrorCode.DEVICE_ROOM_MISMATCH);
+            }
+            if (deviceId != null && !found.deviceId().equals(deviceId)) {
+                throw new BusinessException(ErrorCode.DEVICE_ID_MISMATCH);
             }
             return;
         }
@@ -65,7 +73,7 @@ public class DeviceTokenVerifier {
         }
         Set<String> ids = new HashSet<>();
         Set<String> tokens = new HashSet<>();
-        for (String entry : devices.split(",")) {
+        for (String entry : devices.split(",", -1)) {
             String[] parts = entry.trim().split(":", -1);
             if (parts.length != 3 || parts[0].isBlank() || parts[2].isBlank()) {
                 throw new IllegalStateException("MSPACE_DEVICES 형식은 deviceId:roomId:토큰 입니다 (" + (out.size() + 1) + "번째)");

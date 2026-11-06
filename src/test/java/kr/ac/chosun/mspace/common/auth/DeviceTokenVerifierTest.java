@@ -32,12 +32,12 @@ class DeviceTokenVerifierTest {
         DeviceTokenVerifier v = verifier("", "keypad-1:1:aaa, qr-2:2:bbb");
 
         // when / then
-        assertThatCode(() -> v.verify("Bearer aaa", 1)).doesNotThrowAnyException();
-        assertThatCode(() -> v.verify("Bearer bbb", 2)).doesNotThrowAnyException();
-        assertThat(codeOf(() -> v.verify("Bearer aaa", 2))).isEqualTo(ErrorCode.DEVICE_ROOM_MISMATCH);
-        assertThat(codeOf(() -> v.verify("Bearer zzz", 1))).isEqualTo(ErrorCode.DEVICE_UNAUTHORIZED);
-        assertThat(codeOf(() -> v.verify(null, 1))).isEqualTo(ErrorCode.DEVICE_UNAUTHORIZED);
-        assertThat(codeOf(() -> v.verify("aaa", 1))).isEqualTo(ErrorCode.DEVICE_UNAUTHORIZED);
+        assertThatCode(() -> v.verify("Bearer aaa", 1, null)).doesNotThrowAnyException();
+        assertThatCode(() -> v.verify("Bearer bbb", 2, null)).doesNotThrowAnyException();
+        assertThat(codeOf(() -> v.verify("Bearer aaa", 2, null))).isEqualTo(ErrorCode.DEVICE_ROOM_MISMATCH);
+        assertThat(codeOf(() -> v.verify("Bearer zzz", 1, null))).isEqualTo(ErrorCode.DEVICE_UNAUTHORIZED);
+        assertThat(codeOf(() -> v.verify(null, 1, null))).isEqualTo(ErrorCode.DEVICE_UNAUTHORIZED);
+        assertThat(codeOf(() -> v.verify("aaa", 1, null))).isEqualTo(ErrorCode.DEVICE_UNAUTHORIZED);
     }
 
     @Test
@@ -48,10 +48,20 @@ class DeviceTokenVerifierTest {
         DeviceTokenVerifier none = verifier("", "");
 
         // when / then
-        assertThatCode(() -> v.verify("Bearer old", 1)).doesNotThrowAnyException();
-        assertThatCode(() -> v.verify("Bearer old", 3)).doesNotThrowAnyException();
-        assertThat(codeOf(() -> none.verify("Bearer ", 1))).isEqualTo(ErrorCode.DEVICE_UNAUTHORIZED);
-        assertThat(codeOf(() -> none.verify("Bearer old", 1))).isEqualTo(ErrorCode.DEVICE_UNAUTHORIZED);
+        assertThatCode(() -> v.verify("Bearer old", 1, null)).doesNotThrowAnyException();
+        assertThatCode(() -> v.verify("Bearer old", 3, null)).doesNotThrowAnyException();
+        assertThat(codeOf(() -> none.verify("Bearer ", 1, null))).isEqualTo(ErrorCode.DEVICE_UNAUTHORIZED);
+        assertThat(codeOf(() -> none.verify("Bearer old", 1, null))).isEqualTo(ErrorCode.DEVICE_UNAUTHORIZED);
+    }
+
+    @Test
+    @DisplayName("장치별 토큰은 등록된 deviceId로만 보낼 수 있고, 다르면 403 DEVICE_ID_MISMATCH")
+    void boundToDeviceId() {
+        DeviceTokenVerifier v = verifier("old", "keypad-1:1:aaa");
+
+        assertThatCode(() -> v.verify("Bearer aaa", 1, "keypad-1")).doesNotThrowAnyException();
+        assertThat(codeOf(() -> v.verify("Bearer aaa", 1, "qr-1"))).isEqualTo(ErrorCode.DEVICE_ID_MISMATCH);
+        assertThatCode(() -> v.verify("Bearer old", 1, "anything-1")).doesNotThrowAnyException();
     }
 
     @Test
@@ -59,8 +69,8 @@ class DeviceTokenVerifierTest {
     void noRoomOnlyToken() {
         DeviceTokenVerifier v = verifier("", "keypad-1:1:aaa");
 
-        assertThatCode(() -> v.verify("Bearer aaa", null)).doesNotThrowAnyException();
-        assertThat(codeOf(() -> v.verify("Bearer zzz", null))).isEqualTo(ErrorCode.DEVICE_UNAUTHORIZED);
+        assertThatCode(() -> v.verify("Bearer aaa", null, null)).doesNotThrowAnyException();
+        assertThat(codeOf(() -> v.verify("Bearer zzz", null, null))).isEqualTo(ErrorCode.DEVICE_UNAUTHORIZED);
     }
 
     @Test
@@ -71,5 +81,8 @@ class DeviceTokenVerifierTest {
         assertThatThrownBy(() -> verifier("", "keypad-1:1:")).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> verifier("", "keypad-1:1:aaa,keypad-1:2:bbb")).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> verifier("", "keypad-1:1:aaa,qr-1:1:aaa")).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> verifier("", "keypad-1:1:aaa,")).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> verifier("", ",")).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> verifier("aaa", "keypad-1:1:aaa")).isInstanceOf(IllegalStateException.class);
     }
 }
