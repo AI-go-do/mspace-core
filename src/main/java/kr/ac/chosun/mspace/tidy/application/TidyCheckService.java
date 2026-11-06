@@ -113,6 +113,7 @@ class TidyCheckService implements TidyCheckUseCase {
             case BAG -> "가방";
             case PHONE -> "휴대폰";
             case EARBUDS -> "무선 이어폰";
+            case LAPTOP -> "노트북";
         };
     }
 

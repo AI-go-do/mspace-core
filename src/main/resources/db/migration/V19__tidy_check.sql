@@ -20,7 +20,7 @@ CREATE TABLE tidy_check (
     device_id      varchar(50)  NOT NULL,
     result         varchar(16)  NOT NULL CHECK (result IN ('CLEAN', 'NEEDS_CLEANING')),
     items          text[]       NOT NULL,   -- 본 물건 이름 전부 (모델이 내는 이름 그대로)
-    left_items     text[]       NOT NULL CHECK (left_items <@ ARRAY['BAG', 'PHONE', 'EARBUDS']),  -- 두고 간 귀중품
+    left_items     text[]       NOT NULL CHECK (left_items <@ ARRAY['BAG', 'PHONE', 'EARBUDS', 'LAPTOP']),  -- 두고 간 귀중품
     report_id      bigint       UNIQUE REFERENCES report(id),
     observed_at    timestamptz  NOT NULL,
     received_at    timestamptz  NOT NULL,

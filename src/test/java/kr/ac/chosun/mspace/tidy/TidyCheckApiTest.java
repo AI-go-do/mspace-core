@@ -225,13 +225,13 @@ class TidyCheckApiTest {
     }
 
     @Test
-    @DisplayName("수용 기준: 가방·휴대폰을 두고 가면 그 예약 대표자·참여자 모두에게 알림")
+    @DisplayName("수용 기준: 가방·휴대폰·노트북을 두고 가면 그 예약 대표자·참여자 모두에게 알림")
     void leftItemsNotifyMembers() {
-        assertThat(post(1, check("e5", ended, "CLEAN", "[]", "[\"BAG\",\"PHONE\"]"))).hasStatusOk();
+        assertThat(post(1, check("e5", ended, "CLEAN", "[]", "[\"BAG\",\"PHONE\",\"LAPTOP\"]"))).hasStatusOk();
 
         assertThat(inbox("LEFT_ITEM")).extracting(m -> ((Number) m.get("user_id")).longValue())
                 .containsExactly(1L, 2L, 3L);
-        assertThat(inbox("LEFT_ITEM").getFirst().get("body")).asString().contains("가방·휴대폰");
+        assertThat(inbox("LEFT_ITEM").getFirst().get("body")).asString().contains("가방·휴대폰·노트북");
         assertThat(reports()).isEmpty();
     }
 

@@ -11,8 +11,8 @@ public interface TidyCheckUseCase {
 
     enum Result { CLEAN, NEEDS_CLEANING }
 
-    /** 두고 가면 알림을 보내는 귀중품 (11/6 지영: 가방·휴대폰·무선 이어폰만) */
-    enum LeftItem { BAG, PHONE, EARBUDS }
+    /** 두고 가면 알림을 보내는 귀중품 (11/6 지영: 가방·휴대폰·무선 이어폰, 수연 의견으로 노트북 추가) */
+    enum LeftItem { BAG, PHONE, EARBUDS, LAPTOP }
 
     /** 지금 걸린 예약 */
     record CurrentReservation(long reservationId, String status, Instant startAt, Instant endAt) {
