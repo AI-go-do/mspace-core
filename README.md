@@ -244,7 +244,7 @@ curl -X POST localhost:8080/api/reservations/12/force-checkout -H 'X-User-Id: 4'
      -d '{"reason":"신고 확인, 소음 계속"}'
 # → {"id":12,"status":"CHECKED_OUT"}. 없는 예약 404, 사용 중이 아니면 409 RESERVATION_NOT_IN_USE
 
-# 이용 통계 + 센서 (from·to는 서울 날짜, to 포함, 92일까지. 빼면 오늘까지 7일)
+# 이용 통계 + 센서 (from·to는 서울 날짜, to 포함, 92일까지. 둘 다 빼면 오늘까지 7일, from만 주면 그날부터 7일, to만 주면 그날까지 7일)
 curl 'localhost:8080/api/stats/usage?from=2026-11-01&to=2026-11-30' -H 'X-User-Id: 4'
 # → {"from":…,"to":…,"days":30,"total":{…},"rooms":[{"roomId":1,"roomName":"1번 방",
 #     "reservations":{"total","canceled","pending","noShow","used","forced","awayReleased","autoCheckedOut"},
@@ -268,7 +268,7 @@ curl localhost:8080/api/reports/7/evidence -H 'X-User-Id: 4'
 - 비율은 0–1 소수 셋째 자리, 분모가 0이면 null. 노쇼율·실사용률 분모는 취소·대기(BOOKED) 뺀 예약, 이용률은 기간 중 지난 시간(하루 24시간) 대비 실제 이용 시간
 - 짧은 이용: 예약 시간의 절반도 안 쓰고 나간 것 (사용 중 제외)
 - 재실 시간은 센서가 상태가 바뀔 때만 기록해서, 바뀐 기록 사이를 그 상태로 본 근삿값이에요. "예약 없이 있던 시간" = 센서 있음 − 입실한 예약 시간
-- 직전 이용 예약은 경고 대상과 같은 규칙(같은 방, 신고 전 입실 중 가장 늦은 것, 노쇼 제외). 없으면 `previous: null`
+- 직전 이용 예약은 경고 대상과 같은 규칙(같은 방, 신고자 예약 제외, 신고 전 입실 중 가장 늦은 것, 노쇼 제외). 없으면 `previous: null`
 - 카메라 인원 수는 core에 없어 통계에 없어요
 
 ## 폴더 구조
