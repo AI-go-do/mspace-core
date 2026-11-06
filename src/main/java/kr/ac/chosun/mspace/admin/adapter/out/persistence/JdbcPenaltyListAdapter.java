@@ -37,11 +37,9 @@ class JdbcPenaltyListAdapter implements PenaltyListPort {
                         ORDER BY w.created_at DESC, w.id DESC
                         """)
                 .param("since", Timestamp.from(since))
-                .query((rs, n) -> {
-                    long reservation = rs.getLong("reservation_id");
-                    return new Warning(rs.getLong("id"), member(rs), rs.getString("reason"), rs.getLong("report_id"),
-                            rs.wasNull() ? null : reservation, rs.getTimestamp("created_at").toInstant());
-                })
+                // reservation_id는 허위 신고 경고면 NULL. wasNull()은 마지막에 읽은 칸만 보니 getObject로 바로 읽는다 (CodeRabbit)
+                .query((rs, n) -> new Warning(rs.getLong("id"), member(rs), rs.getString("reason"), rs.getLong("report_id"),
+                        rs.getObject("reservation_id", Long.class), rs.getTimestamp("created_at").toInstant()))
                 .list();
     }
 
