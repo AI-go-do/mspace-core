@@ -36,7 +36,7 @@ public enum ErrorCode {
     PARTICIPANT_HAS_ACTIVE_RESERVATION(HttpStatus.CONFLICT, "참여자 중 끝나지 않은 예약이 이미 있는 사람이 있습니다"),
     PARTICIPANT_TIME_TAKEN(HttpStatus.CONFLICT, "참여자 중 같은 시간에 다른 방 예약이 있는 사람이 있습니다"),
     // 노쇼 벌칙 (FR-RSV-106): 30일 안 노쇼 2번 → 14일 정지. 참여자는 누구인지 알려 주지 않는다(남의 제재 기록이라)
-    USER_SUSPENDED(HttpStatus.FORBIDDEN, "노쇼가 쌓여 이용이 정지되어 예약할 수 없습니다"),
+    USER_SUSPENDED(HttpStatus.FORBIDDEN, "이용이 정지되어 예약할 수 없습니다"),
     PARTICIPANT_SUSPENDED(HttpStatus.FORBIDDEN, "참여자 중 이용 정지 중인 사람이 있어 예약할 수 없습니다"),
     // 동시 요청끼리 DB에서 서로 기다리는 교착이 다시 해도 계속 날 때 (드묾). 예약은 저장되지 않았다
     RESERVATION_BUSY(HttpStatus.SERVICE_UNAVAILABLE, "요청이 몰려 처리하지 못했습니다. 잠시 후 다시 시도해 주세요"),
@@ -75,6 +75,8 @@ public enum ErrorCode {
     REPORT_NOT_FOUND(HttpStatus.NOT_FOUND, "찾을 수 없는 신고입니다"),
     REPORT_NOT_JUDGEABLE(HttpStatus.CONFLICT, "소음 신고는 판정 대상이 아닙니다"),
     REPORT_ALREADY_JUDGED(HttpStatus.CONFLICT, "이미 판정한 신고입니다"),
+    // 허위 신고 경고가 쌓이면 (FR-RPT-103 벌칙, 11/6)
+    REPORT_SUSPENDED(HttpStatus.FORBIDDEN, "허위 신고 경고가 쌓여 신고가 정지되었습니다"),
 
     // 키패드 (FR-ACC-001)
     DEVICE_UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "장치 토큰이 없거나 맞지 않습니다"),
