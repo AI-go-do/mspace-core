@@ -7,6 +7,8 @@
 # 토큰 값은 출력하지 않는다
 set -euo pipefail
 
+# 주소 끝의 / 는 뺀다. core 시크릿은 끝에 / 가 있어 //api/... 가 되면 JSON이 아닌 응답이 온다 (11-06 #82)
+SONAR_HOST_URL=${SONAR_HOST_URL%/}
 api() { curl -sf -m 30 -u "$SONAR_TOKEN:" "$SONAR_HOST_URL/api/$1"; }
 
 # 1) 스캐너가 남긴 작업 id로 서버 처리가 끝나기를 기다린다 (최대 5분)
@@ -19,7 +21,9 @@ status=PENDING
 deadline=$((SECONDS + 300))
 while [ "$SECONDS" -lt "$deadline" ]; do
   # 한 번 못 읽어도(네트워크 순간 끊김) 멈추지 않고 다시 묻는다
-  status=$(api "ce/task?id=$task_id" | jq -r '.task.status' || echo PENDING)
+  # 응답이 JSON이 아니면 앞부분을 남겨 원인을 보이게 한다 (5분 동안 조용히 기다리지 않게)
+  body=$(api "ce/task?id=$task_id" || true)
+  status=$(echo "$body" | jq -r '.task.status' 2>/dev/null || { echo "참고: ce/task 응답이 JSON이 아니에요: $(echo "$body" | head -c 120)" >&2; echo PENDING; })
   case "$status" in
     SUCCESS) break ;;
     FAILED|CANCELED) echo "Sonar 서버가 분석을 처리하지 못했어요: $status"; exit 1 ;;
@@ -44,7 +48,7 @@ issues=$(cond new_violations)
 count_type() {
   local out code
   out=$(curl -sS -m 30 -u "$SONAR_TOKEN:" -w '\n%{http_code}' \
-        "$SONAR_HOST_URL/api/issues/search?componentKeys=$SONAR_PROJECT&inNewCodePeriod=true&resolved=false&types=$1&ps=1" 2>&1) || true
+        "$SONAR_HOST_URL/api/issues/search?componentKeys=$SONAR_PROJECT&inNewCodePeriod=true&resolved=false&types=$1&ps=1" 2>/dev/null) || true
   code=$(echo "$out" | tail -n1)
   if [ "$code" != "200" ]; then
     echo "참고: 유형 $1 이슈 수를 읽지 못했어요 (상태 $code: $(echo "$out" | sed '$d' | head -c 200))" >&2
