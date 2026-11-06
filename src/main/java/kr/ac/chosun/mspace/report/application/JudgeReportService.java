@@ -7,6 +7,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import kr.ac.chosun.mspace.common.config.ReportPenaltyPolicy;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
@@ -90,12 +91,13 @@ public class JudgeReportService implements JudgeReportUseCase {
     /** 경고·정지를 남기고, 보낼 알림을 돌려준다 */
     private List<NewNotification> penalize(ReportItem report, Instant now) {
         List<NewNotification> out = new ArrayList<>();
-        long reporter = penalties.reporterId(report.id());
+        // 카메라 자동 신고(FR-DEV-105)는 신고자가 없다: 결과 알림도, 허위 경고도 없다
+        Optional<Long> reporter = penalties.reporterId(report.id());
         String what = label(report.category()) + " 신고";
         switch (report.verdict()) {
             case CONFIRMED -> {
-                out.add(new NewNotification(reporter, null, "REPORT_RESULT", "신고 결과가 나왔어요",
-                        what + "가 사실로 확인됐어요. 알려 줘서 고마워요."));
+                reporter.ifPresent(r -> out.add(new NewNotification(r, null, "REPORT_RESULT", "신고 결과가 나왔어요",
+                        what + "가 사실로 확인됐어요. 알려 줘서 고마워요.")));
                 penalties.findViolator(report.id()).ifPresent(v -> {
                     Penalty p = warn(v.userId(), WarningReason.VIOLATION, report.id(), v.reservationId(), now);
                     out.add(new NewNotification(v.userId(), v.reservationId(), "WARNING",
@@ -103,14 +105,14 @@ public class JudgeReportService implements JudgeReportUseCase {
                             "이용하신 방의 " + what + "가 사실로 확인됐어요. " + p.describe("예약·참여")));
                 });
             }
-            case UNVERIFIED -> out.add(new NewNotification(reporter, null, "REPORT_RESULT", "신고 결과가 나왔어요",
-                    what + "는 확인할 수 없어 처리하지 않았어요. 벌칙은 없어요."));
-            case FALSE -> {
-                Penalty p = warn(reporter, WarningReason.FALSE_REPORT, report.id(), null, now);
-                out.add(new NewNotification(reporter, null, "REPORT_RESULT",
+            case UNVERIFIED -> reporter.ifPresent(r -> out.add(new NewNotification(r, null, "REPORT_RESULT",
+                    "신고 결과가 나왔어요", what + "는 확인할 수 없어 처리하지 않았어요. 벌칙은 없어요.")));
+            case FALSE -> reporter.ifPresent(r -> {
+                Penalty p = warn(r, WarningReason.FALSE_REPORT, report.id(), null, now);
+                out.add(new NewNotification(r, null, "REPORT_RESULT",
                         p.suspendedUntil == null ? "신고가 허위로 판정됐어요" : "신고가 정지됐어요",
                         what + "가 허위로 판정됐어요. " + p.describe("신고")));
-            }
+            });
             case OPEN -> throw new IllegalStateException("판정 뒤에 OPEN일 수 없다");
         }
         return out;

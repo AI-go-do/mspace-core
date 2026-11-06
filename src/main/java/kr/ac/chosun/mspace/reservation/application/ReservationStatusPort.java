@@ -10,10 +10,11 @@ public interface ReservationStatusPort {
 
     /**
      * 이 회원이 대표자이고, BOOKED이고, 지금이 시작 전일 때만 CANCELED로 바꾼다.
+     * 즉시 시작 예약은 누른 뒤 instantCancelMinutes 안이고 입실 마감(checkin_deadline) 전이면 시작 후라도 바꾼다.
      *
      * @return 바꿨으면 true. 조건이 하나라도 안 맞으면 아무것도 바꾸지 않고 false
      */
-    boolean cancelIfBookedBeforeStart(long reservationId, long ownerId);
+    boolean cancelIfBookedBeforeStart(long reservationId, long ownerId, int instantCancelMinutes);
 
     /**
      * BOOKED이고 지금이 번호 유효 시간(시작 openBefore 전 ~ 끝 전) 안이고 입실 마감(checkin_deadline) 전일 때만

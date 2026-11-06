@@ -20,9 +20,10 @@ class JdbcReportPenaltyAdapter implements ReportPenaltyPort {
     }
 
     @Override
-    public long reporterId(long reportId) {
-        return jdbc.sql("SELECT reporter_id FROM report WHERE id = :id").param("id", reportId)
-                .query(Long.class).single();
+    public Optional<Long> reporterId(long reportId) {
+        // 카메라 신고는 reporter_id가 NULL이라 single()은 못 쓴다 (null 값이면 예외). 줄은 늘 하나
+        return jdbc.sql("SELECT reporter_id FROM report WHERE id = :id AND reporter_id IS NOT NULL")
+                .param("id", reportId).query((rs, n) -> rs.getLong(1)).optional();
     }
 
     @Override
@@ -33,7 +34,8 @@ class JdbcReportPenaltyAdapter implements ReportPenaltyPort {
                         FROM report p
                         JOIN reservation r ON r.room_id = p.room_id
                         WHERE p.id = :id
-                          AND r.id <> p.reporter_reservation_id
+                          AND (p.target_reservation_id IS NULL OR r.id = p.target_reservation_id)
+                          AND r.id IS DISTINCT FROM p.reporter_reservation_id
                           AND r.checked_in_at IS NOT NULL
                           AND r.checked_in_at <= p.created_at
                         ORDER BY r.checked_in_at DESC, r.id DESC

@@ -12,12 +12,13 @@ public interface ReportPenaltyPort {
     record Violator(long userId, long reservationId) {
     }
 
-    /** 신고한 회원 */
-    long reporterId(long reportId);
+    /** 신고한 회원. 카메라 자동 신고(V19 source CAMERA)는 신고자가 없어 비어 있다 */
+    Optional<Long> reporterId(long reportId);
 
     /**
      * 신고 직전에 그 방을 쓴 예약의 대표자 (11/6 지영 결정: 대표자만).
-     * 신고 시각 전에 입실한 예약 중 가장 늦게 입실한 것. 신고자 자신의 근거 예약은 뺀다
+     * 신고 시각 전에 입실한 예약 중 가장 늦게 입실한 것. 신고자 자신의 근거 예약은 뺀다.
+     * 카메라 자동 신고는 대상 예약(target_reservation_id)을 이미 알아서 그 예약의 대표자
      */
     Optional<Violator> findViolator(long reportId);
 

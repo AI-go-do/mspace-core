@@ -75,6 +75,8 @@ public enum ErrorCode {
     REPORT_NOT_FOUND(HttpStatus.NOT_FOUND, "찾을 수 없는 신고입니다"),
     REPORT_NOT_JUDGEABLE(HttpStatus.CONFLICT, "소음 신고는 판정 대상이 아닙니다"),
     REPORT_ALREADY_JUDGED(HttpStatus.CONFLICT, "이미 판정한 신고입니다"),
+    RESERVATION_NOT_ENDED(HttpStatus.CONFLICT, "아직 끝나지 않았거나 입실하지 않은 예약입니다"),
+    TIDY_CHECK_EXISTS(HttpStatus.CONFLICT, "이 예약의 정리 확인 결과가 이미 있습니다"),
     // 허위 신고 경고가 쌓이면 (FR-RPT-103 벌칙, 11/6)
     REPORT_SUSPENDED(HttpStatus.FORBIDDEN, "허위 신고 경고가 쌓여 신고가 정지되었습니다"),
 
