@@ -1,5 +1,8 @@
 package kr.ac.chosun.mspace.report.application;
 
+import java.time.Clock;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.report.domain.ReportCategory;
@@ -14,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>메모는 앞뒤 공백을 지우고, 비었으면 null. 최대 {@value #MAX_CONTENT_LENGTH}자</li>
  *   <li>없는 방이면 404 ROOM_NOT_FOUND (예약 만들기와 같은 코드. 권한 403과 헷갈리지 않게 먼저 본다)</li>
  *   <li>지금 그 방이나 옆 방을 쓰고 있는(IN_USE) 예약의 이용자만. 아니면 403</li>
+ *   <li>허위 신고 경고가 쌓여 신고 정지 중이면 403 REPORT_SUSPENDED (끝나는 시각 안내, FR-RPT-103 벌칙)</li>
  * </ul>
  * 사진(photo_url)은 저장소가 정해지면 사진 체크인(FR-RPT-102)과 같이 붙인다. 결과 알림과 관리자 판정(FR-RPT-103)은 다음 단계.
  */
@@ -22,10 +26,16 @@ public class SubmitReportService implements SubmitReportUseCase {
 
     static final int MAX_CONTENT_LENGTH = 500;
 
-    private final ReportPort reports;
+    private static final DateTimeFormatter UNTIL = DateTimeFormatter.ofPattern("M월 d일 HH:mm");
 
-    public SubmitReportService(ReportPort reports) {
+    private final ReportPort reports;
+    private final ReportPenaltyPort penalties;
+    private final Clock clock;
+
+    public SubmitReportService(ReportPort reports, ReportPenaltyPort penalties, Clock clock) {
         this.reports = reports;
+        this.penalties = penalties;
+        this.clock = clock;
     }
 
     @Override
@@ -37,6 +47,10 @@ public class SubmitReportService implements SubmitReportUseCase {
         if (report.category() == ReportCategory.NOISE && !report.noiseConfirmed()) {
             throw new BusinessException(ErrorCode.REPORT_NOISE_NOT_CONFIRMED);
         }
+        penalties.reportSuspendedUntil(userId, clock.instant()).ifPresent(until -> {
+            throw new BusinessException(ErrorCode.REPORT_SUSPENDED, "허위 신고 경고가 쌓여 %s까지 신고할 수 없습니다"
+                    .formatted(UNTIL.format(until.atZone(ZoneId.of("Asia/Seoul")))));
+        });
         String content = report.content() == null || report.content().isBlank() ? null : report.content().strip();
         if (content != null && content.length() > MAX_CONTENT_LENGTH) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST,

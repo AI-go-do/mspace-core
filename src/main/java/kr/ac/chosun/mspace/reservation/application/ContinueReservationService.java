@@ -136,7 +136,7 @@ public class ContinueReservationService implements ContinueReservationUseCase {
         checkEnd(r.endAt(), command.endAt());
         // 연장도 새 예약이라 예약 만들기와 같이 정지 중인 대표자·참여자는 못 들어간다 (FR-RSV-106)
         suspensions.suspendedUntil(userId, now).ifPresent(until -> {
-            throw new BusinessException(ErrorCode.USER_SUSPENDED, "노쇼로 %s까지 이용이 정지되어 연장할 수 없습니다"
+            throw new BusinessException(ErrorCode.USER_SUSPENDED, "%s까지 이용이 정지되어 연장할 수 없습니다"
                     .formatted(CreateReservationService.UNTIL.format(until.atZone(SEOUL))));
         });
         if (suspensions.anySuspended(r.participantIds().stream().filter(id -> id != userId).toList(), now)) {
