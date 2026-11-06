@@ -74,7 +74,10 @@ class NotificationReadTest {
     @DisplayName("같은 알림을 두 번 읽어도 204, 처음 읽은 시각은 그대로")
     void readTwiceKeepsFirstTime() {
         assertThat(read(1, 1)).hasStatus(204);
-        Timestamp first = readAt(1);
+        assertThat(readAt(1)).isNotNull();
+        // 처음 읽은 시각을 과거로 옮겨 두면, 두 번째 요청이 덮어쓰는지 확실히 드러난다
+        Timestamp first = Timestamp.valueOf("2026-11-01 09:00:00");
+        jdbc.sql("UPDATE notification SET read_at = :t WHERE id = 1").param("t", first).update();
 
         assertThat(read(1, 1)).hasStatus(204);
 
