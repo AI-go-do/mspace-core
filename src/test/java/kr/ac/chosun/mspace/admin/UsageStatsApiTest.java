@@ -3,6 +3,7 @@ package kr.ac.chosun.mspace.admin;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.sql.Timestamp;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -12,8 +13,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.assertj.MvcTestResult;
@@ -25,12 +29,24 @@ import org.springframework.transaction.support.TransactionOperations;
  */
 @SpringBootTest(properties = "mspace.auth.dev-header=true")
 @AutoConfigureMockMvc
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, UsageStatsApiTest.FixedClock.class})
 class UsageStatsApiTest {
 
     static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+    /** 서울 2026-11-05 12:00. 자정 근처에 돌려도 "오늘"이 흔들리지 않게 고정한다 (CodeRabbit) */
+    static final Clock CLOCK = Clock.fixed(Instant.parse("2026-11-05T03:00:00Z"), SEOUL);
     static final long ADMIN = 7;
-    static final LocalDate DAY = LocalDate.now(SEOUL).minusDays(1);
+    static final LocalDate TODAY = LocalDate.now(CLOCK);
+    static final LocalDate DAY = TODAY.minusDays(1);
+
+    @TestConfiguration
+    static class FixedClock {
+        @Bean
+        @Primary
+        Clock fixedClock() {
+            return CLOCK;
+        }
+    }
 
     @Autowired
     MockMvcTester mvc;
@@ -221,7 +237,7 @@ class UsageStatsApiTest {
         MvcTestResult r = usage(ADMIN, "");
         assertThat(r).hasStatus(200);
         assertThat(r).bodyJson().extractingPath("$.days").isEqualTo(7);
-        assertThat(r).bodyJson().extractingPath("$.to").isEqualTo(LocalDate.now(SEOUL).toString());
+        assertThat(r).bodyJson().extractingPath("$.to").isEqualTo(TODAY.toString());
         assertThat(r).bodyJson().extractingPath("$.total.reservations.total").isEqualTo(5);
     }
 }

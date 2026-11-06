@@ -22,7 +22,7 @@ class JdbcForceCheckoutAdapter implements ForceCheckoutPort {
     @Override
     public boolean isAdmin(long userId) {
         return jdbc.sql("SELECT role = 'ADMIN' FROM users WHERE id = :id").param("id", userId)
-                .query(Boolean.class).optional().orElse(false);
+                .query((rs, n) -> rs.getBoolean(1)).optional().orElse(false);
     }
 
     @Override
@@ -38,7 +38,7 @@ class JdbcForceCheckoutAdapter implements ForceCheckoutPort {
                 .param("admin", adminId)
                 .param("reason", reason)
                 .param("now", Timestamp.from(now))
-                .query(String.class).optional();
+                .query((rs, n) -> rs.getString(1)).optional();
     }
 
     @Override
@@ -47,12 +47,12 @@ class JdbcForceCheckoutAdapter implements ForceCheckoutPort {
                         SELECT user_id FROM reservation_participant WHERE reservation_id = :id
                         ORDER BY is_owner DESC, user_id
                         """)
-                .param("id", reservationId).query(Long.class).list();
+                .param("id", reservationId).query((rs, n) -> rs.getLong(1)).list();
     }
 
     @Override
     public Optional<ReservationStatus> status(long reservationId) {
         return jdbc.sql("SELECT status FROM reservation WHERE id = :id").param("id", reservationId)
-                .query(String.class).optional().map(ReservationStatus::valueOf);
+                .query((rs, n) -> rs.getString(1)).optional().map(ReservationStatus::valueOf);
     }
 }
