@@ -21,7 +21,7 @@ class JdbcReportEvidenceAdapter implements ReportEvidencePort {
     public Optional<Instant> photoUploadedAt(long reservationId, String kind) {
         return jdbc.sql("SELECT created_at FROM reservation_photo WHERE reservation_id = :id AND kind = :kind")
                 .param("id", reservationId).param("kind", kind)
-                .query(Timestamp.class).optional().map(Timestamp::toInstant);
+                .query((rs, n) -> rs.getTimestamp(1).toInstant()).optional();
     }
 
     @Override
