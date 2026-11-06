@@ -160,6 +160,7 @@ curl -X POST localhost:8080/api/access/verify -H 'Authorization: Bearer <장치 
 
 - 예약·사람·종류별 한 번만 (`notification_log` PK + `ON CONFLICT DO NOTHING`). 동시에 10번 돌아도 받는 사람마다 종류별로 한 번만 생겨요(건수는 받는 사람 수에 따라 달라요. 노쇼 5분 전은 대표자만).
 - 알림은 앱 알림함(V10 `notification`)에 저장돼요. `GET /api/notifications/me`로 최근 50개를 봐요.
+- 읽음 표시: 알림 하나는 `POST /api/notifications/{id}/read`(204, 두 번 눌러도 204, 남의 알림은 404 `NOTIFICATION_NOT_FOUND`), 모두 읽음은 `POST /api/notifications/read-all`(`{"count":이번에 바뀐 개수}`), 종 아이콘 점은 `GET /api/notifications/me/unread-count`(`{"count":3}`).
 - 메일은 재웅님 담당이에요. `NotificationChannel`을 구현한 빈을 등록하면 알림함 저장이 커밋된 뒤 불려요. 메일이 실패해도 알림함에는 남고, 다시 보내지는 않아요.
 - 분(minute) 값은 `mspace.notification.reminder`에서 바꿔요. 끄려면 `MSPACE_REMINDER_ENABLED=false`.
 
