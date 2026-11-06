@@ -13,12 +13,19 @@
 
     <groupId>kr.ac.chosun</groupId>
     <artifactId>mspace-core</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <!-- 팀 일정 버전(v0.1·v0.2·v0.3)과 맞춘다. SonarQube가 이 값을 버전으로 쓰고,
+         새 코드 기준이 '이전 버전'이라 버전이 바뀐 뒤 고친 코드만 80% 게이트로 본다.
+         main에 버전을 낸 뒤 develop에서 다음 버전으로 올린다 (README '버전 올리기') -->
+    <version>0.1.0-SNAPSHOT</version>
     <name>mspace-core</name>
     <description>M-SPACE 예약 코어 (예약, 출입, 회원 API)</description>
 
     <properties>
         <java.version>21</java.version>
+        <!-- 팀 SonarQube 서버. 서버 주소는 CI의 SONAR_HOST_URL 비밀값으로 넘긴다 (저장소에 주소를 박지 않음) -->
+        <sonar.projectKey>mspace-core</sonar.projectKey>
+        <!-- JaCoCo가 만든 커버리지 보고서를 SonarQube가 읽는다 -->
+        <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
     </properties>
 
     <dependencies>
@@ -33,9 +40,51 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- DB: JPA는 테이블을 만들지 않고 검사만 한다(ddl-auto: validate). 테이블은 Flyway가 만든다 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-flyway</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <!-- compile: 위반한 DB 제약 이름을 PSQLException에서 읽는다 (예약 어댑터) -->
+            <artifactId>postgresql</artifactId>
+        </dependency>
+
+        <!-- 로그인 (FR-AUTH-001): 학교 메일로 인증번호 보내기. 메일 서버 설정이 없으면 로그에만 찍는다 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+        <!-- 로그인 토큰(JWT) 서명·확인. Spring Security도 안에서 이 라이브러리를 쓴다 -->
+        <dependency>
+            <groupId>com.nimbusds</groupId>
+            <artifactId>nimbus-jose-jwt</artifactId>
+            <version>10.4</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- 테스트 동안만 Docker로 진짜 PostgreSQL을 띄운다 (H2에는 EXCLUDE 제약이 없음) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-postgresql</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -45,6 +94,27 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <!-- 커버리지: 테스트가 실행한 코드 줄을 기록해서 verify 때 target/site/jacoco/에 보고서를 만든다 -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.14</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

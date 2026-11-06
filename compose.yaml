@@ -1,0 +1,17 @@
+# 로컬 개발용 DB만 띄운다 (서버용 compose는 infra 저장소)
+# 실행: docker compose up -d   중지: docker compose down
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: mspace
+      POSTGRES_USER: ${DB_USERNAME:-mspace}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-mspace}
+      TZ: Asia/Seoul
+    ports:
+      - "127.0.0.1:5432:5432"   # 내 노트북에서만 접속 (외부에 열지 않음)
+    volumes:
+      - mspace-db:/var/lib/postgresql/data
+
+volumes:
+  mspace-db:

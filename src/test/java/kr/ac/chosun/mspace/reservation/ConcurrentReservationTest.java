@@ -1,0 +1,243 @@
+package kr.ac.chosun.mspace.reservation;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import kr.ac.chosun.mspace.TestcontainersConfiguration;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.web.client.RestClient;
+
+/**
+ * 동시 요청 100건 (NFR-COM-002, FR-RSV-002·003 수용 기준).
+ * 진짜 서버(RANDOM_PORT)에 HTTP로 100건을 "같은 순간"에 보낸다.
+ * CountDownLatch로 100개 스레드를 모두 출발선에 세운 뒤 한꺼번에 출발시킨다.
+ */
+// 연결 풀을 요청 수(100)보다 크게: 기본값 10이면 DB에는 10개씩만 동시에 들어간다
+@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT, properties = {
+        "mspace.auth.dev-header=true", "spring.datasource.hikari.maximum-pool-size=110"})
+@Import({TestcontainersConfiguration.class, ConcurrentReservationTest.FixedClock.class})
+class ConcurrentReservationTest {
+
+    static final int N = 100;
+
+    /** "지금"을 2026-11-03 10:10(서울)으로 고정한다. 테스트 날짜가 지나도 7일 규칙에 걸리지 않게 */
+    @TestConfiguration
+    static class FixedClock {
+        /** 서비스가 쓰는 Clock을 고정 시계로 바꾼다 */
+        @Bean
+        @Primary
+        Clock fixedClock() {
+            return Clock.fixed(Instant.parse("2026-11-03T01:10:00Z"), ZoneId.of("Asia/Seoul"));
+        }
+    }
+
+    @Value("${local.server.port}")
+    int port;
+
+    @Autowired
+    JdbcClient jdbc;
+
+    RestClient client;
+
+    /** 매 테스트 전: 예약·회원을 비우고, 학생 인증을 마친 회원 300명을 넣는다 */
+    @BeforeEach
+    void setUp() {
+        client = RestClient.create("http://localhost:" + port);
+        jdbc.sql("TRUNCATE reservation, reservation_participant, users RESTART IDENTITY CASCADE").update();
+        // 회원 300명 (학번 2024000001 ~ 2024000300), 모두 학생 인증 마침
+        jdbc.sql("""
+                INSERT INTO users (email, student_id, name, verified_at)
+                SELECT 'u' || i || '@chosun.ac.kr', (2024000000 + i)::text, '회원', now()
+                  FROM generate_series(1, 300) i
+                """).update();
+    }
+
+    /** 테스트 회원 번호 → 학번 (setUp에서 넣은 규칙과 같다) */
+    static String sid(int userId) {
+        return String.valueOf(2024000000 + userId);
+    }
+
+    /**
+     * 요청들을 동시에 보내고 응답 코드별 개수를 센다.
+     * 모든 스레드가 ready에서 준비를 마친 뒤 go 신호로 한꺼번에 출발한다.
+     *
+     * @return 상태 코드 → 개수 (예: {201=1, 409=99})
+     */
+    Map<Integer, Integer> fire(List<Callable<Integer>> requests) throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(requests.size());
+        try {
+            CountDownLatch ready = new CountDownLatch(requests.size());
+            CountDownLatch go = new CountDownLatch(1);
+            List<Future<Integer>> results = new ArrayList<>();
+            for (Callable<Integer> r : requests) {
+                results.add(pool.submit(() -> {
+                    ready.countDown();
+                    go.await();
+                    return r.call();
+                }));
+            }
+            ready.await();
+            go.countDown();   // 출발
+            // 요청이 멈춰도 끝없이 기다리지 않게, 전체 묶음에 30초 마감 하나를 둔다
+            // (요청마다 30초씩 주면 늦은 응답이 이어질 때 최대 100 × 30초를 기다리게 된다)
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+            Map<Integer, Integer> counts = new ConcurrentHashMap<>();
+            for (Future<Integer> f : results) {
+                long left = Math.max(0, deadline - System.nanoTime());
+                counts.merge(f.get(left, TimeUnit.NANOSECONDS), 1, Integer::sum);
+            }
+            return counts;
+        } finally {
+            pool.shutdownNow();   // 실패·시간 초과여도 스레드를 남기지 않는다
+        }
+    }
+
+    /** 예약 만들기 요청 한 건을 보내고 HTTP 상태 코드를 돌려준다 (대표자 + 참여자 2명 = 3명) */
+    int post(long ownerId, int roomId, String start, String end, String p1, String p2) {
+        String body = """
+                {"roomId":%d,"startAt":"%s","endAt":"%s","participantStudentIds":["%s","%s"]}
+                """.formatted(roomId, start, end, p1, p2);
+        return client.post().uri("/api/reservations")
+                .header("X-User-Id", String.valueOf(ownerId))
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .exchange((req, res) -> res.getStatusCode().value());
+    }
+
+    /**
+     * 겹침 제약(no_room_overlap) 확인: 대표자가 모두 다른 100건이 같은 방·같은 시간을 동시에 요청한다.
+     * 서버 검사는 모두 통과하므로, 1건만 남는 건 DB 제약 덕분이다.
+     */
+    @Test
+    @DisplayName("서로 다른 100팀이 같은 방·같은 시간을 동시에 예약하면 1건만 201, 99건 409, DB에는 1건")
+    void sameRoomSameTime() throws Exception {
+        List<Callable<Integer>> requests = new ArrayList<>();
+        for (int team = 0; team < N; team++) {
+            int owner = team * 3 + 1;   // 팀마다 다른 3명 (1,2,3 / 4,5,6 / ...)
+            requests.add(() -> post(owner, 1, "2026-11-04T14:00:00+09:00", "2026-11-04T16:00:00+09:00",
+                    sid(owner + 1), sid(owner + 2)));
+        }
+
+        long started = System.nanoTime();
+        Map<Integer, Integer> counts = fire(requests);
+        long ms = (System.nanoTime() - started) / 1_000_000;
+
+        int saved = jdbc.sql("SELECT count(*) FROM reservation WHERE room_id = 1 AND status = 'BOOKED'")
+                .query(Integer.class).single();
+        System.out.printf("[동시 100건] 같은 방·시간: %s, DB 저장 %d건, %dms%n", counts, saved, ms);
+
+        assertThat(counts).containsExactlyInAnyOrderEntriesOf(Map.of(201, 1, 409, N - 1));
+        assertThat(saved).isEqualTo(1);
+    }
+
+    /**
+     * 대표자 1건 제약(one_active_per_owner) 확인: 한 대표자가 서로 다른 방·시간으로 100건을 동시에 요청한다.
+     * 시간이 겹치지 않아도 끝나지 않은 예약은 1건만 가질 수 있다.
+     */
+    /**
+     * 같은 사람 두 방 금지(no_person_overlap) 확인: 대표자는 모두 다르고, 참여자 2명은 모든 팀이 같다.
+     * 방이 1~4번으로 나뉘어 있어 방 겹침보다 사람 겹침이 먼저 걸린다.
+     * 이 경우 PostgreSQL 겹침 검사끼리 서로 기다리는 교착(40P01)이 드물게 생기는데, 서버가 다시 시도해서 500이 나가지 않아야 한다.
+     */
+    @Test
+    @DisplayName("같은 참여자 2명을 넣은 100팀이 서로 다른 방·같은 시간을 동시에 예약해도 1건만 201, 99건 409, 500은 0건")
+    void sameParticipantsDifferentRooms() throws Exception {
+        List<Callable<Integer>> requests = new ArrayList<>();
+        for (int team = 0; team < N; team++) {
+            int owner = team + 1;          // 대표자 1~100, 모두 다름
+            int room = team % 4 + 1;       // 1~4번 방 (3~5명 방)
+            requests.add(() -> post(owner, room, "2026-11-04T14:00:00+09:00", "2026-11-04T16:00:00+09:00",
+                    sid(299), sid(300)));
+        }
+
+        Map<Integer, Integer> counts = fire(requests);
+
+        int saved = jdbc.sql("SELECT count(*) FROM reservation WHERE status = 'BOOKED'")
+                .query(Integer.class).single();
+        System.out.printf("[동시 100건] 같은 참여자·다른 방: %s, DB 저장 %d건%n", counts, saved);
+
+        assertThat(counts).containsExactlyInAnyOrderEntriesOf(Map.of(201, 1, 409, N - 1));
+        assertThat(saved).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("같은 대표자가 서로 다른 방·시간으로 100건을 동시에 보내도 1건만 201 (대표자 1건)")
+    void sameOwnerManyRequests() throws Exception {
+        List<Callable<Integer>> requests = new ArrayList<>();
+        AtomicInteger i = new AtomicInteger();
+        for (int k = 0; k < N; k++) {
+            int room = k % 4 + 1;                 // 1~4번 방
+            int day = 4 + (k / 4) / 10;           // 11/4 ~ 11/6
+            int hour = 8 + (k / 4) % 10;          // 08시 ~ 17시
+            String start = "2026-11-0%dT%02d:00:00+09:00".formatted(day, hour);
+            String end = "2026-11-0%dT%02d:00:00+09:00".formatted(day, hour + 1);
+            requests.add(() -> {
+                i.incrementAndGet();
+                return post(1, room, start, end, sid(2), sid(3));
+            });
+        }
+
+        Map<Integer, Integer> counts = fire(requests);
+
+        int saved = jdbc.sql("SELECT count(*) FROM reservation WHERE owner_id = 1")
+                .query(Integer.class).single();
+        System.out.printf("[동시 100건] 같은 대표자: %s, DB 저장 %d건%n", counts, saved);
+
+        assertThat(i.get()).isEqualTo(N);
+        assertThat(counts).containsExactlyInAnyOrderEntriesOf(Map.of(201, 1, 409, N - 1));
+        assertThat(saved).isEqualTo(1);
+    }
+
+    /**
+     * 회원당 끝나지 않은 예약 1건(one_active_per_member, FR-RSV-003 11/5) 확인: 대표자는 모두 다르고 방·시간도 모두 달라
+     * 방 겹침·사람 겹침(같은 시간)에는 안 걸린다. 같은 참여자 2명이 모든 팀에 들어 있어서 1팀만 남아야 한다.
+     */
+    @Test
+    @DisplayName("같은 참여자 2명을 넣은 100팀이 서로 다른 방·다른 시간을 동시에 예약해도 1건만 201 (1인 1건)")
+    void sameParticipantsDifferentTimes() throws Exception {
+        List<Callable<Integer>> requests = new ArrayList<>();
+        for (int k = 0; k < N; k++) {
+            int owner = k + 1;                    // 대표자 1~100, 모두 다름
+            int room = k % 4 + 1;                 // 1~4번 방
+            int day = 4 + (k / 4) / 10;           // 11/4 ~ 11/6
+            int hour = 8 + (k / 4) % 10;          // 08시 ~ 17시
+            String start = "2026-11-0%dT%02d:00:00+09:00".formatted(day, hour);
+            String end = "2026-11-0%dT%02d:00:00+09:00".formatted(day, hour + 1);
+            requests.add(() -> post(owner, room, start, end, sid(299), sid(300)));
+        }
+
+        Map<Integer, Integer> counts = fire(requests);
+
+        int saved = jdbc.sql("SELECT count(*) FROM reservation WHERE status = 'BOOKED'")
+                .query(Integer.class).single();
+        System.out.printf("[동시 100건] 같은 참여자·다른 방·다른 시간: %s, DB 저장 %d건%n", counts, saved);
+
+        assertThat(counts).containsExactlyInAnyOrderEntriesOf(Map.of(201, 1, 409, N - 1));
+        assertThat(saved).isEqualTo(1);
+    }
+}

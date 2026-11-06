@@ -1,6 +1,41 @@
 spring:
   application:
     name: mspace-core
+  # 값은 .env(로컬은 compose.yaml 기본값)에서. 비밀번호를 여기 적지 않는다
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/mspace}
+    username: ${DB_USERNAME:mspace}
+    password: ${DB_PASSWORD:mspace}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate   # 테이블은 Flyway만 만든다. JPA는 엔티티와 테이블이 맞는지 검사만
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: Asia/Seoul   # 7일·자정 계산이 서울 기준이 되게 (schema-v2.sql 끝 주석 0번)
+  flyway:
+    locations: classpath:db/migration
+  # 인증번호 메일 (팀 Gmail + 앱 비밀번호). MAIL_ENABLED=true일 때만 실제로 보낸다
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.starttls.required: true        # TLS로 못 바꾸면 평문으로 보내지 않고 실패
+      mail.smtp.ssl.checkserveridentity: true  # 인증서의 서버 이름 확인
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
+
+  # 사진 업로드(FR-RPT-102). 앱 검사(mspace.photo.max-bytes 2MB)보다 조금 크게 둬서, 넘으면 앱이 PHOTO_TOO_LARGE로 알려 준다
+  servlet:
+    multipart:
+      max-file-size: 3MB
+      max-request-size: 4MB
 
 server:
   port: ${SERVER_PORT:8080}
@@ -10,3 +45,114 @@ management:
     web:
       exposure:
         include: health
+  health:
+    mail:
+      enabled: false   # Gmail이 잠깐 안 돼도 서버 전체를 DOWN으로 보지 않게 (메일은 로그인 일부일 뿐)
+
+# 예약 규칙 숫자 (요구사항 FR-RSV-001: 설정값으로 둔다)
+mspace:
+  reservation:
+    booking-window-days: 7   # 오늘 포함 7일 (오늘 ~ 오늘+6일)
+    slot-minutes: 30
+    max-minutes: 120         # 1회 최대 2시간
+    # 참여자는 대표자와 서로 수락한 친구만 (FR-RSV-004, 11/6 지영). 화면에 친구 창이 붙기 전 서버에서만 잠깐 false로 끈다
+    friends-only: ${MSPACE_FRIENDS_ONLY:true}
+    lock-timeout: 3s         # 예약 저장 때 잠금(advisory lock) 최대 대기. 넘으면 다시 하고, 3번 다 넘으면 503
+    extension:               # 연장하기 (FR-RSV-105)
+      max-count: 1           # 이어진 사용 한 번에 연장 1회
+      open-before-minutes: 10  # 종료 10분 전부터 종료 전까지
+      max-minutes: 120       # 한 번에 늘리는 시간은 원래 종료부터 30분 단위, 최대 2시간
+      chain-gap-minutes: 30  # 직전 예약이 끝난 뒤 30분 안에 시작하면 이어진 사용으로 본다
+    no-show-penalty:         # 노쇼 벌칙 (FR-RSV-106, 11/4 지영 결정)
+      count: 2               # 30일 안에 노쇼 2번이면
+      window-days: 30
+      suspend-days: 14       # 14일 동안 대표자·참여자 모두 예약 불가. 정지가 끝나면 횟수는 처음부터
+    sweep:
+      enabled: ${MSPACE_SWEEP_ENABLED:true}   # 노쇼·자동 퇴실 정리 (FR-RSV-101, 102)
+      interval: PT1M         # 1분마다. 노쇼·자동 퇴실은 최대 이만큼 늦게 반영된다
+  notification:
+    reminder:                # 예약 알림 3종 (11/5 지영 담당. 메일 발송 어댑터는 재웅 담당, 없으면 앱 알림함에만)
+      enabled: ${MSPACE_REMINDER_ENABLED:true}
+      interval: PT1M         # 1분마다. 최대 이만큼 늦게 갈 수 있다
+      start-before-minutes: 10   # FR-NTF-101 "입실 10분 전입니다" (미리 예약, 전원)
+      end-before-minutes: 10     # FR-NTF-102 "종료 10분 전입니다" (사용 중, 전원)
+      no-show-before-minutes: 5  # FR-NTF-104 "노쇼 5분 전입니다" (입실 마감 5분 전, 대표자만)
+  sensor:                    # 재실·CO2 센서 (FR-DEV-101~104, 11/5 지영·수연 확정. 형식은 mspace-device docs/sensor-events-api.md)
+    offline-after-seconds: 60      # 재실 신호(10초마다)가 1분 안 오면 끊김 → 그 방은 "있음"으로 본다
+    future-tolerance-minutes: 5    # observedAt이 5분 넘게 미래면 400 (장치 시계 오류)
+    away:                    # 자리 비움 (FR-DEV-103)
+      notify-after-minutes: 10     # 사용 중 10분 비어 있으면 대표자에게 "5분 안에 돌아와 주세요"
+      release-after-minutes: 15    # 15분이면 자동 퇴실 AWAY_RELEASED
+      per-no-show: 3               # 30일 안 자리 비움 3번 = 노쇼 1번 (노쇼 벌칙 기간·횟수를 그대로 따름)
+      release-after-still-here-minutes: 10   # "아직 있어요"를 누른 뒤에는 10분 비면 알림 없이 바로 퇴실 (11/5 지영)
+      still-here-enabled: ${MSPACE_STILL_HERE_ENABLED:true}   # "아직 있어요"(예약당 1번). 11/5 지영: 실제 서비스에도 넣음
+    co2:                     # 환기 알림 (FR-DEV-104)
+      threshold-ppm: 1000
+      consecutive: 3               # 1분마다 3번 연속 = 3분 연속
+      min-gap-seconds: 30          # 이웃한 값 간격 30–90초만 연속으로 센다
+      max-gap-seconds: 90
+      min-span-seconds: 100        # 첫 값과 마지막 값이 100초 이상 떨어져야
+      alert-every-minutes: 30      # 같은 방 30분에 한 번
+  rules:                     # 이용 규칙 GET /api/rules (FR-WEB-003). 화면과 비서가 같은 내용을 쓴다. 원본은 docs 요구사항 3.1
+    no-show-minutes: 15        # 미리 예약은 시작 15분 안에 입실. DB 트리거(V1 checkin_deadline)와 같은 값이라 바꾸면 Flyway도
+    instant-no-show-minutes: 10  # 즉시 시작은 10분. 위와 같음
+    reminders:
+      checkin: 음식물은 반입 금지예요
+      checkout: 자리 정리하셨나요?
+    conduct:
+      - key: NOISE
+        title: 소음
+        rule: 회의·대화는 괜찮아요. 옆 방에 들릴 만큼 떠들거나 장난치지 않아요
+        penalty: 신고가 사실로 판정되면 경고. 심하거나 반복되면 이용 정지
+      - key: FOOD
+        title: 음식
+        rule: 음식물 반입 금지예요. 먹을 것과 마실 것(음료 포함) 모두 가져올 수 없어요
+        penalty: 신고가 사실로 판정되면 경고. 기기·비품이 고장 나면 배상을 요구해요
+      - key: TIDY
+        title: 정리
+        rule: 퇴실 전에 쓰레기를 버리고 자리를 정리해요
+        penalty: 다음 사람이 어질러짐을 신고하고 사실로 판정되면 경고·이용 제한
+      - key: NO_SHOW
+        title: 노쇼
+        rule: 시작 {noShowMinutes}분 안에 키패드로 입실해요(지금 바로 쓰기는 {instantNoShowMinutes}분)
+        penalty: 예약이 자동으로 풀려요. {penaltyWindowDays}일 안에 {penaltyCount}번이면 {suspendDays}일 동안 예약·참여 모두 못 해요
+      - key: AWAY
+        title: 자리 비움
+        rule: 짐만 두고 자리를 맡아 두지 않아요. 사용 중에 오래 비우지 않아요
+        penalty: 10분 비어 있으면 "5분 안에 돌아와 주세요" 알림, 15분이면 자동 퇴실. 30일 안에 3번이면 노쇼 1번
+      - key: PHOTO
+        title: 증빙
+        rule: 체크인·퇴실 때 방 사진을 찍어 두기를 권해요(선택)
+        penalty: 사진이 없으면 분쟁 때 정리했다는 증빙이 없어 불리할 수 있어요
+      - key: DOOR
+        title: 문
+        rule: 나갈 때 문이 닫혔는지 확인해요. 문을 괴어 두거나 번호를 예약자 밖 사람에게 알려 주지 않아요
+        penalty: 무단 사용이 확인되면 그 예약 대표자에게 경고
+      - key: BELONGINGS
+        title: 소지품
+        rule: 퇴실 전에 챙겨요. 잠깐 나갈 때도 귀중품은 들고 나가요
+        penalty: 예약이 끝나 문이 잠기면 다시 예약해야 들어갈 수 있어요
+  photo:                     # 사진 체크인·아웃 (FR-RPT-102, 11/5 지영). 저장은 core DB
+    max-bytes: 2097152       # 1장 최대 2MB (JPEG·PNG만)
+    checkout-grace-minutes: 30   # 퇴실 사진은 퇴실 뒤 30분 안까지
+    retention-days: 30       # 올린 지 30일 지나면 지운다
+    cleanup-interval: PT1H   # 지난 사진 지우기를 1시간마다
+  access:
+    open-before-minutes: 10  # 번호는 시작 10분 전부터 끝나기 전까지 (FR-ACC-001)
+    lock-after-failures: 5   # 5번 연속 틀리면
+    lock-seconds: 60         # 그 방 키패드 1분 잠금
+    # 키패드가 Authorization: Bearer 로 보내는 토큰. 비어 있으면 장치 요청을 모두 401로 막는다. 값은 .env에만
+    device-token: ${MSPACE_DEVICE_TOKEN:}
+  auth:
+    # 임시: 로그인이 붙기 전까지 X-User-Id 헤더로 회원을 받는다. 운영에서는 꼭 false
+    dev-header: ${MSPACE_DEV_HEADER:false}
+    # refresh 토큰 쿠키에 Secure를 붙인다(HTTPS로만 보냄). 운영은 꼭 true. 맥에서 http로 시험할 때만 false
+    cookie-secure: ${MSPACE_AUTH_COOKIE_SECURE:true}
+    jwt:
+      secret: ${JWT_SECRET:}   # 32바이트 이상. 비우면 실행할 때마다 임시값(로컬 전용)
+      ttl: ${JWT_TTL:1h}       # 액세스 토큰. 짧게 둬서 "중간에 못 끊는" JWT 약점을 줄인다
+      refresh-ttl: ${JWT_REFRESH_TTL:14d}   # 자동 로그인 기간. DB에 해시로 저장돼 로그아웃하면 바로 끊긴다
+      issuer: mspace-core
+  mail:
+    enabled: ${MAIL_ENABLED:false}   # false면 인증번호를 로그에 찍는다
+    from: ${MAIL_FROM:${MAIL_USERNAME:}}
