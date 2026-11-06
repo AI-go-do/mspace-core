@@ -77,6 +77,7 @@ public enum ErrorCode {
     REPORT_ALREADY_JUDGED(HttpStatus.CONFLICT, "이미 판정한 신고입니다"),
     RESERVATION_NOT_ENDED(HttpStatus.CONFLICT, "아직 끝나지 않았거나 입실하지 않은 예약입니다"),
     TIDY_CHECK_EXISTS(HttpStatus.CONFLICT, "이 예약의 정리 확인 결과가 이미 있습니다"),
+    TIDY_CHECK_NOT_LATEST(HttpStatus.CONFLICT, "이 방에서 방금 끝난 예약이 아닙니다"),
     // 허위 신고 경고가 쌓이면 (FR-RPT-103 벌칙, 11/6)
     REPORT_SUSPENDED(HttpStatus.FORBIDDEN, "허위 신고 경고가 쌓여 신고가 정지되었습니다"),
 

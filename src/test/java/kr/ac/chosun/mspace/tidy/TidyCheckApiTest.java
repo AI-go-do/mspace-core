@@ -181,8 +181,7 @@ class TidyCheckApiTest {
         long reportId = ((Number) JsonPath.read(body(r), "$.reportId")).longValue();
         assertThat(reports()).singleElement().satisfies(p -> {
             assertThat(((Number) p.get("id")).longValue()).isEqualTo(reportId);
-            assertThat(p.get("source")).isEqualTo("CAMERA");
-            assertThat(p.get("category")).isEqualTo("MESSY");
+            assertThat(p).containsEntry("source", "CAMERA").containsEntry("category", "MESSY");
             assertThat(p.get("reporter_id")).isNull();
             assertThat(p.get("reporter_reservation_id")).isNull();
             assertThat(((Number) p.get("target_reservation_id")).longValue()).isEqualTo(ended);
@@ -206,7 +205,7 @@ class TidyCheckApiTest {
         assertThat(jdbc.sql("SELECT user_id, reason, reservation_id FROM user_warning").query().listOfRows())
                 .singleElement().satisfies(w -> {
                     assertThat(((Number) w.get("user_id")).longValue()).isEqualTo(OWNER);
-                    assertThat(w.get("reason")).isEqualTo("VIOLATION");
+                    assertThat(w).containsEntry("reason", "VIOLATION");
                     assertThat(((Number) w.get("reservation_id")).longValue()).isEqualTo(ended);
                 });
         assertThat(inbox("REPORT_RESULT")).isEmpty();
@@ -277,6 +276,40 @@ class TidyCheckApiTest {
                 .bodyJson().extractingPath("$.code").isEqualTo("RESERVATION_NOT_ENDED");
         assertThat(post(2, check("e10", ended, "CLEAN", "[]", "[]"))).hasStatus(404)
                 .bodyJson().extractingPath("$.code").isEqualTo("RESERVATION_NOT_FOUND");
+    }
+
+    @Test
+    @DisplayName("지난 예약은 409 TIDY_CHECK_NOT_LATEST: 이 방의 마지막 퇴실 예약만 받는다")
+    void onlyLatestEnded() {
+        long older = tx.execute(st -> insertWithPeople("""
+                INSERT INTO reservation (room_id, owner_id, start_at, end_at, headcount, access_code, status,
+                                         checked_in_at, checked_out_at)
+                SELECT 1, 1, t - interval '4 hours', t - interval '3 hours', 3, '333333', 'CHECKED_OUT',
+                       t - interval '4 hours', t - interval '3 hours'
+                FROM (SELECT date_trunc('hour', now()) AS t) x
+                RETURNING id
+                """, OWNER, 2, 3));
+
+        assertThat(post(1, check("e12", older, "NEEDS_CLEANING", "[\"cup\"]", "[]"))).hasStatus(409)
+                .bodyJson().extractingPath("$.code").isEqualTo("TIDY_CHECK_NOT_LATEST");
+        assertThat(reports()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("방 지금 예약: 시작 시각이 지났는데 아직 입실 전(BOOKED)인 예약도 current로 준다")
+    void currentShowsBookedInTime() {
+        long booked = tx.execute(st -> insertWithPeople("""
+                INSERT INTO reservation (room_id, owner_id, start_at, end_at, headcount, access_code, status)
+                SELECT 2, 1, t, t + interval '2 hours', 3, '444444', 'BOOKED'
+                FROM (SELECT date_trunc('hour', now()) AS t) x   -- 2시간: 넣은 뒤 정시가 바뀌어도 아직 진행 중
+                RETURNING id
+                """, OWNER, 2, 3));
+
+        assertThat(mvc.get().uri("/api/rooms/2/current").header("Authorization", TOKEN)).hasStatusOk()
+                .bodyJson().satisfies(j -> {
+                    j.assertThat().extractingPath("$.current.reservationId").isEqualTo((int) booked);
+                    j.assertThat().extractingPath("$.current.status").isEqualTo("BOOKED");
+                });
     }
 
     @Test
