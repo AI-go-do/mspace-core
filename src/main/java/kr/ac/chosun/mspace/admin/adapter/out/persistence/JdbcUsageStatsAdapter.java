@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import kr.ac.chosun.mspace.admin.application.UsageStatsPort;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
@@ -80,9 +81,7 @@ class JdbcUsageStatsAdapter implements UsageStatsPort {
                         """)
                 .param("from", Timestamp.from(from))
                 .param("to", Timestamp.from(to))
-                .query(rs -> {
-                    out.put(rs.getInt("room"), rs.getLong("n"));
-                });
+                .query((RowCallbackHandler) rs -> out.put(rs.getInt("room"), rs.getLong("n")));
         return out;
     }
 
