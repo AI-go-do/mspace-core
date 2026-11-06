@@ -81,7 +81,8 @@ class JdbcNotificationQueryAdapter implements NotificationQueryPort, Notificatio
     @Override
     public int countUnread(long userId) {
         // notification_user_recent (user_id, created_at DESC)로 내 줄만 훑는다. 한 사람 알림은 많아야 수백 개
+        // count(*)는 늘 한 줄이지만, single()은 null을 돌려줄 수 있다고 표시돼 있어(SonarQube java:S2259) optional로 받는다
         return jdbc.sql("SELECT count(*) FROM notification WHERE user_id = :user AND read_at IS NULL")
-                .param("user", userId).query(Integer.class).single();
+                .param("user", userId).query(Integer.class).optional().orElse(0);
     }
 }
