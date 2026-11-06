@@ -44,9 +44,15 @@ class ReportEvidenceService implements ReportEvidenceUseCase {
             notes.add("직전 이용자가 퇴실 사진을 올리지 않았어요 (또는 30일이 지나 지워졌어요).");
         }
 
-        Side reporter = new Side(report.reporterReservationId(), photo(report.reporterReservationId(), CHECK_IN));
-        if (!reporter.photo().exists()) {
-            notes.add("신고자가 입실 사진을 올리지 않았어요 (또는 30일이 지나 지워졌어요).");
+        Long reporterReservation = report.reporterReservationId();
+        Side reporter = null;
+        if (reporterReservation == null) {
+            notes.add("방 카메라 자동 신고라 신고자 사진이 없어요.");
+        } else {
+            reporter = new Side(reporterReservation, photo(reporterReservation, CHECK_IN));
+            if (!reporter.photo().exists()) {
+                notes.add("신고자가 입실 사진을 올리지 않았어요 (또는 30일이 지나 지워졌어요).");
+            }
         }
         return new Evidence(reportId, previous, reporter, notes.isEmpty() ? null : String.join(" ", notes));
     }

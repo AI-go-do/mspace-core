@@ -142,6 +142,28 @@ class ReportEvidenceApiTest {
     }
 
     @Test
+    @DisplayName("방 카메라 자동 신고는 신고자가 없어 reporter null, previous는 카메라가 본 그 예약, note에 이유")
+    void cameraReport() {
+        photo(previous, "CHECK_OUT", 1);
+        long older = reservation(1, "CHECKED_OUT", -4);   // 더 이른 예약. 카메라가 본 예약이 아니라 고르면 안 됨
+        long id = jdbc.sql("""
+                        INSERT INTO report (room_id, category, source, target_reservation_id)
+                        VALUES (1, 'MESSY', 'CAMERA', :rid) RETURNING id
+                        """).param("rid", previous).query((rs, n) -> rs.getLong(1)).single();
+        jdbc.sql("UPDATE reservation SET checked_in_at = checked_in_at + interval '3 hours' WHERE id = :id")
+                .param("id", older).update();   // 입실이 가장 늦은 예약이어도 target이 우선
+
+        MvcTestResult r = evidence(ADMIN, id);
+
+        assertThat(r).hasStatus(200);
+        var json = assertThat(r).bodyJson();
+        json.extractingPath("$.reporter").isNull();
+        json.extractingPath("$.previous.reservationId").isEqualTo((int) previous);
+        json.extractingPath("$.previous.photo.exists").isEqualTo(true);
+        json.extractingPath("$.note").isEqualTo("방 카메라 자동 신고라 신고자 사진이 없어요.");
+    }
+
+    @Test
     @DisplayName("학생은 403, 없는 신고는 404")
     void forbiddenAndMissing() {
         long id = report();

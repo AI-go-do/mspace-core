@@ -14,7 +14,7 @@ public interface ReportEvidenceUseCase {
     /**
      * @param previous 직전 이용 예약 (경고 대상과 같은 규칙: 같은 방, 신고자 예약 제외, 신고 전에 입실한 것 중 가장 늦은 것).
      *                 없으면 null
-     * @param reporter 신고자 예약의 입실 사진
+     * @param reporter 신고자 예약의 입실 사진. 방 카메라 자동 신고(source CAMERA)는 신고자가 없어 null
      * @param note     사진이 없을 때 이유 한 줄 (둘 다 있으면 null)
      */
     record Evidence(long reportId, Previous previous, Side reporter, String note) {

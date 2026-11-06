@@ -26,7 +26,7 @@ class ReportEvidenceController {
      * 직전 이용 예약의 퇴실 사진과 신고자 예약의 입실 사진. 사진이 없으면 exists false와 note에 이유.
      * 예: GET /api/reports/7/evidence → {"reportId":7,"previous":{"reservationId":11,…,"photo":{"kind":"CHECK_OUT",
      * "exists":true,"url":"/api/reservations/11/photos/CHECK_OUT",…}},"reporter":{…},"note":null}
-     * 관리자가 아니면 403, 없는 신고 404
+     * 방 카메라 자동 신고는 reporter null, previous는 카메라가 본 그 예약. 관리자가 아니면 403, 없는 신고 404
      */
     @GetMapping("/api/reports/{id}/evidence")
     EvidenceResponse evidence(LoginUser user, @PathVariable long id) {
@@ -34,8 +34,9 @@ class ReportEvidenceController {
         PreviousResponse previous = e.previous() == null ? null
                 : new PreviousResponse(e.previous().reservationId(), seoul(e.previous().checkedInAt()),
                 seoul(e.previous().checkedOutAt()), photo(e.previous().photo()));
-        return new EvidenceResponse(e.reportId(), previous,
-                new SideResponse(e.reporter().reservationId(), photo(e.reporter().photo())), e.note());
+        SideResponse reporter = e.reporter() == null ? null
+                : new SideResponse(e.reporter().reservationId(), photo(e.reporter().photo()));
+        return new EvidenceResponse(e.reportId(), previous, reporter, e.note());
     }
 
     private static PhotoResponse photo(Photo p) {
