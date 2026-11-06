@@ -60,6 +60,12 @@ count_type() {
   fi
   echo "$out" | sed '$d' | jq -r '.total // empty'
 }
+# 실패할 때 어느 파일·줄인지 로그에 바로 보이게 최대 10건을 적는다 (학교 Sonar 화면은 밖에서 안 열릴 수 있음)
+list_type() {
+  api "issues/search?componentKeys=$SONAR_PROJECT&inNewCodePeriod=true&resolved=false&types=$1&ps=10" \
+    | jq -r '.issues[]? | "  - \(.component | sub("^[^:]*:"; "")):\(.line // "?") [\(.rule)] \(.message)"' 2>/dev/null \
+    || echo "  (목록을 읽지 못했어요)"
+}
 bugs=$(count_type BUG)
 vulns=$(count_type VULNERABILITY)
 
@@ -83,12 +89,12 @@ fi
 if [ -z "$bugs" ]; then
   echo "실패: 새 버그 수를 읽지 못했어요"; fail=1
 elif [ "$bugs" != "0" ]; then
-  echo "실패: 새 코드에 버그가 ${bugs}건 있어요. 대시보드 Issues에서 유형 Bug를 보세요"; fail=1
+  echo "실패: 새 코드에 버그가 ${bugs}건 있어요. 대시보드 Issues에서 유형 Bug를 보세요"; list_type BUG; fail=1
 fi
 if [ -z "$vulns" ]; then
   echo "실패: 새 취약점 수를 읽지 못했어요"; fail=1
 elif [ "$vulns" != "0" ]; then
-  echo "실패: 새 코드에 취약점이 ${vulns}건 있어요. 대시보드 Issues에서 유형 Vulnerability를 보세요"; fail=1
+  echo "실패: 새 코드에 취약점이 ${vulns}건 있어요. 대시보드 Issues에서 유형 Vulnerability를 보세요"; list_type VULNERABILITY; fail=1
 fi
 [ "$fail" = 0 ] && echo "팀 규칙 품질 게이트 통과"
 exit "$fail"
