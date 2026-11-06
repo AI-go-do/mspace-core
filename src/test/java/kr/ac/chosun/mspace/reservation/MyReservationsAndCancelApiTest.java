@@ -135,13 +135,14 @@ class MyReservationsAndCancelApiTest {
     }
 
     @Test
-    @DisplayName("수용 기준: 키패드 번호는 대표자에게만, 참여자에게는 null. 참여자 이름은 가린다(김*영)")
+    @DisplayName("수용 기준: 키패드 번호·입실 QR 글자는 대표자에게만, 참여자에게는 null. 참여자 이름은 가린다(김*영)")
     void accessCodeOnlyForOwner() {
         reservation(1, 24, "BOOKED", 1, 2, 5);
 
         assertThat(mine(1)).hasStatusOk().bodyJson().satisfies(json -> {
             json.assertThat().extractingPath("$[0].owner").isEqualTo(true);
             json.assertThat().extractingPath("$[0].accessCode").isEqualTo("123456");
+            json.assertThat().extractingPath("$[0].qrText").isEqualTo("MSPACE:1:123456");
             json.assertThat().extractingPath("$[0].room.name").isEqualTo("1번 방");
             json.assertThat().extractingPath("$[0].participants[*].name").asArray()
                     .containsExactly("김*영", "이*준", "남**수");
@@ -150,6 +151,7 @@ class MyReservationsAndCancelApiTest {
         assertThat(mine(2)).hasStatusOk().bodyJson().satisfies(json -> {
             json.assertThat().extractingPath("$[0].owner").isEqualTo(false);
             json.assertThat().extractingPath("$[0].accessCode").isNull();
+            json.assertThat().extractingPath("$[0].qrText").isNull();
         });
         assertThat(mine(7)).hasStatusOk().bodyJson().extractingPath("$").asArray().isEmpty();
     }
