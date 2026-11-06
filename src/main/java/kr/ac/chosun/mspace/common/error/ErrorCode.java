@@ -78,6 +78,9 @@ public enum ErrorCode {
     // 허위 신고 경고가 쌓이면 (FR-RPT-103 벌칙, 11/6)
     REPORT_SUSPENDED(HttpStatus.FORBIDDEN, "허위 신고 경고가 쌓여 신고가 정지되었습니다"),
 
+    // 알림함 (FR-NTF-103). 남의 알림은 있는지도 알려 주지 않으려고 403 대신 404
+    NOTIFICATION_NOT_FOUND(HttpStatus.NOT_FOUND, "찾을 수 없는 알림입니다"),
+
     // 키패드 (FR-ACC-001)
     DEVICE_UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "장치 토큰이 없거나 맞지 않습니다"),
     // 내부용: 새로 뽑은 번호가 같은 방 다른 예약 번호와 겹침 → 서비스가 새 번호로 다시 한다 (응답으로 나가지 않음)
