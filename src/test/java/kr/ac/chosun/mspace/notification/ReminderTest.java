@@ -214,6 +214,29 @@ class ReminderTest {
     }
 
     @Test
+    @DisplayName("구간 중간에 입실하면 제목에 실제 남은 분을 쓴다 (종료 5분 남았으면 \"종료 5분 전입니다\")")
+    void endSoonLateEntryShowsRealMinutes() {
+        long id = book(1, "10:30", "11:30");
+        checkIn(id);
+
+        assertThat(sendAt("11:25")).isEqualTo(3);
+        assertThat(inbox()).filteredOn(r -> r.kind().equals("END_SOON")).extracting(Row::title)
+                .hasSize(3).containsOnly("종료 5분 전입니다");
+    }
+
+    @Test
+    @DisplayName("입실·노쇼 안내도 늦게 고르면 실제 남은 분을 쓴다")
+    void startAndNoShowLateShowRealMinutes() {
+        book(1, "10:30", "11:30");
+
+        assertThat(sendAt("10:27")).isEqualTo(3);
+        assertThat(sendAt("10:43")).isEqualTo(1);
+        assertThat(inbox()).extracting(Row::kind, Row::title).containsOnly(
+                org.assertj.core.groups.Tuple.tuple("START_SOON", "입실 3분 전입니다"),
+                org.assertj.core.groups.Tuple.tuple("NO_SHOW_SOON", "노쇼 2분 전입니다"));
+    }
+
+    @Test
     @DisplayName("다음 칸에 다른 예약이 있으면 연장 안내는 빼고 보낸다")
     void endSoonWithoutExtendHint() {
         long id = book(1, "10:30", "11:30");

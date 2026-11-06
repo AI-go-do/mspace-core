@@ -9,6 +9,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import kr.ac.chosun.mspace.common.config.ReminderPolicy;
 import kr.ac.chosun.mspace.common.config.ReservationPolicy;
 import kr.ac.chosun.mspace.common.config.SensorPolicy;
@@ -49,7 +50,7 @@ class JdbcReminderAdapter implements ReminderPort {
 
     /** 고른 줄: 예약·사람과 문구에 쓸 방 이름·시각 */
     private record Due(long reservationId, long userId, String room, Instant startAt, Instant endAt,
-                       Instant checkinDeadline, boolean canExtend) {
+                       Instant checkinDeadline, boolean canExtend, Instant awaySince) {
     }
 
     @Override
@@ -62,7 +63,7 @@ class JdbcReminderAdapter implements ReminderPort {
                 AND r.start_at > :now AND r.start_at <= :horizon""",
                 now, policy.startBeforeMinutes())) {
             created.add(save(d, ReminderKind.START_SOON, now,
-                    "입실 %d분 전입니다".formatted(policy.startBeforeMinutes()),
+                    "입실 %d분 전입니다".formatted(minutesLeft(now, d.startAt(), policy.startBeforeMinutes())),
                     "%s %s 시작이에요. %s까지 키패드에 번호를 넣지 않으면 노쇼로 예약이 풀려요."
                             .formatted(d.room(), HH_MM.format(d.startAt()), HH_MM.format(d.checkinDeadline()))));
         }
@@ -72,7 +73,7 @@ class JdbcReminderAdapter implements ReminderPort {
                 AND r.end_at > :now AND r.end_at <= :horizon""",
                 now, policy.endBeforeMinutes())) {
             created.add(save(d, ReminderKind.END_SOON, now,
-                    "종료 %d분 전입니다".formatted(policy.endBeforeMinutes()),
+                    "종료 %d분 전입니다".formatted(minutesLeft(now, d.endAt(), policy.endBeforeMinutes())),
                     "%s %s에 끝나요. 퇴실 전에 자리를 정리해 주세요.%s".formatted(d.room(), HH_MM.format(d.endAt()),
                             d.canExtend() ? " 다음 칸이 비어 있어 연장할 수 있어요." : "")));
         }
@@ -82,13 +83,14 @@ class JdbcReminderAdapter implements ReminderPort {
                 AND r.checkin_deadline > :now AND r.checkin_deadline <= :horizon""",
                 now, policy.noShowBeforeMinutes())) {
             created.add(save(d, ReminderKind.NO_SHOW_SOON, now,
-                    "노쇼 %d분 전입니다".formatted(policy.noShowBeforeMinutes()),
+                    "노쇼 %d분 전입니다".formatted(minutesLeft(now, d.checkinDeadline(), policy.noShowBeforeMinutes())),
                     "%s %s까지 키패드에 번호를 넣지 않으면 방이 풀려요."
                             .formatted(d.room(), HH_MM.format(d.checkinDeadline()))));
         }
         // FR-DEV-103 자리 비움: 사용 중인데 센서가 N분 연속 비어 있음(끊긴 센서는 "있음"으로 봐서 제외). 대표자만.
         // 비어 있음 시작 = 비어 있게 된 관측 시각, 끊겼다 돌아온 시각, 입실 시각 중 가장 늦은 것 (V11 room_presence)
         // "아직 있어요"를 이미 누른 예약은 알림 없이 정리(releaseAway)가 바로 퇴실시킨다 (11/5 지영)
+        // 퇴실 기한이 이미 지났으면(알림이 늦게 돎) 보내지 않는다. 곧 정리가 퇴실시킨다
         int away = sensor.away().notifyAfterMinutes();
         String stillHereHint = sensor.away().stillHereEnabled()
                 ? " 계시다면 '아직 있어요'를 눌러 주세요(1번만, 누른 뒤 %d분 더 비면 바로 퇴실돼요)."
@@ -98,13 +100,36 @@ class JdbcReminderAdapter implements ReminderPort {
                 r.status = 'IN_USE' AND p.is_owner AND r.end_at > :now AND r.still_here_at IS NULL
                 AND EXISTS (SELECT 1 FROM room_presence rp
                             WHERE rp.room_id = r.room_id AND NOT rp.occupied AND rp.last_received_at >= :aliveAfter
-                              AND greatest(rp.changed_at, rp.trusted_from, r.checked_in_at) <= :horizon)""",
+                              AND greatest(rp.changed_at, rp.trusted_from, r.checked_in_at) <= :horizon
+                              AND greatest(rp.changed_at, rp.trusted_from, r.checked_in_at)
+                                  + make_interval(mins => :release) > :now)""",
                 now, -away)) {
-            created.add(save(d, ReminderKind.AWAY_SOON, now, "자리에 안 계시네요",
-                    "%s이(가) %d분째 비어 있어요. %d분 안에 돌아오지 않으면 자동으로 퇴실돼요.%s".formatted(d.room(), away,
-                            sensor.away().releaseAfterMinutes() - away, stillHereHint)));
+            // 분은 설정값이 아니라 실제 값: 정리가 늦게 돌면 비어 있던 시간은 더 길고, 퇴실까지는 더 짧다.
+            // 비어 있던 분도 퇴실 타이머와 같은 시작 시각(입실·재연결 뒤부터)으로 센다. 입실 전부터 빈 시간은 그 사람 몫이 아니라서
+            // 예약 끝이 자리 비움 퇴실보다 먼저면, 돌아와도 끝 시각에 자동 퇴실이라 끝 시각으로 안내 (버튼 안내도 뺀다)
+            Instant since = d.awaySince() != null ? d.awaySince() : now.minus(Duration.ofMinutes(away));
+            Instant releaseAt = since.plus(Duration.ofMinutes(sensor.away().releaseAfterMinutes()));
+            long emptyMinutes = Math.max(away, Duration.between(since, now).toMinutes());
+            String body = releaseAt.isBefore(d.endAt())
+                    ? "%s이(가) %d분째 비어 있어요. %d분 안에 돌아오지 않으면 자동으로 퇴실돼요.%s".formatted(d.room(), emptyMinutes,
+                            minutesLeft(now, releaseAt, sensor.away().releaseAfterMinutes()), stillHereHint)
+                    : "%s이(가) %d분째 비어 있어요. 예약은 %s에 끝나요(%d분 남음)."
+                            .formatted(d.room(), emptyMinutes, HH_MM.format(d.endAt()),
+                                    minutesLeft(now, d.endAt(), sensor.away().releaseAfterMinutes()));
+            created.add(save(d, ReminderKind.AWAY_SOON, now, "자리에 안 계시네요", body));
         }
         return created;
+    }
+
+    /**
+     * 제목에 쓸 "N분 전"의 N: 설정값이 아니라 지금부터 그 시각까지 실제로 남은 분.
+     * 구간 중간에 들어온 예약(예: 즉시 시작으로 55분에 입실, 6시 종료)은 첫 정리에서 바로 고르므로
+     * 설정값(10분)을 그대로 쓰면 "종료 10분 전"인데 실제로는 5분 남는다 (11/5 지영 테스트).
+     * 1초라도 남으면 올림(4분 30초 → 5분, 2분 0.5초 → 3분), 1분 ~ 설정값 사이로 자른다.
+     */
+    static int minutesLeft(Instant now, Instant target, int maxMinutes) {
+        long minutes = Math.ceilDiv(Duration.between(now, target).toNanos(), Duration.ofMinutes(1).toNanos());
+        return (int) Math.max(1, Math.min(maxMinutes, minutes));
     }
 
     private List<Due> claim(ReminderKind kind, String condition, Instant now, int beforeMinutes) {
@@ -126,7 +151,9 @@ class JdbcReminderAdapter implements ReminderPort {
                        (r.continued_from_id IS NULL AND NOT EXISTS (
                             SELECT 1 FROM reservation n
                             WHERE n.room_id = r.room_id AND n.id <> r.id AND n.status IN ('BOOKED', 'IN_USE')
-                              AND n.start_at < r.end_at + make_interval(mins => :slot) AND n.end_at > r.end_at)) AS can_extend
+                              AND n.start_at < r.end_at + make_interval(mins => :slot) AND n.end_at > r.end_at)) AS can_extend,
+                       (SELECT greatest(rp.changed_at, rp.trusted_from, r.checked_in_at)
+                        FROM room_presence rp WHERE rp.room_id = r.room_id AND NOT rp.occupied) AS away_since
                 FROM logged l
                 JOIN reservation r ON r.id = l.reservation_id
                 JOIN rooms rm ON rm.id = r.room_id
@@ -137,6 +164,7 @@ class JdbcReminderAdapter implements ReminderPort {
                 .param("kind", kind.name())
                 .param("aliveAfter", Timestamp.from(now.minusSeconds(sensor.offlineAfterSeconds())))
                 .param("slot", slots.slotMinutes())
+                .param("release", sensor.away().releaseAfterMinutes())
                 .query(JdbcReminderAdapter::due)
                 .list();
     }
@@ -144,7 +172,8 @@ class JdbcReminderAdapter implements ReminderPort {
     private static Due due(ResultSet rs, int n) throws SQLException {
         return new Due(rs.getLong("reservation_id"), rs.getLong("user_id"), rs.getString("room"),
                 rs.getTimestamp("start_at").toInstant(), rs.getTimestamp("end_at").toInstant(),
-                rs.getTimestamp("checkin_deadline").toInstant(), rs.getBoolean("can_extend"));
+                rs.getTimestamp("checkin_deadline").toInstant(), rs.getBoolean("can_extend"),
+                Optional.ofNullable(rs.getTimestamp("away_since")).map(Timestamp::toInstant).orElse(null));
     }
 
     private Notification save(Due d, ReminderKind kind, Instant now, String title, String body) {

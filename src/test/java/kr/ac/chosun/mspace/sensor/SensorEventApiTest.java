@@ -307,6 +307,43 @@ class SensorEventApiTest {
     }
 
     @Test
+    @DisplayName("자리 비움 알림이 늦게 가면 문구도 실제 시간: 13분째 비어 있음, 2분 안에 퇴실")
+    void awayLateShowsRealMinutes() {
+        bookAndCheckIn("10:30", "12:30");
+        occupancy("10:35", false);
+        heartbeat("10:36", "10:48", false);
+        reminders.sendDue();
+
+        assertThat(awayBody()).startsWith("1번 방이(가) 13분째 비어 있어요. 2분 안에 돌아오지 않으면 자동으로 퇴실돼요.");
+    }
+
+    @Test
+    @DisplayName("예약 끝이 자리 비움 퇴실보다 먼저면 돌아와도 끝에 퇴실이라, 끝 시각과 남은 분으로 안내 (버튼 안내 없음)")
+    void awayBeforeEndShowsMinutesToEnd() {
+        bookAndCheckIn("10:30", "11:00");
+        occupancy("10:46", false);
+        heartbeat("10:47", "10:56", false);
+        reminders.sendDue();
+
+        assertThat(awayBody()).isEqualTo("1번 방이(가) 10분째 비어 있어요. 예약은 11:00에 끝나요(4분 남음).");
+    }
+
+    @Test
+    @DisplayName("알림이 퇴실 기한(15분)을 넘겨 돌면 자리 비움 알림은 보내지 않는다")
+    void awayNotSentAfterReleaseTime() {
+        bookAndCheckIn("10:30", "12:30");
+        occupancy("10:35", false);
+        heartbeat("10:36", "10:50", false);
+        reminders.sendDue();
+
+        assertThat(kindsSentTo(1)).doesNotContain("AWAY_SOON");
+    }
+
+    String awayBody() {
+        return jdbc.sql("SELECT body FROM notification WHERE user_id = 1 AND kind = 'AWAY_SOON'").query(String.class).single();
+    }
+
+    @Test
     @DisplayName("돌아오면 타이머가 처음부터: 10:35 비어 있음 → 10:45 있음 → 10:46 비어 있음이면 11:01에 퇴실")
     void comingBackResetsTimer() {
         long id = bookAndCheckIn("10:30", "12:30");
