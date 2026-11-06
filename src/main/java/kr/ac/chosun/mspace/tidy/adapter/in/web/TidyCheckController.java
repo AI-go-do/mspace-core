@@ -1,8 +1,9 @@
 package kr.ac.chosun.mspace.tidy.adapter.in.web;
 
+import static kr.ac.chosun.mspace.common.config.TimeConfig.SEOUL;
+
 import java.time.Instant;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.List;
@@ -29,7 +30,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 class TidyCheckController {
 
-    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final int MAX_ITEMS = 20;
     private static final int MAX_ITEM_LENGTH = 50;
 

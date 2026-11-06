@@ -4,10 +4,13 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import kr.ac.chosun.mspace.common.error.BusinessException;
+import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckPort;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.CurrentReservation;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.LastEnded;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.TidyCheck;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
@@ -80,6 +83,15 @@ class JdbcTidyCheckAdapter implements TidyCheckPort {
 
     @Override
     public void insert(TidyCheck c, Long reportId, Instant receivedAt) {
+        try {
+            insertRow(c, reportId, receivedAt);
+        } catch (DuplicateKeyException e) {
+            // 같은 eventId가 다른 예약으로 동시에 들어온 경우 (예약 잠금은 예약마다라 둘 다 여기까지 온다)
+            throw new BusinessException(ErrorCode.TIDY_CHECK_EXISTS);
+        }
+    }
+
+    private void insertRow(TidyCheck c, Long reportId, Instant receivedAt) {
         jdbc.sql("""
                         INSERT INTO tidy_check (event_id, reservation_id, room_id, device_id, result, items, left_items,
                                                 report_id, observed_at, received_at)
