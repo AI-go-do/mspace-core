@@ -17,6 +17,7 @@ import kr.ac.chosun.mspace.common.config.NoShowPenaltyPolicy;
 import kr.ac.chosun.mspace.common.config.ReservationPolicy;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
+import kr.ac.chosun.mspace.friend.application.FriendCheck;
 import kr.ac.chosun.mspace.reservation.application.ReservationCommandPort.KeyedReservation;
 import kr.ac.chosun.mspace.reservation.application.ReservationCommandPort.NewReservation;
 import kr.ac.chosun.mspace.reservation.domain.ReservationStatus;
@@ -65,12 +66,14 @@ public class CreateReservationService implements CreateReservationUseCase {
     private final ExtensionPolicy extension;
     private final SuspensionPort suspensions;
     private final NoShowPenaltyPolicy penalty;
+    private final FriendCheck friends;
 
     public CreateReservationService(ReservationCommandPort port, RoomQuery rooms, AccessCodeIssuer codes,
                                     ReservationPolicy policy, Clock clock, TransactionOperations tx,
                                     SweepReservationsUseCase sweeps, UsageChainPort chains,
                                     ExtensionPolicy extension, SuspensionPort suspensions,
-                                    NoShowPenaltyPolicy penalty) {
+                                    NoShowPenaltyPolicy penalty, FriendCheck friends) {
+        this.friends = friends;
         this.suspensions = suspensions;
         this.penalty = penalty;
         this.sweeps = sweeps;
@@ -216,6 +219,10 @@ public class CreateReservationService implements CreateReservationUseCase {
         Map<String, Long> ids = port.findVerifiedUserIds(others);
         if (ids.size() != others.size()) {
             throw new BusinessException(ErrorCode.PARTICIPANT_NOT_FOUND);
+        }
+        // 모르는 학번을 넣지 못하게, 대표자와 서로 수락한 친구만 (FR-RSV-004, 11/6 지영). 누가 아닌지는 알려 주지 않는다
+        if (!friends.canAddAsParticipants(ownerId, ids.values())) {
+            throw new BusinessException(ErrorCode.PARTICIPANT_NOT_FRIEND);
         }
 
         // 연장 제한 우회 막기 (FR-RSV-104·105): 연장까지 쓴 직후 30분 안에 같은 대표자가 새로 잡으면 이어진 사용이라 409
