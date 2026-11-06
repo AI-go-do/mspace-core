@@ -3,6 +3,7 @@ package kr.ac.chosun.mspace.reservation.adapter.in.web;
 import java.time.ZonedDateTime;
 import java.util.List;
 import kr.ac.chosun.mspace.reservation.application.MyReservationsUseCase.MyReservation;
+import kr.ac.chosun.mspace.reservation.domain.AccessQr;
 
 /**
  * GET /api/reservations/me 응답 한 건. 영준 비서(my_reservations)·내 예약 화면과 맞춘 모양 (11/2 합의).
@@ -10,11 +11,12 @@ import kr.ac.chosun.mspace.reservation.application.MyReservationsUseCase.MyReser
  *
  * @param owner           내가 대표자인지
  * @param accessCode      키패드 번호. 대표자일 때만 값이 있고 참여자면 null
+ * @param qrText          폰에 띄울 입실 QR 글자 (MSPACE:방:번호). accessCode가 null이면 null
  * @param checkinDeadline 입실 마감. 이때까지 입실하지 않으면 노쇼 (화면이 직접 계산하지 않게 서버 값을 준다)
  */
 record MyReservationResponse(long id, Room room, ZonedDateTime startAt, ZonedDateTime endAt, String status,
                              boolean owner, String accessCode, ZonedDateTime checkinDeadline,
-                             List<Person> participants) {
+                             List<Person> participants, String qrText) {
 
     record Room(int id, String name) {
     }
@@ -26,6 +28,7 @@ record MyReservationResponse(long id, Room room, ZonedDateTime startAt, ZonedDat
     static MyReservationResponse from(MyReservation r) {
         return new MyReservationResponse(r.id(), new Room(r.roomId(), r.roomName()), r.startAt(), r.endAt(),
                 r.status().name(), r.owner(), r.accessCode(), r.checkinDeadline(),
-                r.participants().stream().map(p -> new Person(p.name(), p.owner())).toList());
+                r.participants().stream().map(p -> new Person(p.name(), p.owner())).toList(),
+                AccessQr.text(r.roomId(), r.accessCode()));
     }
 }

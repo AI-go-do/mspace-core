@@ -94,6 +94,7 @@ class CreateReservationApiTest {
                     json.assertThat().extractingPath("$.headcount").isEqualTo(3);
                     json.assertThat().extractingPath("$.startAt").isEqualTo("2026-11-03T14:00:00+09:00");
                     json.assertThat().extractingPath("$.accessCode").asString().matches("[0-9]{6}");
+                    json.assertThat().extractingPath("$.qrText").asString().matches("MSPACE:1:[0-9]{6}");
                 });
         assertThat(count("SELECT count(*) FROM reservation_participant WHERE reservation_id = 1")).isEqualTo(3);
         assertThat(count("SELECT count(*) FROM reservation_participant WHERE is_owner AND user_id = 1")).isEqualTo(1);
