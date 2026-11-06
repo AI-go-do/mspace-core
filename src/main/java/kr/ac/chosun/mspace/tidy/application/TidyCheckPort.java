@@ -20,7 +20,7 @@ public interface TidyCheckPort {
     Optional<String> lockReservation(int roomId, long reservationId);
 
     /** 이미 받은 결과. reportId는 깨끗했으면 null */
-    record Existing(Long reportId) {
+    record Existing(long reservationId, Long reportId) {
     }
 
     Optional<Existing> findByEvent(String eventId);

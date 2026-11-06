@@ -250,6 +250,17 @@ class TidyCheckApiTest {
     }
 
     @Test
+    @DisplayName("같은 eventId를 다른 예약에 쓰면 처음 결과를 돌려주지 않고 409")
+    void sameEventOtherReservation() {
+        assertThat(post(1, check("e11", ended, "CLEAN", "[]", "[]"))).hasStatusOk();
+        jdbc.sql("UPDATE reservation SET status = 'CHECKED_OUT', checked_out_at = now() WHERE id = :id")
+                .param("id", now).update();
+
+        assertThat(post(1, check("e11", now, "CLEAN", "[]", "[]"))).hasStatus(409)
+                .bodyJson().extractingPath("$.code").isEqualTo("TIDY_CHECK_EXISTS");
+    }
+
+    @Test
     @DisplayName("한 예약에 결과는 하나: 다른 eventId로 또 보내면 409 TIDY_CHECK_EXISTS")
     void onePerReservation() {
         assertThat(post(1, check("e7", ended, "CLEAN", "[]", "[]"))).hasStatusOk();

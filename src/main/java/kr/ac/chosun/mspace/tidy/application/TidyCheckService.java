@@ -66,6 +66,10 @@ class TidyCheckService implements TidyCheckUseCase {
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESERVATION_NOT_FOUND));
             Optional<Existing> same = port.findByEvent(check.eventId());
             if (same.isPresent()) {
+                // 같은 eventId를 다른 예약에 또 쓰면 장치 쪽 실수. 처음 결과로 덮지 않고 409
+                if (same.get().reservationId() != check.reservationId()) {
+                    throw new BusinessException(ErrorCode.TIDY_CHECK_EXISTS);
+                }
                 return new Done(new Recorded(true, same.get().reportId()), List.of());
             }
             if (!ENDED.contains(state)) {

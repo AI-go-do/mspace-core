@@ -68,8 +68,8 @@ class JdbcTidyCheckAdapter implements TidyCheckPort {
 
     @Override
     public Optional<Existing> findByEvent(String eventId) {
-        return jdbc.sql("SELECT report_id FROM tidy_check WHERE event_id = :id").param("id", eventId)
-                .query((rs, n) -> new Existing(rs.getObject(1, Long.class))).optional();
+        return jdbc.sql("SELECT reservation_id, report_id FROM tidy_check WHERE event_id = :id").param("id", eventId)
+                .query((rs, n) -> new Existing(rs.getLong(1), rs.getObject(2, Long.class))).optional();
     }
 
     @Override
