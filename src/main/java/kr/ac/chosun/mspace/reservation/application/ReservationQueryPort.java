@@ -32,9 +32,11 @@ public interface ReservationQueryPort {
     /**
      * 참여자 이름은 실명 그대로. 가리는 건 서비스가 한다.
      * checkinDeadline: 입실 마감 (DB 트리거가 채운 값 그대로)
+     * cancelableUntil: 이 시각 전까지 대표자가 취소할 수 있다 (미리 예약은 시작, 즉시 시작은 누른 뒤 설정한 분, 입실 마감을 넘지 않음)
      */
     record Row(long id, int roomId, String roomName, Instant startAt, Instant endAt, ReservationStatus status,
-               long ownerId, String accessCode, Instant checkinDeadline, List<ParticipantRow> participants) {
+               long ownerId, String accessCode, Instant checkinDeadline, Instant cancelableUntil,
+               List<ParticipantRow> participants) {
     }
 
     record ParticipantRow(long userId, String name, boolean owner) {
