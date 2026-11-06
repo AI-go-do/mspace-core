@@ -280,6 +280,40 @@ class TidyCheckApiTest {
     }
 
     @Test
+    @DisplayName("지난 예약은 409 TIDY_CHECK_NOT_LATEST: 이 방의 마지막 퇴실 예약만 받는다")
+    void onlyLatestEnded() {
+        long older = tx.execute(st -> insertWithPeople("""
+                INSERT INTO reservation (room_id, owner_id, start_at, end_at, headcount, access_code, status,
+                                         checked_in_at, checked_out_at)
+                SELECT 1, 1, t - interval '4 hours', t - interval '3 hours', 3, '333333', 'CHECKED_OUT',
+                       t - interval '4 hours', t - interval '3 hours'
+                FROM (SELECT date_trunc('hour', now()) AS t) x
+                RETURNING id
+                """, OWNER, 2, 3));
+
+        assertThat(post(1, check("e12", older, "NEEDS_CLEANING", "[\"cup\"]", "[]"))).hasStatus(409)
+                .bodyJson().extractingPath("$.code").isEqualTo("TIDY_CHECK_NOT_LATEST");
+        assertThat(reports()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("방 지금 예약: 시작 시각이 지났는데 아직 입실 전(BOOKED)인 예약도 current로 준다")
+    void currentShowsBookedInTime() {
+        long booked = tx.execute(st -> insertWithPeople("""
+                INSERT INTO reservation (room_id, owner_id, start_at, end_at, headcount, access_code, status)
+                SELECT 2, 1, t, t + interval '1 hour', 3, '444444', 'BOOKED'
+                FROM (SELECT date_trunc('hour', now()) AS t) x
+                RETURNING id
+                """, OWNER, 2, 3));
+
+        assertThat(mvc.get().uri("/api/rooms/2/current").header("Authorization", TOKEN)).hasStatusOk()
+                .bodyJson().satisfies(j -> {
+                    j.assertThat().extractingPath("$.current.reservationId").isEqualTo((int) booked);
+                    j.assertThat().extractingPath("$.current.status").isEqualTo("BOOKED");
+                });
+    }
+
+    @Test
     @DisplayName("형식이 틀리면 400: 결과·물건 종류 오타, 오프셋 없는 시각, items 없음, 너무 긴 이름")
     void invalidInput() {
         List<String> bad = List.of(
