@@ -7,6 +7,9 @@
 # 토큰 값은 출력하지 않는다
 set -euo pipefail
 
+# 저장소 Secret 주소 끝에 "/"가 붙어 있으면 "//api/..."가 되어 Sonar가 JSON 대신 웹 화면(HTML)을 돌려준다 (11-06 core #82)
+SONAR_HOST_URL="${SONAR_HOST_URL%/}"
+
 api() { curl -sf -m 30 -u "$SONAR_TOKEN:" "$SONAR_HOST_URL/api/$1"; }
 
 # 1) 스캐너가 남긴 작업 id로 서버 처리가 끝나기를 기다린다 (최대 5분)
