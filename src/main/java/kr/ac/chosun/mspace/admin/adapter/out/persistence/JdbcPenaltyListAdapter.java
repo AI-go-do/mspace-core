@@ -24,7 +24,7 @@ class JdbcPenaltyListAdapter implements PenaltyListPort {
     @Override
     public boolean isAdmin(long userId) {
         return jdbc.sql("SELECT role = 'ADMIN' FROM users WHERE id = :id").param("id", userId)
-                .query(Boolean.class).optional().orElse(false);
+                .query((rs, n) -> rs.getBoolean(1)).optional().orElse(false);
     }
 
     @Override
