@@ -25,7 +25,7 @@ while [ "$SECONDS" -lt "$deadline" ]; do
   if ! body=$(api "ce/task?id=$task_id"); then
     echo "참고: ce/task를 읽지 못했어요 (다시 물어요)" >&2; status=PENDING
   else
-    status=$(echo "$body" | jq -r '.task.status // empty' 2>/dev/null || true)
+    status=$(echo "$body" | jq -r '.task.status // empty' 2>/dev/null) || status=
     [ -n "$status" ] || { echo "참고: ce/task 응답에 상태가 없어요: $(echo "$body" | head -c 120)" >&2; status=PENDING; }
   fi
   case "$status" in
