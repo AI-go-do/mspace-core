@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 친구 API 입구 (FR-RSV-004 변경, 11/6 지영 결정). 서로 수락해야 친구, 친구만 예약 참여자로 넣을 수 있다.
- * 모두 로그인한 회원만(없으면 401). 이름은 가린 이름(김*영).
+ * 모두 로그인한 회원만(없으면 401). 이름은 가린 이름(홍*동).
  */
 @RestController
 class FriendController {

@@ -28,7 +28,7 @@ public interface MyReservationsUseCase {
                          ZonedDateTime cancelableUntil, List<Participant> participants) {
     }
 
-    /** @param name 가린 이름 (김*영) */
+    /** @param name 가린 이름 (홍*동) */
     record Participant(String name, boolean owner) {
     }
 }

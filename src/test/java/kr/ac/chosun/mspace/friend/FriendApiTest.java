@@ -40,11 +40,11 @@ class FriendApiTest {
     @BeforeEach
     void members() {
         jdbc.sql("TRUNCATE reservation, reservation_participant, friendship, users RESTART IDENTITY CASCADE").update();
-        // 1 김지영 2 홍길동 3 박수연 4 이영준 (인증), 5 최재웅 (인증 전)
+        // 1 홍길동 2 이몽룡 3 박수연 4 이영준 (인증), 5 최재웅 (인증 전)
         jdbc.sql("""
                 INSERT INTO users (email, student_id, name, verified_at) VALUES
-                  ('u1@chosun.ac.kr', '20230001', '김지영', now()),
-                  ('u2@chosun.ac.kr', '20230002', '홍길동', now()),
+                  ('u1@chosun.ac.kr', '20230001', '홍길동', now()),
+                  ('u2@chosun.ac.kr', '20230002', '이몽룡', now()),
                   ('u3@chosun.ac.kr', '20230003', '박수연', now()),
                   ('u4@chosun.ac.kr', '20230004', '이영준', now()),
                   ('u5@chosun.ac.kr', '20230005', '최재웅', NULL)
@@ -106,7 +106,7 @@ class FriendApiTest {
         // then: 보낸 쪽·받은 쪽 목록
         assertThat(sent).hasStatus(201).bodyJson().satisfies(j -> {
             j.assertThat().extractingPath("$.status").isEqualTo("PENDING");
-            j.assertThat().extractingPath("$.name").isEqualTo("홍*동");
+            j.assertThat().extractingPath("$.name").isEqualTo("이*룡");
         });
         long id = requestId(sent);
         assertThat(list(1)).bodyJson().satisfies(j -> {
@@ -121,11 +121,11 @@ class FriendApiTest {
         // then: 둘 다 친구, 대기 목록은 비어 있음
         assertThat(list(1)).bodyJson().satisfies(j -> {
             j.assertThat().extractingPath("$.friends[0].studentId").isEqualTo("20230002");
-            j.assertThat().extractingPath("$.friends[0].name").isEqualTo("홍*동");
+            j.assertThat().extractingPath("$.friends[0].name").isEqualTo("이*룡");
             j.assertThat().extractingPath("$.sent.length()").isEqualTo(0);
         });
         assertThat(list(2)).bodyJson().satisfies(j -> {
-            j.assertThat().extractingPath("$.friends[0].name").isEqualTo("김*영");
+            j.assertThat().extractingPath("$.friends[0].name").isEqualTo("홍*동");
             j.assertThat().extractingPath("$.received.length()").isEqualTo(0);
         });
     }

@@ -22,7 +22,7 @@ record MyReservationResponse(long id, Room room, ZonedDateTime startAt, ZonedDat
     record Room(int id, String name) {
     }
 
-    /** @param name 가린 이름 (김*영) */
+    /** @param name 가린 이름 (홍*동) */
     record Person(String name, boolean owner) {
     }
 
