@@ -133,7 +133,8 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
                                        WHERE r2.owner_id = h.owner_id AND r2.status IN ('NO_SHOW', 'AWAY_RELEASED'))
                                       - make_interval(days => :windowDays)
                   AND h.happened_at >= coalesce(
-                        (SELECT max(s.ends_at) FROM user_suspension s WHERE s.user_id = h.owner_id), '-infinity'::timestamptz)
+                        (SELECT max(s.ends_at) FROM user_suspension s
+                         WHERE s.user_id = h.owner_id AND s.reason = 'NO_SHOW'), '-infinity'::timestamptz)
                   AND NOT EXISTS (SELECT 1 FROM user_suspension s
                                   WHERE s.user_id = h.owner_id AND s.ends_at > :now)
                 GROUP BY h.owner_id

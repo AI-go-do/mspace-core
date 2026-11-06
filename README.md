@@ -98,7 +98,13 @@ curl -X POST localhost:8080/api/reports -H 'X-User-Id: 1' -H 'Content-Type: appl
   -d '{"roomId":2,"category":"NOISE","content":"벽 너머로 계속 소리 질러요","noiseConfirmed":true}'   # → 201, verdict OPEN
 ```
 
-관리자(`users.role = ADMIN`)는 신고 목록을 보고 판정해요(FR-RPT-103). 사실 `CONFIRMED`, 확인 불가 `UNVERIFIED`, 허위 `FALSE` 중 하나를 대기(`OPEN`)인 신고에 한 번만 줄 수 있어요. 소음은 판정 대상이 아니라 `409 REPORT_NOT_JUDGEABLE`, 이미 판정했으면 `409 REPORT_ALREADY_JUDGED`예요. 경고·정지는 벌칙이 확정되면 붙여요.
+관리자(`users.role = ADMIN`)는 신고 목록을 보고 판정해요(FR-RPT-103). 사실 `CONFIRMED`, 확인 불가 `UNVERIFIED`, 허위 `FALSE` 중 하나를 대기(`OPEN`)인 신고에 한 번만 줄 수 있어요. 소음은 판정 대상이 아니라 `409 REPORT_NOT_JUDGEABLE`, 이미 판정했으면 `409 REPORT_ALREADY_JUDGED`예요. 판정하면 결과가 알림으로 가요(FR-RPT-104).
+
+- 사실: 신고자에게 고맙다는 알림. 그 방을 바로 전에 쓴 예약(신고자 예약 제외, 신고 전에 입실한 것 중 가장 최근)의 대표자에게 경고 1회. 찾지 못하면 경고 없음
+- 확인 불가: 신고자에게 처리하지 않았다는 알림, 벌칙 없음
+- 허위: 신고자에게 경고 1회
+- 30일 안에 경고 3회면 14일 정지. 사용 위반 경고는 예약·연장 정지(`403 USER_SUSPENDED`), 허위 신고 경고는 신고 정지(`403 REPORT_SUSPENDED`). 두 경고는 따로 셈. 정지가 걸리면 그 전 경고는 다시 세지 않아요
+- 숫자는 `mspace.report.penalty`(count, window-days, suspend-days)로 바꿔요
 
 ```bash
 curl 'localhost:8080/api/reports?verdict=OPEN' -H 'X-User-Id: 9'                     # 관리자만, 최근 신고가 위
