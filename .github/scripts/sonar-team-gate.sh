@@ -52,7 +52,8 @@ issues=$(cond new_violations)
 count_type() {
   local out code
   out=$(curl -sS -m 30 -u "$SONAR_TOKEN:" -w '\n%{http_code}' \
-        "$SONAR_HOST_URL/api/issues/search?componentKeys=$SONAR_PROJECT&inNewCodePeriod=true&resolved=false&types=$1&ps=1") || true
+        "$SONAR_HOST_URL/api/issues/search?componentKeys=$SONAR_PROJECT&inNewCodePeriod=true&resolved=false&types=$1&ps=1") \
+    || { echo "참고: 유형 $1 이슈 수 요청이 끝까지 오지 않았어요 (위 curl 오류 참고)" >&2; return 0; }
   code=$(echo "$out" | tail -n1)
   if [ "$code" != "200" ]; then
     echo "참고: 유형 $1 이슈 수를 읽지 못했어요 (상태 $code: $(echo "$out" | sed '$d' | head -c 200))" >&2
