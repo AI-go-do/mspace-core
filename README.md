@@ -132,6 +132,10 @@ curl -X POST localhost:8080/api/access/verify -H 'Authorization: Bearer <장치 
 
 번호는 시작 10분 전부터 받아요. 아직 입실하지 않았으면 입실 마감(미리 예약은 시작 + 15분)까지만 열리고, 그 뒤에는 `WRONG_CODE`예요. 이미 입실한 사람은 끝나는 시각 전까지 다시 열 수 있어요.
 
+### 입실 QR (11/6)
+
+예약 만들기·지금 바로 쓰기·연장하기 응답과 `GET /api/reservations/me`에 `qrText`가 있어요. 값은 `MSPACE:<방 번호>:<입실 번호>`(예: `MSPACE:1:123456`)예요. 화면이 이 글자로 QR 그림을 그려 폰에 띄우면, 문 앞 웹캠(mspace-device `qr_door.py`)이 읽어서 키패드와 같은 `POST /api/access/verify`로 물어요(장치 이름 `qr-<방>`). 그래서 열림 규칙·5번 틀리면 1분 잠금(방 단위, 키패드와 같이)도 키패드와 같아요. `accessCode`가 `null`이면(참여자, 노쇼·취소·퇴실) `qrText`도 `null`이에요. core는 그림을 만들지 않아요(새 라이브러리 없음, 11/6 지영 결정).
+
 ### 노쇼·자동 퇴실 (1분마다)
 
 서버가 1분마다 시간이 지난 예약을 정리해요. 따로 부를 API는 없어요.
@@ -166,6 +170,7 @@ curl -X POST localhost:8080/api/access/verify -H 'Authorization: Bearer <장치 
 
 - 예약·사람·종류별 한 번만 (`notification_log` PK + `ON CONFLICT DO NOTHING`). 동시에 10번 돌아도 받는 사람마다 종류별로 한 번만 생겨요(건수는 받는 사람 수에 따라 달라요. 노쇼 5분 전은 대표자만).
 - 알림은 앱 알림함(V10 `notification`)에 저장돼요. `GET /api/notifications/me`로 최근 50개를 봐요.
+- 읽음 표시: 알림 하나는 `POST /api/notifications/{id}/read`(204, 두 번 눌러도 204, 남의 알림은 404 `NOTIFICATION_NOT_FOUND`), 모두 읽음은 `POST /api/notifications/read-all`(`{"count":이번에 바뀐 개수}`), 종 아이콘 점은 `GET /api/notifications/me/unread-count`(`{"count":3}`).
 - 메일은 재웅님 담당이에요. `NotificationChannel`을 구현한 빈을 등록하면 알림함 저장이 커밋된 뒤 불려요. 메일이 실패해도 알림함에는 남고, 다시 보내지는 않아요.
 - 분(minute) 값은 `mspace.notification.reminder`에서 바꿔요. 끄려면 `MSPACE_REMINDER_ENABLED=false`.
 

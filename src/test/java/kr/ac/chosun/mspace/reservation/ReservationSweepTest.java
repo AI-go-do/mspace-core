@@ -154,6 +154,7 @@ class ReservationSweepTest {
         var mine = mvc.get().uri("/api/reservations/me").header("X-User-Id", "1").exchange();
         assertThat(mine).bodyJson().extractingPath("$[0].status").isEqualTo("NO_SHOW");
         assertThat(mine).bodyJson().extractingPath("$[0].accessCode").isNull();
+        assertThat(mine).bodyJson().extractingPath("$[0].qrText").isNull();
     }
 
     @Test
