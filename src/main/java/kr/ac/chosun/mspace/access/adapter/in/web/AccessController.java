@@ -35,7 +35,7 @@ class AccessController {
     @PostMapping("/api/access/verify")
     VerifyResponse verify(@RequestHeader(name = "Authorization", required = false) String authorization,
                           @RequestBody VerifyRequest request) {
-        devices.verify(authorization);
+        devices.verify(authorization, request.roomId());
         if (request.eventId() == null || request.eventId().isBlank() || request.eventId().length() > 64
                 || request.roomId() == null || (request.deviceId() != null && request.deviceId().length() > 50)) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);

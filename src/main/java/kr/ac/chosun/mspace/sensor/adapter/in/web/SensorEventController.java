@@ -43,7 +43,7 @@ class SensorEventController {
     @PostMapping("/api/sensor-events")
     SensorEventResponse record(@RequestHeader(name = "Authorization", required = false) String authorization,
                                @RequestBody SensorEventRequest request) {
-        devices.verify(authorization);
+        devices.verify(authorization, request.roomId());
         return new SensorEventResponse(service.record(request.toEvent()).name());
     }
 

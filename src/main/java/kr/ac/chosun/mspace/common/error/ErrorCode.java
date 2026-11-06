@@ -86,6 +86,7 @@ public enum ErrorCode {
 
     // 키패드 (FR-ACC-001)
     DEVICE_UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "장치 토큰이 없거나 맞지 않습니다"),
+    DEVICE_ROOM_MISMATCH(HttpStatus.FORBIDDEN, "이 장치 토큰은 다른 방에 등록되어 있습니다"),
     // 내부용: 새로 뽑은 번호가 같은 방 다른 예약 번호와 겹침 → 서비스가 새 번호로 다시 한다 (응답으로 나가지 않음)
     ACCESS_CODE_TAKEN(HttpStatus.CONFLICT, "키패드 번호가 겹쳤습니다"),
 
