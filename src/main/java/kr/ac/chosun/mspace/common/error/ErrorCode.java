@@ -12,6 +12,13 @@ public enum ErrorCode {
     // 참여자 학번 검색 (FR-RSV-004). 가입 안 한 학번과 학생 인증 전 회원은 같은 404 (어느 쪽인지 알려 주지 않으려고)
     MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "학생 인증을 마친 회원 중 그 학번이 없습니다"),
 
+    // 친구 (FR-RSV-004, 11/6 지영 결정: 서로 수락, 삭제 가능)
+    FRIEND_SELF(HttpStatus.BAD_REQUEST, "나에게는 친구 요청을 보낼 수 없습니다"),
+    FRIEND_ALREADY(HttpStatus.CONFLICT, "이미 친구입니다"),
+    FRIEND_REQUEST_ALREADY_SENT(HttpStatus.CONFLICT, "이미 친구 요청을 보냈습니다"),
+    FRIEND_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "찾을 수 없는 친구 요청입니다"),
+    FRIEND_NOT_FOUND(HttpStatus.NOT_FOUND, "친구 목록에 없는 학번입니다"),
+
     // 예약 생성 (FR-RSV-001~005)
     RESERVATION_NOT_ON_SLOT(HttpStatus.BAD_REQUEST, "시작·종료 시각은 정각 또는 30분이어야 합니다"),
     RESERVATION_INVALID_LENGTH(HttpStatus.BAD_REQUEST, "종료는 시작보다 뒤여야 하고, 1회 최대 2시간입니다"),
@@ -19,6 +26,8 @@ public enum ErrorCode {
     RESERVATION_OUT_OF_RANGE(HttpStatus.BAD_REQUEST, "오늘부터 7일 안에 시작하는 예약만 할 수 있습니다"),
     PARTICIPANT_DUPLICATE(HttpStatus.BAD_REQUEST, "같은 학번을 두 번 넣을 수 없습니다"),
     PARTICIPANT_NOT_FOUND(HttpStatus.BAD_REQUEST, "학생 인증을 마친 회원의 학번만 넣을 수 있습니다"),
+    // 친구만 참여자로 (FR-RSV-004, 11/6 지영). 누가 친구가 아닌지는 알려 주지 않는다
+    PARTICIPANT_NOT_FRIEND(HttpStatus.FORBIDDEN, "서로 친구인 회원만 참여자로 넣을 수 있습니다"),
     HEADCOUNT_OUT_OF_RANGE(HttpStatus.BAD_REQUEST, "방의 이용 인원을 벗어났습니다"),
     RESERVATION_TIME_TAKEN(HttpStatus.CONFLICT, "이미 예약된 시간입니다"),
     // FR-RSV-003 (11/5): 대표자든 참여자든 끝나지 않은 예약은 1건. 나(대표자)가 걸리면 이 코드
