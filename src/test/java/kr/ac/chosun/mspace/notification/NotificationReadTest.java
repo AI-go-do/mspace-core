@@ -32,8 +32,8 @@ class NotificationReadTest {
         jdbc.sql("TRUNCATE notification, users RESTART IDENTITY CASCADE").update();
         jdbc.sql("""
                 INSERT INTO users (email, student_id, name, verified_at) VALUES
-                  ('u1@chosun.ac.kr', '20230001', '김지영', now()),
-                  ('u2@chosun.ac.kr', '20230002', '홍길동', now())
+                  ('u1@chosun.ac.kr', '20230001', '홍길동', now()),
+                  ('u2@chosun.ac.kr', '20230002', '이몽룡', now())
                 """).update();
         // 1번에게 3개(1, 2, 3), 2번에게 1개(4)
         jdbc.sql("""

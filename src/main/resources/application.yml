@@ -63,6 +63,8 @@ mspace:
       open-before-minutes: 10  # 종료 10분 전부터 종료 전까지
       max-minutes: 120       # 한 번에 늘리는 시간은 원래 종료부터 30분 단위, 최대 2시간
       chain-gap-minutes: 30  # 직전 예약이 끝난 뒤 30분 안에 시작하면 이어진 사용으로 본다
+    instant-cancel:          # 즉시 시작 취소 (FR-RSV-007, 11/6 팀 결정 3–5분)
+      minutes: 5             # 누른 뒤 5분 안, 입실 전이면 대표자가 취소. 0이면 끔(최대 10 = 입실 마감)
     no-show-penalty:         # 노쇼 벌칙 (FR-RSV-106, 11/4 지영 결정)
       count: 2               # 30일 안에 노쇼 2번이면
       window-days: 30
@@ -132,6 +134,11 @@ mspace:
         title: 소지품
         rule: 퇴실 전에 챙겨요. 잠깐 나갈 때도 귀중품은 들고 나가요
         penalty: 예약이 끝나 문이 잠기면 다시 예약해야 들어갈 수 있어요
+  report:
+    penalty:                 # 신고 판정 뒤 벌칙 (FR-RPT-103·104, 11/6 지영 "docs 제안대로")
+      count: 3               # 30일 안에 경고 3번이면 (사실 판정 → 이용 정지, 허위 신고 → 신고 정지. 따로 센다)
+      window-days: 30
+      suspend-days: 14
   photo:                     # 사진 체크인·아웃 (FR-RPT-102, 11/5 지영). 저장은 core DB
     max-bytes: 2097152       # 1장 최대 2MB (JPEG·PNG만)
     checkout-grace-minutes: 30   # 퇴실 사진은 퇴실 뒤 30분 안까지

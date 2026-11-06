@@ -37,7 +37,7 @@ public class MyReservationsService implements MyReservationsUseCase {
                             .toList();
                     return new MyReservation(r.id(), r.roomId(), r.roomName(), r.startAt().atZone(SEOUL),
                             r.endAt().atZone(SEOUL), r.status(), owner, codeFor(owner, r.status(), r.accessCode()),
-                            r.checkinDeadline().atZone(SEOUL), people);
+                            r.checkinDeadline().atZone(SEOUL), r.cancelableUntil().atZone(SEOUL), people);
                 })
                 .toList();
     }

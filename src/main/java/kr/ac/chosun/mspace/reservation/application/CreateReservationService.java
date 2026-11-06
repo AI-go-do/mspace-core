@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import kr.ac.chosun.mspace.common.config.ExtensionPolicy;
-import kr.ac.chosun.mspace.common.config.NoShowPenaltyPolicy;
 import kr.ac.chosun.mspace.common.config.ReservationPolicy;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
@@ -65,17 +64,15 @@ public class CreateReservationService implements CreateReservationUseCase {
     private final UsageChainPort chains;
     private final ExtensionPolicy extension;
     private final SuspensionPort suspensions;
-    private final NoShowPenaltyPolicy penalty;
     private final FriendCheck friends;
 
     public CreateReservationService(ReservationCommandPort port, RoomQuery rooms, AccessCodeIssuer codes,
                                     ReservationPolicy policy, Clock clock, TransactionOperations tx,
                                     SweepReservationsUseCase sweeps, UsageChainPort chains,
                                     ExtensionPolicy extension, SuspensionPort suspensions,
-                                    NoShowPenaltyPolicy penalty, FriendCheck friends) {
+                                    FriendCheck friends) {
         this.friends = friends;
         this.suspensions = suspensions;
-        this.penalty = penalty;
         this.sweeps = sweeps;
         this.chains = chains;
         this.extension = extension;
@@ -198,12 +195,11 @@ public class CreateReservationService implements CreateReservationUseCase {
         String ownerStudentId = port.findVerifiedStudentId(ownerId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED));
 
-        // 노쇼 벌칙 (FR-RSV-106): 정지 중이면 대표자로 못 잡는다. 끝나는 날짜를 알려 준다
+        // 이용 정지 (노쇼 FR-RSV-106, 경고 누적 FR-RPT-104): 정지 중이면 대표자로 못 잡는다. 끝나는 날짜를 알려 준다
         Instant now = clock.instant();
         suspensions.suspendedUntil(ownerId, now).ifPresent(until -> {
             throw new BusinessException(ErrorCode.USER_SUSPENDED,
-                    "노쇼 %d번으로 %s까지 이용이 정지되어 예약할 수 없습니다"
-                            .formatted(penalty.count(), UNTIL.format(until.atZone(SEOUL))));
+                    "%s까지 이용이 정지되어 예약할 수 없습니다".formatted(UNTIL.format(until.atZone(SEOUL))));
         });
 
         // 대표자는 서버가 넣는다. 목록에 대표자 학번이 또 있으면 같은 사람 두 번 → 400

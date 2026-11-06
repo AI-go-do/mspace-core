@@ -118,7 +118,7 @@ class ReservationController {
 
     /**
      * 내 예약 (FR-RSV-006). 대표자·참여자로 들어간 예약 모두. 끝나지 않은 것이 위(시작 빠른 순), 끝난 것은 최근 순.
-     * 키패드 번호는 대표자에게만, 참여자 이름은 가려서(김*영) 준다.
+     * 키패드 번호는 대표자에게만, 참여자 이름은 가려서(홍*동) 준다.
      */
     @GetMapping("/api/reservations/me")
     List<MyReservationResponse> mine(LoginUser user) {

@@ -44,7 +44,7 @@ curl localhost:8080/actuator/health   # {"status":"UP"}이면 정상
 
 ### 관리자 지정 (시연 준비)
 
-관리자 화면이 아직 없어서 SQL로 정해요. 메일 인증으로 먼저 가입한 뒤에 바꿔요. 관리자만 `GET /api/reservations/stats`(WEB/AGENT 예약 건수)를 볼 수 있어요.
+관리자 화면이 아직 없어서 SQL로 정해요. 메일 인증으로 먼저 가입한 뒤에 바꿔요. 관리자만 `GET /api/reservations/stats`(WEB/AGENT 예약 건수)와 아래 [관리자 도구](#관리자-도구-116)를 쓸 수 있어요.
 
 ```bash
 docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "UPDATE users SET role = '"'"'ADMIN'"'"' WHERE email = '"'"'내메일@chosun.ac.kr'"'"'"'
@@ -98,7 +98,13 @@ curl -X POST localhost:8080/api/reports -H 'X-User-Id: 1' -H 'Content-Type: appl
   -d '{"roomId":2,"category":"NOISE","content":"벽 너머로 계속 소리 질러요","noiseConfirmed":true}'   # → 201, verdict OPEN
 ```
 
-관리자(`users.role = ADMIN`)는 신고 목록을 보고 판정해요(FR-RPT-103). 사실 `CONFIRMED`, 확인 불가 `UNVERIFIED`, 허위 `FALSE` 중 하나를 대기(`OPEN`)인 신고에 한 번만 줄 수 있어요. 소음은 판정 대상이 아니라 `409 REPORT_NOT_JUDGEABLE`, 이미 판정했으면 `409 REPORT_ALREADY_JUDGED`예요. 경고·정지는 벌칙이 확정되면 붙여요.
+관리자(`users.role = ADMIN`)는 신고 목록을 보고 판정해요(FR-RPT-103). 사실 `CONFIRMED`, 확인 불가 `UNVERIFIED`, 허위 `FALSE` 중 하나를 대기(`OPEN`)인 신고에 한 번만 줄 수 있어요. 소음은 판정 대상이 아니라 `409 REPORT_NOT_JUDGEABLE`, 이미 판정했으면 `409 REPORT_ALREADY_JUDGED`예요. 판정하면 결과가 알림으로 가요(FR-RPT-104).
+
+- 사실: 신고자에게 고맙다는 알림. 그 방을 바로 전에 쓴 예약(신고자 예약 제외, 신고 전에 입실한 것 중 가장 최근)의 대표자에게 경고 1회. 찾지 못하면 경고 없음
+- 확인 불가: 신고자에게 처리하지 않았다는 알림, 벌칙 없음
+- 허위: 신고자에게 경고 1회
+- 30일 안에 경고 3회면 14일 정지. 사용 위반 경고는 예약·연장 정지(`403 USER_SUSPENDED`), 허위 신고 경고는 신고 정지(`403 REPORT_SUSPENDED`). 두 경고는 따로 셈. 정지가 걸리면 그 전 경고는 다시 세지 않아요
+- 숫자는 `mspace.report.penalty`(count, window-days, suspend-days)로 바꿔요
 
 ```bash
 curl 'localhost:8080/api/reports?verdict=OPEN' -H 'X-User-Id: 9'                     # 관리자만, 최근 신고가 위
@@ -227,6 +233,43 @@ curl localhost:8080/api/reservations/12/photos/CHECK_IN -H 'X-User-Id: 1' -o roo
 - 보기: 그 예약 사람들과 관리자(신고 판정)만. 아니면 404 `PHOTO_NOT_FOUND`
 - 올린 지 30일 지나면 1시간마다 지워요. 숫자는 `mspace.photo`에서 바꿔요
 - 배포: nginx 기본 업로드 상한이 1MB라 `client_max_body_size 4m`이 필요해요 (재웅님 확인)
+
+### 관리자 도구 (11/6)
+
+관리자(`users.role = ADMIN`)만 써요. 아니면 403 `ADMIN_ONLY`. 화면은 프론트 몫이고 여기는 API만 있어요.
+
+```bash
+# 강제 퇴실 (FR-RPT-104 퇴출). 사유는 빼도 되고 200자까지. 대표자·참여자 모두 알림 FORCED_CHECKOUT
+curl -X POST localhost:8080/api/reservations/12/force-checkout -H 'X-User-Id: 4' -H 'Content-Type: application/json' \
+     -d '{"reason":"신고 확인, 소음 계속"}'
+# → {"id":12,"status":"CHECKED_OUT"}. 없는 예약 404, 사용 중이 아니면 409 RESERVATION_NOT_IN_USE
+
+# 이용 통계 + 센서 (from·to는 서울 날짜, to 포함, 92일까지. 둘 다 빼면 오늘까지 7일, from만 주면 그날부터 7일, to만 주면 그날까지 7일)
+curl 'localhost:8080/api/stats/usage?from=2026-11-01&to=2026-11-30' -H 'X-User-Id: 4'
+# → {"from":…,"to":…,"days":30,"total":{…},"rooms":[{"roomId":1,"roomName":"1번 방",
+#     "reservations":{"total","canceled","pending","noShow","used","forced","awayReleased","autoCheckedOut"},
+#     "rates":{"noShow","actualUse","utilization"},"minutes":{"booked","used","avgUsed"},"shortUses","uniqueUsers",
+#     "sensor":{"co2Readings","co2AvgPpm","co2MaxPpm","co2OverRate","thresholdPpm","ventilationAlerts",
+#               "occupiedMinutes","occupiedWithoutReservationMinutes"}}, …],"byHour":[{"hour":0,"reservations":0,"used":0}, …]}
+
+# 경고·정지 목록 (최근 days일, 기본 30, 1–365)
+curl 'localhost:8080/api/penalties?days=30' -H 'X-User-Id: 4'
+# → {"days":30,"warnings":[{"id","member":{"id","studentId","name"},"reason":"VIOLATION|FALSE_REPORT","reportId","reservationId","createdAt"}],
+#     "suspensions":[{"scope":"USE|REPORT","id","member","reason":"NO_SHOW|WARNINGS|FALSE_REPORT","startsAt","endsAt","active"}]}
+
+# 신고 증거 사진: 직전 이용자의 퇴실 사진, 신고자의 입실 사진
+curl localhost:8080/api/reports/7/evidence -H 'X-User-Id: 4'
+# → {"reportId":7,"previous":{"reservationId":11,"checkedInAt","checkedOutAt",
+#     "photo":{"kind":"CHECK_OUT","exists":true,"url":"/api/reservations/11/photos/CHECK_OUT","uploadedAt"}},
+#     "reporter":{"reservationId":12,"photo":{"kind":"CHECK_IN","exists":false,"url":null,"uploadedAt":null}},
+#     "note":"신고자가 입실 사진을 올리지 않았어요 (또는 30일이 지나 지워졌어요)."}
+```
+
+- 비율은 0–1 소수 셋째 자리, 분모가 0이면 null. 노쇼율·실사용률 분모는 취소·대기(BOOKED) 뺀 예약, 이용률은 기간 중 지난 시간(하루 24시간) 대비 실제 이용 시간
+- 짧은 이용: 예약 시간의 절반도 안 쓰고 나간 것 (사용 중 제외)
+- 재실 시간은 센서가 상태가 바뀔 때만 기록해서, 바뀐 기록 사이를 그 상태로 본 근삿값이에요. "예약 없이 있던 시간" = 센서 "있음" 구간 중 입실한 예약 구간과 겹치지 않는 부분(구간 차집합, 시간 합계끼리 빼는 게 아님)
+- 직전 이용 예약은 경고 대상과 같은 규칙(같은 방, 신고자 예약 제외, 신고 전 입실 중 가장 늦은 것, 노쇼 제외). 없으면 `previous: null`
+- 카메라 인원 수는 core에 없어 통계에 없어요
 
 ## 폴더 구조
 

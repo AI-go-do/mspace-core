@@ -17,8 +17,9 @@ import org.springframework.stereotype.Component;
 @Component
 class JdbcReportAdapter implements ReportPort, ReportJudgePort {
 
+    private static final String CONTENT = "content";
     private static final String COLUMNS =
-            "id, room_id, category, content, verdict, reporter_reservation_id, created_at, judged_at";
+            "id, room_id, category, content, verdict, source, reporter_reservation_id, created_at, judged_at";
 
     private final JdbcClient jdbc;
 
@@ -63,9 +64,20 @@ class JdbcReportAdapter implements ReportPort, ReportJudgePort {
                 .param("reporter", reporterId)
                 .param("basis", basisReservationId)
                 .param("category", category.name())
-                .param("content", content)
+                .param(CONTENT, content)
                 .query((rs, n) -> new Saved(rs.getLong("id"), rs.getTimestamp("created_at").toInstant()))
                 .single();
+    }
+
+    @Override
+    public long saveCamera(int roomId, long targetReservationId, String content) {
+        return jdbc.sql("""
+                        INSERT INTO report (room_id, source, target_reservation_id, category, content)
+                        VALUES (:room, 'CAMERA', :target, 'MESSY', :content)
+                        RETURNING id
+                        """)
+                .param("room", roomId).param("target", targetReservationId).param(CONTENT, content)
+                .query((rs, n) -> rs.getLong(1)).single();
     }
 
     @Override
@@ -103,8 +115,9 @@ class JdbcReportAdapter implements ReportPort, ReportJudgePort {
     private static ReportItem item(ResultSet rs, int n) throws SQLException {
         Timestamp judged = rs.getTimestamp("judged_at");
         return new ReportItem(rs.getLong("id"), rs.getInt("room_id"), ReportCategory.valueOf(rs.getString("category")),
-                rs.getString("content"), ReportVerdict.valueOf(rs.getString("verdict")),
-                rs.getLong("reporter_reservation_id"), rs.getTimestamp("created_at").toInstant(),
+                rs.getString(CONTENT), ReportVerdict.valueOf(rs.getString("verdict")),
+                rs.getString("source"), rs.getObject("reporter_reservation_id", Long.class),
+                rs.getTimestamp("created_at").toInstant(),
                 judged == null ? null : judged.toInstant());
     }
 }

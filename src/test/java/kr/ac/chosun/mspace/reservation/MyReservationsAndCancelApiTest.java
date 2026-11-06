@@ -48,7 +48,7 @@ class MyReservationsAndCancelApiTest {
     @BeforeEach
     void members() {
         jdbc.sql("TRUNCATE reservation, reservation_participant, users RESTART IDENTITY CASCADE").update();
-        String[] names = {"김지영", "이영준", "박수연", "최재웅", "남궁민수", "정하", "홍길동"};
+        String[] names = {"홍길동", "이영준", "박수연", "최재웅", "남궁민수", "정하", "홍길동"};
         for (int i = 0; i < names.length; i++) {
             jdbc.sql("INSERT INTO users (email, student_id, name, verified_at) VALUES (:e, :s, :n, now())")
                     .param("e", "u" + (i + 1) + "@chosun.ac.kr").param("s", "2023000" + (i + 1))
@@ -76,6 +76,33 @@ class MyReservationsAndCancelApiTest {
                             """)
                     .param("room", roomId).param("owner", people[0]).param("n", people.length)
                     .param("status", status).param("h", hoursFromNow)
+                    .query(Long.class).single();
+            for (long uid : people) {
+                jdbc.sql("""
+                                INSERT INTO reservation_participant (reservation_id, user_id, is_owner, start_at, end_at)
+                                VALUES (:rid, :uid, :owner, now(), now() + interval '1 hour')
+                                """)
+                        .param("rid", id).param("uid", uid).param("owner", uid == people[0]).update();
+            }
+            return id;
+        });
+    }
+
+    /**
+     * 즉시 시작 예약 한 건(입실 전 BOOKED)과 참여자. 입실 마감은 트리거가 시작 + 10분으로 채운다
+     *
+     * @param minutesAgo 시작 시각 = 지금 - 이 분
+     */
+    long instant(int roomId, int minutesAgo, long... people) {
+        return tx.execute(s -> {
+            long id = jdbc.sql("""
+                            INSERT INTO reservation (room_id, owner_id, start_at, end_at, headcount, access_code, is_instant)
+                            SELECT :room, :owner, t, to_timestamp(ceil(extract(epoch FROM t + interval '1 hour') / 1800) * 1800),
+                                   :n, '123456', true
+                            FROM (SELECT now() - make_interval(mins => :m) AS t) x
+                            RETURNING id
+                            """)
+                    .param("room", roomId).param("owner", people[0]).param("n", people.length).param("m", minutesAgo)
                     .query(Long.class).single();
             for (long uid : people) {
                 jdbc.sql("""
@@ -132,10 +159,17 @@ class MyReservationsAndCancelApiTest {
                 .extractingPath("$[0].checkinDeadline").isEqualTo(expected);
         assertThat(mine(2)).bodyJson()
                 .extractingPath("$[0].checkinDeadline").isEqualTo(expected);
+        // 미리 예약은 시작 전까지만 취소된다
+        String start = jdbc.sql("""
+                        SELECT to_char(start_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD"T"HH24:MI:SS"+09:00"')
+                        FROM reservation WHERE id = :id
+                        """)
+                .param("id", id).query(String.class).single();
+        assertThat(mine(1)).bodyJson().extractingPath("$[0].cancelableUntil").isEqualTo(start);
     }
 
     @Test
-    @DisplayName("수용 기준: 키패드 번호·입실 QR 글자는 대표자에게만, 참여자에게는 null. 참여자 이름은 가린다(김*영)")
+    @DisplayName("수용 기준: 키패드 번호·입실 QR 글자는 대표자에게만, 참여자에게는 null. 참여자 이름은 가린다(홍*동)")
     void accessCodeOnlyForOwner() {
         reservation(1, 24, "BOOKED", 1, 2, 5);
 
@@ -145,7 +179,7 @@ class MyReservationsAndCancelApiTest {
             json.assertThat().extractingPath("$[0].qrText").isEqualTo("MSPACE:1:123456");
             json.assertThat().extractingPath("$[0].room.name").isEqualTo("1번 방");
             json.assertThat().extractingPath("$[0].participants[*].name").asArray()
-                    .containsExactly("김*영", "이*준", "남**수");
+                    .containsExactly("홍*동", "이*준", "남**수");
             json.assertThat().extractingPath("$[0].participants[0].owner").isEqualTo(true);
         });
         assertThat(mine(2)).hasStatusOk().bodyJson().satisfies(json -> {
@@ -189,6 +223,31 @@ class MyReservationsAndCancelApiTest {
 
         assertThat(cancel(7, id)).hasStatus(404).bodyJson().extractingPath("$.code").isEqualTo("RESERVATION_NOT_FOUND");
         assertThat(cancel(1, 999)).hasStatus(404).bodyJson().extractingPath("$.code").isEqualTo("RESERVATION_NOT_FOUND");
+        assertThat(status(id)).isEqualTo("BOOKED");
+    }
+
+    @Test
+    @DisplayName("즉시 시작은 입실 전이면 누른 뒤 5분 안에 대표자가 취소 → 200 CANCELED, 방·참여자 시간이 풀린다")
+    void ownerCancelsInstantBeforeCheckin() {
+        long id = instant(1, 3, 1, 2, 3);   // 3분 전에 누름, 아직 입실 안 함
+
+        // 화면이 버튼을 언제까지 보일지 알 수 있게 서버가 취소 마감을 준다 (누른 시각 + 5분)
+        assertThat(mine(1)).hasStatusOk().bodyJson().extractingPath("$[0].cancelableUntil").isNotNull();
+        assertThat(cancel(2, id)).hasStatus(403);   // 참여자는 여전히 못 한다
+        assertThat(cancel(1, id)).hasStatusOk().bodyJson().extractingPath("$.status").isEqualTo("CANCELED");
+        assertThat(status(id)).isEqualTo("CANCELED");
+        assertThat(jdbc.sql("SELECT count(*) FROM reservation_participant WHERE reservation_id = :id AND active")
+                .param("id", id).query(Integer.class).single()).isZero();
+        // 대표자 1건 제약에서 빠져 바로 새로 잡을 수 있다
+        instant(1, 0, 1, 2, 3);
+    }
+
+    @Test
+    @DisplayName("즉시 시작도 누른 뒤 5분이 지나면 취소 → 409 (입실 마감 전이라도. 방을 잡아 두고 취소하는 걸 막는다)")
+    void instantPastCancelWindowNotCancelable() {
+        long id = instant(1, 6, 1, 2, 3);   // 6분 전에 누름, 취소 시간(5분) 지남, 입실 마감(10분) 전
+
+        assertThat(cancel(1, id)).hasStatus(409).bodyJson().extractingPath("$.code").isEqualTo("RESERVATION_NOT_CANCELABLE");
         assertThat(status(id)).isEqualTo("BOOKED");
     }
 

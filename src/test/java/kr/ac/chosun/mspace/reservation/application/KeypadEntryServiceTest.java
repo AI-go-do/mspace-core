@@ -52,7 +52,7 @@ class KeypadEntryServiceTest {
     /** 체크인은 정해 둔 값을 돌려준다 */
     record FakeStatuses(boolean checkInResult) implements ReservationStatusPort {
         @Override
-        public boolean cancelIfBookedBeforeStart(long reservationId, long ownerId) {
+        public boolean cancelIfBookedBeforeStart(long reservationId, long ownerId, int instantCancelMinutes) {
             return false;
         }
 

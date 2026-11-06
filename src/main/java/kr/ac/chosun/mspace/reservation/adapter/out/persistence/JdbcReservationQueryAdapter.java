@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Optional;
 import kr.ac.chosun.mspace.reservation.application.ReservationQueryPort;
 import kr.ac.chosun.mspace.reservation.domain.ReservationStatus;
+import kr.ac.chosun.mspace.common.config.InstantCancelPolicy;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
@@ -15,9 +16,11 @@ import org.springframework.stereotype.Component;
 class JdbcReservationQueryAdapter implements ReservationQueryPort {
 
     private final JdbcClient jdbc;
+    private final InstantCancelPolicy instantCancel;
 
-    JdbcReservationQueryAdapter(JdbcClient jdbc) {
+    JdbcReservationQueryAdapter(JdbcClient jdbc, InstantCancelPolicy instantCancel) {
         this.jdbc = jdbc;
+        this.instantCancel = instantCancel;
     }
 
     /**
@@ -29,7 +32,9 @@ class JdbcReservationQueryAdapter implements ReservationQueryPort {
         Map<Long, Row> rows = new LinkedHashMap<>();
         jdbc.sql("""
                         SELECT r.id, r.room_id, rm.name AS room_name, r.start_at, r.end_at, r.status, r.owner_id,
-                               r.access_code, r.checkin_deadline, p.user_id, u.name AS person_name, p.is_owner
+                               r.access_code, r.checkin_deadline, p.user_id,
+                               CASE WHEN r.is_instant THEN least(r.start_at + make_interval(mins => :instantMinutes), r.checkin_deadline)
+                                    ELSE r.start_at END AS cancelable_until, u.name AS person_name, p.is_owner
                         FROM reservation r
                         JOIN rooms rm ON rm.id = r.room_id
                         JOIN reservation_participant p ON p.reservation_id = r.id
@@ -38,6 +43,7 @@ class JdbcReservationQueryAdapter implements ReservationQueryPort {
                         ORDER BY r.id, p.is_owner DESC, p.user_id
                         """)
                 .param("uid", userId)
+                .param("instantMinutes", instantCancel.minutes())
                 .query(rs -> {
                     long id = rs.getLong("id");
                     Row row = rows.get(id);
@@ -46,7 +52,7 @@ class JdbcReservationQueryAdapter implements ReservationQueryPort {
                                 rs.getTimestamp("start_at").toInstant(), rs.getTimestamp("end_at").toInstant(),
                                 ReservationStatus.valueOf(rs.getString("status")), rs.getLong("owner_id"),
                                 rs.getString("access_code"), rs.getTimestamp("checkin_deadline").toInstant(),
-                                new ArrayList<>());
+                                rs.getTimestamp("cancelable_until").toInstant(), new ArrayList<>());
                         rows.put(id, row);
                     }
                     row.participants().add(new ParticipantRow(rs.getLong("user_id"), rs.getString("person_name"),

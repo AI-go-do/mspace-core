@@ -8,9 +8,9 @@ import org.junit.jupiter.api.Test;
 class MaskedNameTest {
 
     @Test
-    @DisplayName("세 글자 이상은 첫·끝 글자만 남긴다: 김지영 → 김*영, 남궁민수 → 남**수")
+    @DisplayName("세 글자 이상은 첫·끝 글자만 남긴다: 홍길동 → 홍*동, 남궁민수 → 남**수")
     void longNames() {
-        assertThat(MaskedName.of("김지영")).isEqualTo("김*영");
+        assertThat(MaskedName.of("홍길동")).isEqualTo("홍*동");
         assertThat(MaskedName.of("남궁민수")).isEqualTo("남**수");
     }
 
