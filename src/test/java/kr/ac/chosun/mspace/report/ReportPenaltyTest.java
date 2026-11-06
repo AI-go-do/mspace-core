@@ -122,7 +122,7 @@ class ReportPenaltyTest {
         });
         assertThat(inbox(PREVIOUS_OWNER)).singleElement().satisfies(n -> {
             assertThat(n.get("kind")).isEqualTo("WARNING");
-            assertThat(n.get("title")).isEqualTo("경고 1회가 남았어요");
+            assertThat(n.get("title")).isEqualTo("경고를 받았어요");
             assertThat((String) n.get("body")).contains("어질러짐 신고가 사실로 확인됐어요", "30일 안 경고 1회째예요");
         });
         assertThat(inbox(REPORTER)).singleElement()
@@ -188,6 +188,28 @@ class ReportPenaltyTest {
         MvcTestResult again = mvc.post().uri("/api/reports").header("X-User-Id", "1")
                 .contentType(MediaType.APPLICATION_JSON).content("{\"roomId\":1,\"category\":\"BROKEN\"}").exchange();
         assertThat(again).hasStatus(403).bodyJson().extractingPath("$.code").isEqualTo("REPORT_SUSPENDED");
+    }
+
+    @Test
+    @DisplayName("정지가 끝난 뒤에는 정지를 건 경고까지 다시 세지 않는다: 30일 안이어도 새 경고 2번으로는 다시 정지되지 않는다")
+    void warningsBeforeSuspensionAreNotRecounted() {
+        judge(report("MESSY"), "CONFIRMED");
+        judge(report("BROKEN"), "CONFIRMED");
+        judge(report("WINDOW_OPEN"), "CONFIRMED");   // 3번째 → 정지
+        // 정지가 15일 전에 걸려 어제 끝났다고 옮긴다. 경고 3번도 같은 만큼 옮겨서 아직 30일 안
+        jdbc.sql("UPDATE user_suspension SET starts_at = starts_at - interval '15 days', ends_at = now() - interval '1 day'")
+                .update();
+        jdbc.sql("UPDATE user_warning SET created_at = created_at - interval '15 days'").update();
+
+        judge(report("MESSY"), "CONFIRMED");
+        judge(report("BROKEN"), "CONFIRMED");
+        assertThat(jdbc.sql("SELECT count(*) FROM user_suspension").query(Integer.class).single())
+                .as("정지 뒤 경고는 2번뿐").isEqualTo(1);
+        assertThat(inbox(PREVIOUS_OWNER)).last()
+                .satisfies(n -> assertThat((String) n.get("body")).contains("경고 2회째"));
+
+        judge(report("WINDOW_OPEN"), "CONFIRMED");   // 정지 뒤 3번째 → 다시 정지
+        assertThat(jdbc.sql("SELECT count(*) FROM user_suspension").query(Integer.class).single()).isEqualTo(2);
     }
 
     @Test

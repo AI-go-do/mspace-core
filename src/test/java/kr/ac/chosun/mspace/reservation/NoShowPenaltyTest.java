@@ -207,6 +207,21 @@ class NoShowPenaltyTest {
     }
 
     @Test
+    @DisplayName("신고 경고로 걸린 정지(WARNINGS)는 노쇼 횟수를 처음부터로 돌리지 않는다")
+    void warningsSuspensionDoesNotResetNoShowCount() {
+        noShow("03-05");
+        jdbc.sql("""
+                INSERT INTO user_suspension (user_id, reason, starts_at, ends_at)
+                VALUES (1, 'WARNINGS', '2030-03-06T00:00:00+09:00', '2030-03-07T00:00:00+09:00')
+                """).update();
+
+        noShow("03-20");   // 03-05 노쇼와 30일 안 → 2번째로 셈
+
+        assertThat(jdbc.sql("SELECT count(*) FROM user_suspension WHERE user_id = 1 AND reason = 'NO_SHOW'")
+                .query(Integer.class).single()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("정리가 동시에 10번 돌아도 정지는 한 줄 (기간 겹침 금지 제약 + ON CONFLICT DO NOTHING)")
     void concurrentSweepsSuspendOnce() throws Exception {
         noShow("03-05");

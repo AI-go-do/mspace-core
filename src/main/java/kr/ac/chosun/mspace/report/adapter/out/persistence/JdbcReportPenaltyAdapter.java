@@ -65,11 +65,15 @@ class JdbcReportPenaltyAdapter implements ReportPenaltyPort {
         String lastSuspension = reason == WarningReason.VIOLATION
                 ? "SELECT max(starts_at) FROM user_suspension WHERE user_id = :user AND reason = 'WARNINGS'"
                 : "SELECT max(starts_at) FROM report_suspension WHERE user_id = :user";
+        // 지난 정지를 건 경고(정지 시작 시각까지 들어온 마지막 경고)와 그 앞은 이미 벌칙을 받았으니 다시 세지 않는다.
+        // 경고와 정지가 같은 시각(now)으로 들어가서 시각만으로는 경계가 겹친다 → 회원 잠금 아래 순서대로 붙는 id로 자른다
         return jdbc.sql("""
                         SELECT count(*) FROM user_warning
                         WHERE user_id = :user AND reason = :reason
                           AND created_at > CAST(:now AS timestamptz) - make_interval(days => :days)
-                          AND created_at >= coalesce((%s), '-infinity'::timestamptz)
+                          AND id > coalesce((SELECT max(w.id) FROM user_warning w
+                                             WHERE w.user_id = :user AND w.reason = :reason
+                                               AND w.created_at <= (%s)), 0)
                         """.formatted(lastSuspension))
                 .param("user", userId).param("reason", reason.name())
                 .param("now", Timestamp.from(now)).param("days", windowDays)

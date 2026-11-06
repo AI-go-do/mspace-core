@@ -99,7 +99,7 @@ public class JudgeReportService implements JudgeReportUseCase {
                 penalties.findViolator(report.id()).ifPresent(v -> {
                     Penalty p = warn(v.userId(), WarningReason.VIOLATION, report.id(), v.reservationId(), now);
                     out.add(new NewNotification(v.userId(), v.reservationId(), "WARNING",
-                            p.suspendedUntil == null ? "경고 1회가 남았어요" : "이용이 정지됐어요",
+                            p.suspendedUntil == null ? "경고를 받았어요" : "이용이 정지됐어요",
                             "이용하신 방의 " + what + "가 사실로 확인됐어요. " + p.describe("예약·참여")));
                 });
             }
@@ -122,6 +122,10 @@ public class JudgeReportService implements JudgeReportUseCase {
             if (suspendedUntil != null) {
                 return "%d일 안 경고 %d회라 %s까지 %s할 수 없어요."
                         .formatted(windowDays, warnings, UNTIL.format(suspendedUntil.atZone(SEOUL)), blocked);
+            }
+            if (warnings >= limit) { // 이미 다른 정지(노쇼 정지 등)와 기간이 겹쳐 새 정지를 걸지 않은 경우
+                return "%d일 안 경고 %d회예요. 지금 정지 기간과 겹쳐 정지가 더 걸리지는 않아요."
+                        .formatted(windowDays, warnings);
             }
             return "%d일 안 경고 %d회째예요. %d회가 되면 %d일 동안 %s할 수 없어요."
                     .formatted(windowDays, warnings, limit, suspendDays, blocked);
