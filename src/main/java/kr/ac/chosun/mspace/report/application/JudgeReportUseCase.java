@@ -20,6 +20,6 @@ public interface JudgeReportUseCase {
 
     /** @param reporterReservationId 신고 권한 근거 예약 (그 시각 신고자가 어느 방에 있었는지) */
     record ReportItem(long id, int roomId, ReportCategory category, String content, ReportVerdict verdict,
-                      long reporterReservationId, Instant createdAt, Instant judgedAt) {
+                      String source, Long reporterReservationId, Instant createdAt, Instant judgedAt) {
     }
 }
