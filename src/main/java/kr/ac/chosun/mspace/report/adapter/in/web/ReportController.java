@@ -78,11 +78,11 @@ class ReportController {
     }
 
     record ReportDetail(long id, int roomId, ReportCategory category, String content, String verdict,
-                        long reporterReservationId, ZonedDateTime createdAt, ZonedDateTime judgedAt) {
+                        String source, Long reporterReservationId, ZonedDateTime createdAt, ZonedDateTime judgedAt) {
 
         static ReportDetail from(ReportItem r) {
             return new ReportDetail(r.id(), r.roomId(), r.category(), r.content(), r.verdict().name(),
-                    r.reporterReservationId(), r.createdAt().atZone(SEOUL),
+                    r.source(), r.reporterReservationId(), r.createdAt().atZone(SEOUL),
                     r.judgedAt() == null ? null : r.judgedAt().atZone(SEOUL));
         }
     }

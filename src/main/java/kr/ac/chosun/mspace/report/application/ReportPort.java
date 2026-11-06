@@ -20,6 +20,9 @@ public interface ReportPort {
 
     Saved save(int roomId, long reporterId, long basisReservationId, ReportCategory category, String content);
 
+    /** 카메라 자동 신고 (V19 source CAMERA, 어질러짐만). @return 새 신고 id */
+    long saveCamera(int roomId, long targetReservationId, String content);
+
     record Saved(long id, Instant createdAt) {
     }
 }
