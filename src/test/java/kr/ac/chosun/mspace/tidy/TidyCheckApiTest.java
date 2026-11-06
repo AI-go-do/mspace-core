@@ -300,8 +300,8 @@ class TidyCheckApiTest {
     void currentShowsBookedInTime() {
         long booked = tx.execute(st -> insertWithPeople("""
                 INSERT INTO reservation (room_id, owner_id, start_at, end_at, headcount, access_code, status)
-                SELECT 2, 1, t, t + interval '1 hour', 3, '444444', 'BOOKED'
-                FROM (SELECT date_trunc('hour', now()) AS t) x
+                SELECT 2, 1, t, t + interval '2 hours', 3, '444444', 'BOOKED'
+                FROM (SELECT date_trunc('hour', now()) AS t) x   -- 2시간: 넣은 뒤 정시가 바뀌어도 아직 진행 중
                 RETURNING id
                 """, OWNER, 2, 3));
 
