@@ -59,7 +59,7 @@ class TidyCheckService implements TidyCheckUseCase {
     }
 
     @Override
-    public Recorded record(TidyCheck check) {
+    public Recorded submit(TidyCheck check) {
         requireRoom(check.roomId());
         Done done = tx.execute(status -> {
             String state = port.lockReservation(check.roomId(), check.reservationId())

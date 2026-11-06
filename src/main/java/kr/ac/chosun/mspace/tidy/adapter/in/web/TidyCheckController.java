@@ -51,10 +51,10 @@ class TidyCheckController {
 
     /** 예: POST /api/rooms/2/tidy-checks → 200 {"result":"STORED","reportId":12} 또는 DUPLICATE */
     @PostMapping("/api/rooms/{roomId}/tidy-checks")
-    TidyCheckResponse record(@RequestHeader(name = "Authorization", required = false) String authorization,
+    TidyCheckResponse submit(@RequestHeader(name = "Authorization", required = false) String authorization,
                              @PathVariable int roomId, @RequestBody TidyCheckRequest request) {
         devices.verify(authorization);
-        Recorded r = service.record(request.toCheck(roomId));
+        Recorded r = service.submit(request.toCheck(roomId));
         return new TidyCheckResponse(r.duplicate() ? "DUPLICATE" : "STORED", r.reportId());
     }
 

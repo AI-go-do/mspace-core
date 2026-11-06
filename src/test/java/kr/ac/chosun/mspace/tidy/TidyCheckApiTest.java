@@ -181,8 +181,7 @@ class TidyCheckApiTest {
         long reportId = ((Number) JsonPath.read(body(r), "$.reportId")).longValue();
         assertThat(reports()).singleElement().satisfies(p -> {
             assertThat(((Number) p.get("id")).longValue()).isEqualTo(reportId);
-            assertThat(p.get("source")).isEqualTo("CAMERA");
-            assertThat(p.get("category")).isEqualTo("MESSY");
+            assertThat(p).containsEntry("source", "CAMERA").containsEntry("category", "MESSY");
             assertThat(p.get("reporter_id")).isNull();
             assertThat(p.get("reporter_reservation_id")).isNull();
             assertThat(((Number) p.get("target_reservation_id")).longValue()).isEqualTo(ended);
@@ -206,7 +205,7 @@ class TidyCheckApiTest {
         assertThat(jdbc.sql("SELECT user_id, reason, reservation_id FROM user_warning").query().listOfRows())
                 .singleElement().satisfies(w -> {
                     assertThat(((Number) w.get("user_id")).longValue()).isEqualTo(OWNER);
-                    assertThat(w.get("reason")).isEqualTo("VIOLATION");
+                    assertThat(w).containsEntry("reason", "VIOLATION");
                     assertThat(((Number) w.get("reservation_id")).longValue()).isEqualTo(ended);
                 });
         assertThat(inbox("REPORT_RESULT")).isEmpty();

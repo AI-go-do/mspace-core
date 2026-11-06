@@ -36,5 +36,5 @@ public interface TidyCheckUseCase {
     record Recorded(boolean duplicate, Long reportId) {
     }
 
-    Recorded record(TidyCheck check);
+    Recorded submit(TidyCheck check);
 }
