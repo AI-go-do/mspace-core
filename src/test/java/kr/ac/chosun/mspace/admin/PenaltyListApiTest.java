@@ -99,6 +99,7 @@ class PenaltyListApiTest {
         json.extractingPath("$.warnings.length()").isEqualTo(2);
         json.extractingPath("$.warnings[0].reason").isEqualTo("FALSE_REPORT");
         json.extractingPath("$.warnings[0].member.studentId").isEqualTo("20240041");
+        json.extractingPath("$.warnings[0].reservationId").isNull();
         json.extractingPath("$.warnings[1].reason").isEqualTo("VIOLATION");
         json.extractingPath("$.warnings[1].reservationId").isEqualTo(1);
         json.extractingPath("$.warnings[1].createdAt").asString().endsWith("+09:00");
