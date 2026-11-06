@@ -48,7 +48,7 @@ class RoomAvailabilityApiTest {
     @BeforeEach
     void member() {
         jdbc.sql("INSERT INTO users (id, email, student_id, name, verified_at) OVERRIDING SYSTEM VALUE "
-                + "VALUES (1, 'a@chosun.ac.kr', '20230001', '홍길동', now())").update();
+                + "VALUES (1, 'a@chosun.ac.kr', '20230001', '이몽룡', now())").update();
     }
 
     /** 테스트용 예약 1건. 인원 확인 트리거는 커밋 때 도는데 테스트는 롤백하므로 참여자는 넣지 않는다 */
@@ -125,7 +125,7 @@ class RoomAvailabilityApiTest {
     @DisplayName("오늘 10:10에 걸친 끝나지 않은 예약이 있는 방만 occupiedNow=true. 10:00에 끝난 예약·다른 날은 false")
     void occupiedNow() {
         jdbc.sql("INSERT INTO users (id, email, student_id, name, verified_at) OVERRIDING SYSTEM VALUE "
-                + "VALUES (2, 'b@chosun.ac.kr', '20230002', '김지영', now())").update();
+                + "VALUES (2, 'b@chosun.ac.kr', '20230002', '홍길동', now())").update();
         reserve(1, 1, "2026-11-03 09:30+09", "2026-11-03 10:30+09", "BOOKED");   // 지금(10:10) 사용 중
         reserve(2, 2, "2026-11-03 09:00+09", "2026-11-03 10:00+09", "BOOKED");   // 이미 끝남
         reserve(3, "2026-11-03 09:30+09", "2026-11-03 10:30+09", "CANCELED"); // 취소는 안 침

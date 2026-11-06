@@ -4,7 +4,7 @@ package kr.ac.chosun.mspace.member.application;
 public interface MemberSearchUseCase {
 
     /**
-     * 학생 인증을 마친 회원만 찾는다. 이름은 가려서 돌려준다 (김*영).
+     * 학생 인증을 마친 회원만 찾는다. 이름은 가려서 돌려준다 (홍*동).
      *
      * @param studentId 학번 (앞뒤 공백은 지운다)
      * @param requesterId 찾는 사람(로그인한 회원). 찾은 사람이 본인인지(me) 알려 주는 데만 쓴다
