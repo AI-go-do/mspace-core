@@ -7,13 +7,14 @@ import java.util.List;
 import kr.ac.chosun.mspace.notification.application.Notification;
 import kr.ac.chosun.mspace.notification.application.NotificationInbox.NewNotification;
 import kr.ac.chosun.mspace.notification.application.NotificationQueryPort;
+import kr.ac.chosun.mspace.notification.application.NotificationReadPort;
 import kr.ac.chosun.mspace.notification.application.NotificationWritePort;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component
-class JdbcNotificationQueryAdapter implements NotificationQueryPort, NotificationWritePort {
+class JdbcNotificationQueryAdapter implements NotificationQueryPort, NotificationWritePort, NotificationReadPort {
 
     private final JdbcClient jdbc;
 
@@ -57,5 +58,31 @@ class JdbcNotificationQueryAdapter implements NotificationQueryPort, Notificatio
             saved.add(new Notification(id, n.userId(), n.reservationId(), n.kind(), n.title(), n.body(), now, null));
         }
         return saved;
+    }
+
+    @Override
+    public boolean markRead(long userId, long notificationId, Instant now) {
+        // 조건부 UPDATE 한 문장: 남의 알림이면 0줄. coalesce라 두 번 눌러도 처음 읽은 시각이 남는다
+        return jdbc.sql("""
+                UPDATE notification SET read_at = coalesce(read_at, :now)
+                WHERE id = :id AND user_id = :user
+                """)
+                .param("now", Timestamp.from(now)).param("id", notificationId).param("user", userId)
+                .update() == 1;
+    }
+
+    @Override
+    public int markAllRead(long userId, Instant now) {
+        return jdbc.sql("UPDATE notification SET read_at = :now WHERE user_id = :user AND read_at IS NULL")
+                .param("now", Timestamp.from(now)).param("user", userId)
+                .update();
+    }
+
+    @Override
+    public int countUnread(long userId) {
+        // notification_user_recent (user_id, created_at DESC)로 내 줄만 훑는다. 한 사람 알림은 많아야 수백 개
+        // count(*)는 늘 한 줄이지만, single()은 null을 돌려줄 수 있다고 표시돼 있어(SonarQube java:S2259) optional로 받는다
+        return jdbc.sql("SELECT count(*) FROM notification WHERE user_id = :user AND read_at IS NULL")
+                .param("user", userId).query(Integer.class).optional().orElse(0);
     }
 }
