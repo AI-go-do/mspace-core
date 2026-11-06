@@ -2,7 +2,7 @@
 # (main 설정을 갈아끼우지 않고 이 값만 바꾼다).
 mspace:
   reservation:
-    # 친구 확인은 FriendApiTest·FriendParticipantTest가 켜고 본다. 다른 예약 테스트는 친구 맺기 없이 참여자 규칙만 본다
+    # 친구 확인은 FriendApiTest가 켜고 본다. 다른 예약 테스트는 친구 맺기 없이 참여자 규칙만 본다
     friends-only: false
     sweep:
       # 1분 정리가 테스트 도중 끼어들어 예약 상태를 바꾸지 않게 끈다.
