@@ -46,7 +46,7 @@ class ReportEvidenceService implements ReportEvidenceUseCase {
 
         Side reporter = new Side(report.reporterReservationId(), photo(report.reporterReservationId(), CHECK_IN));
         if (!reporter.photo().exists()) {
-            notes.add("신고자가 입실 사진을 올리지 않았어요.");
+            notes.add("신고자가 입실 사진을 올리지 않았어요 (또는 30일이 지나 지워졌어요).");
         }
         return new Evidence(reportId, previous, reporter, notes.isEmpty() ? null : String.join(" ", notes));
     }
