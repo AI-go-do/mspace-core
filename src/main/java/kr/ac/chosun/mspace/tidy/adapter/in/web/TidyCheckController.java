@@ -45,7 +45,7 @@ class TidyCheckController {
     @GetMapping("/api/rooms/{roomId}/current")
     RoomNowResponse current(@RequestHeader(name = "Authorization", required = false) String authorization,
                             @PathVariable int roomId) {
-        devices.verify(authorization);
+        devices.verify(authorization, roomId, null);
         return RoomNowResponse.from(service.current(roomId));
     }
 
@@ -53,7 +53,7 @@ class TidyCheckController {
     @PostMapping("/api/rooms/{roomId}/tidy-checks")
     TidyCheckResponse submit(@RequestHeader(name = "Authorization", required = false) String authorization,
                              @PathVariable int roomId, @RequestBody TidyCheckRequest request) {
-        devices.verify(authorization);
+        devices.verify(authorization, roomId, request.deviceId());
         Recorded r = service.submit(request.toCheck(roomId));
         return new TidyCheckResponse(r.duplicate() ? "DUPLICATE" : "STORED", r.reportId());
     }
