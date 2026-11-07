@@ -122,7 +122,7 @@ curl localhost:8080/api/rules   # → {"reservation":{...},"conduct":[...],"remi
 
 ### 키패드 (장치)
 
-키패드·QR·센서·방 카메라는 사람 로그인 대신 장치 토큰으로 불러요. `.env`의 `MSPACE_DEVICES`에 `deviceId:roomId:토큰`을 쉼표로 이어 적으면 토큰이 그 방에 묶여서, 다른 방 이름으로 보내면 `403 DEVICE_ROOM_MISMATCH`, 등록과 다른 `deviceId`로 보내면 `403 DEVICE_ID_MISMATCH`예요. 예전 공용 토큰 `MSPACE_DEVICE_TOKEN`은 장치를 하나씩 옮기는 동안만 모든 방에 받고, 다 옮기면 비워요. 보드 하나가 같은 방 장치 둘을 보내면(ESP32 `sensor-2`·`keypad-2`) 두 줄에 같은 토큰을 적어도 돼요. 다른 방끼리는 안 돼요. 둘 다 비어 있으면 장치 요청은 모두 401이에요. 토큰 값은 개인 메시지로만 주고받아요.
+키패드·QR·센서·방 카메라는 사람 로그인 대신 장치 토큰으로 불러요. `.env`의 `MSPACE_DEVICES`에 `deviceId:roomId:토큰`을 쉼표로 이어 적으면 토큰이 그 방에 묶여서, 다른 방 이름으로 보내면 `403 DEVICE_ROOM_MISMATCH`, 등록과 다른 `deviceId`로 보내면 `403 DEVICE_ID_MISMATCH`예요. 예전 공용 토큰 `MSPACE_DEVICE_TOKEN`은 장치를 하나씩 옮기는 동안만 모든 방에 받고, 다 옮기면 비워요. 새 장치 토큰은 공용 토큰과 다른 값이어야 해요(같으면 서버가 뜨지 않아요). 보드 하나가 같은 방 장치 둘을 보내면(ESP32 `sensor-2`·`keypad-2`) 두 줄에 같은 토큰을 적어도 돼요. 다른 방끼리는 안 돼요. 둘 다 비어 있으면 장치 요청은 모두 401이에요. 토큰 값은 개인 메시지로만 주고받아요.
 
 ```bash
 curl -X POST localhost:8080/api/access/verify -H 'Authorization: Bearer <장치 토큰>' -H 'Content-Type: application/json' \

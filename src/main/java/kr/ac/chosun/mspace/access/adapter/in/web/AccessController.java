@@ -37,7 +37,8 @@ class AccessController {
                           @RequestBody VerifyRequest request) {
         devices.verify(authorization, request.roomId(), request.deviceId());
         if (request.eventId() == null || request.eventId().isBlank() || request.eventId().length() > 64
-                || request.roomId() == null || (request.deviceId() != null && request.deviceId().length() > 50)) {
+                || request.roomId() == null || request.deviceId() == null || request.deviceId().isBlank()
+                || request.deviceId().length() > 50) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
         Verdict v = service.verify(request.eventId(), request.roomId(), request.deviceId(), request.code());
