@@ -36,4 +36,7 @@ public interface ReportPenaltyPort {
 
     /** 신고 정지 중이면 끝나는 시각 */
     Optional<Instant> reportSuspendedUntil(long userId, Instant now);
+
+    /** 이용 정지 중이면 끝나는 시각 (경고 3번 정지든 노쇼 정지든) */
+    Optional<Instant> useSuspendedUntil(long userId, Instant now);
 }

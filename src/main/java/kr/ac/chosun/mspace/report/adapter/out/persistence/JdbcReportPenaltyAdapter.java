@@ -102,4 +102,14 @@ class JdbcReportPenaltyAdapter implements ReportPenaltyPort {
                 .param("user", userId).param("now", Timestamp.from(now))
                 .query(Timestamp.class).optional().map(Timestamp::toInstant);
     }
+
+    @Override
+    public Optional<Instant> useSuspendedUntil(long userId, Instant now) {
+        return jdbc.sql("""
+                        SELECT max(ends_at) FROM user_suspension
+                        WHERE user_id = :user AND starts_at <= :now AND ends_at > :now
+                        """)
+                .param("user", userId).param("now", Timestamp.from(now))
+                .query((rs, n) -> rs.getTimestamp(1)).optional().map(Timestamp::toInstant);
+    }
 }
