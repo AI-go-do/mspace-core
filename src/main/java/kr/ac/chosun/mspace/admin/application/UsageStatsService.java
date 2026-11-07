@@ -70,7 +70,7 @@ class UsageStatsService implements UsageStatsUseCase {
         Map<Integer, Long> users = port.uniqueUsers(a, b);
         // 아직 오지 않은 기간이면 센서 값은 없다
         Map<Integer, SensorRow> sensors = cap.isAfter(a) ? port.sensors(a, cap, threshold) : Map.of();
-        Map<Integer, AlertRow> alerts = cap.isAfter(a) ? port.alerts(a, b, cap, threshold, within) : Map.of();
+        Map<Integer, AlertRow> alerts = cap.isAfter(a) ? port.alerts(a, b, now, threshold, within) : Map.of();
 
         // 이용률 분모: 지난 시간만 (오늘·미래가 섞이면 아직 안 온 시간까지 나누지 않게)
         long minutesSoFar = Math.max(0, ChronoUnit.MINUTES.between(a, cap));

@@ -237,7 +237,7 @@ class UsageStatsApiTest {
     }
 
     @Test
-    @DisplayName("알림 효과: 노쇼 직전 알림 2건 중 1건 입실, 환기 알림 2번 중 15분 안에 기준 이하로 내려간 것 1번")
+    @DisplayName("알림 효과: 노쇼 직전 알림 2건 중 1건 입실, 환기 알림 3번 중 15분 안에 기준 이하로 내려간 것 2번")
     void alertEffect() {
         noShowSoon(r1, 1);                                  // 알림 뒤 입실
         noShowSoon(reservationId(1, at(13, 0)), 1);         // 알림 받고도 노쇼
@@ -245,21 +245,23 @@ class UsageStatsApiTest {
         long r2 = reservationId(2, at(10, 0));
         ventilate(r2, 4, at(10, 20));                       // 2번 방 알림 → 15분 안에 값 없음
         co2(2, at(10, 50), 800);                            // 30분 뒤라 효과로 치지 않는다
+        ventilate(r1, 1, at(23, 50));                       // 기간 끝 10분 전 알림도 지금은 15분이 지났으니 센다
+        co2(1, at(23, 55), 950);
 
         var json = assertThat(day()).bodyJson();
         json.extractingPath("$.rooms[0].alerts.noShowWarned").isEqualTo(2);
         json.extractingPath("$.rooms[0].alerts.noShowCheckedIn").isEqualTo(1);
         json.extractingPath("$.rooms[0].alerts.noShowCheckedInRate").isEqualTo(0.5);
-        json.extractingPath("$.rooms[0].alerts.ventilationChecked").isEqualTo(1);
-        json.extractingPath("$.rooms[0].alerts.ventilationResolved").isEqualTo(1);
+        json.extractingPath("$.rooms[0].alerts.ventilationChecked").isEqualTo(2);
+        json.extractingPath("$.rooms[0].alerts.ventilationResolved").isEqualTo(2);
         json.extractingPath("$.rooms[0].alerts.resolvedWithinMinutes").isEqualTo(15);
         json.extractingPath("$.rooms[1].alerts.ventilationChecked").isEqualTo(1);
         json.extractingPath("$.rooms[1].alerts.ventilationResolved").isEqualTo(0);
         json.extractingPath("$.rooms[1].alerts.ventilationResolvedRate").isEqualTo(0.0);
         json.extractingPath("$.rooms[2].alerts.noShowCheckedInRate").isNull();
         json.extractingPath("$.total.alerts.noShowWarned").isEqualTo(2);
-        json.extractingPath("$.total.alerts.ventilationChecked").isEqualTo(2);
-        json.extractingPath("$.total.alerts.ventilationResolvedRate").isEqualTo(0.5);
+        json.extractingPath("$.total.alerts.ventilationChecked").isEqualTo(3);
+        json.extractingPath("$.total.alerts.ventilationResolvedRate").isEqualTo(0.667);
     }
 
     @Test

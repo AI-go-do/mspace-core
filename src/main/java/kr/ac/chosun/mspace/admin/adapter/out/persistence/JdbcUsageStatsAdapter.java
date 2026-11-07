@@ -170,8 +170,9 @@ class JdbcUsageStatsAdapter implements UsageStatsPort {
     }
 
     @Override
-    public Map<Integer, AlertRow> alerts(Instant from, Instant to, Instant cap, int thresholdPpm,
+    public Map<Integer, AlertRow> alerts(Instant from, Instant to, Instant now, int thresholdPpm,
                                          int resolvedWithinMinutes) {
+        // 결과가 났는지는 기간 끝(to)이 아니라 지금(now)으로 본다. 지난 기간 23:50 알림도 지금은 결과가 나 있으니 센다.
         // 노쇼 직전 알림: 시작 시각이 기간 안인 예약(rooms()와 같은 기준). 아직 입실 마감 전이라 결과가 안 난 것은 뺀다.
         // 환기 알림: 같은 방·같은 시각 알림은 사람 수만큼 여러 줄이라 (방, 시각)으로 한 번만 센다(sensors()의 vent와 같음).
         //   확인 시간이 아직 안 지난 알림은 결과가 안 났으니 뺀다. 내려감 = 확인 시간 안에 기준 이하(<= threshold) 값이 하나라도 있음
@@ -183,13 +184,13 @@ class JdbcUsageStatsAdapter implements UsageStatsPort {
                             WHERE r.start_at >= :from AND r.start_at < :to
                               AND EXISTS (SELECT 1 FROM notification_log l
                                           WHERE l.reservation_id = r.id AND l.kind = 'NO_SHOW_SOON')
-                              AND (r.checked_in_at IS NOT NULL OR r.checkin_deadline <= :cap)
+                              AND (r.checked_in_at IS NOT NULL OR r.checkin_deadline <= :now)
                             GROUP BY r.room_id
                         ), vent AS (
                             SELECT DISTINCT r.room_id, n.created_at
                             FROM notification n JOIN reservation r ON r.id = n.reservation_id
                             WHERE n.kind = 'VENTILATE' AND n.created_at >= :from AND n.created_at < :to
-                              AND n.created_at <= CAST(:cap AS timestamptz) - make_interval(mins => :within)
+                              AND n.created_at <= CAST(:now AS timestamptz) - make_interval(mins => :within)
                         ), resolved AS (
                             SELECT v.room_id, count(*) AS checked,
                                    count(*) FILTER (WHERE EXISTS (
@@ -208,7 +209,7 @@ class JdbcUsageStatsAdapter implements UsageStatsPort {
                         """)
                 .param("from", Timestamp.from(from))
                 .param("to", Timestamp.from(to))
-                .param("cap", Timestamp.from(cap))
+                .param("now", Timestamp.from(now))
                 .param("threshold", thresholdPpm)
                 .param("within", resolvedWithinMinutes)
                 .query(rs -> {
