@@ -17,7 +17,21 @@ public interface UsageStatsUseCase {
 
     /** roomId·roomName은 전체(total)일 때 null */
     record Usage(Integer roomId, String roomName, Reservations reservations, Rates rates, Minutes minutes,
-                 long shortUses, long uniqueUsers, Sensor sensor) {
+                 long shortUses, long uniqueUsers, Sensor sensor, Alerts alerts) {
+    }
+
+    /**
+     * 알림 효과. 비율은 0–1 소수 셋째 자리, 분모가 0이면 null.
+     *
+     * @param noShowWarned          노쇼 직전 알림을 받은 예약 (입실했거나 입실 마감이 지난 것만)
+     * @param noShowCheckedIn       그중 입실한 예약
+     * @param noShowCheckedInRate   noShowCheckedIn / noShowWarned
+     * @param ventilationChecked    환기 알림 중 확인 시간(resolvedWithinMinutes)이 다 지난 것
+     * @param ventilationResolved   그중 확인 시간 안에 CO2가 기준(thresholdPpm) 이하로 내려간 것
+     * @param ventilationResolvedRate ventilationResolved / ventilationChecked
+     */
+    record Alerts(long noShowWarned, long noShowCheckedIn, Double noShowCheckedInRate, long ventilationChecked,
+                  long ventilationResolved, Double ventilationResolvedRate, int resolvedWithinMinutes) {
     }
 
     /**
