@@ -21,7 +21,7 @@ import org.springframework.transaction.support.TransactionOperations;
  * <ol>
  *   <li>예약 줄을 잠근다. 같은 예약 결과가 동시에 와도 한 줄로 선다</li>
  *   <li>같은 eventId면 처음 결과를 그대로 (DUPLICATE). 다른 eventId로 이미 있으면 409</li>
- *   <li>입실했다 나간 예약(CHECKED_OUT·AUTO_CHECKED_OUT·AWAY_RELEASED)만 받는다</li>
+ *   <li>입실했다 나간 예약(CHECKED_OUT·AUTO_CHECKED_OUT·AWAY_RELEASED) 중 이 방의 마지막 것만 받는다</li>
  *   <li>치울 것이 있으면 어질러짐 신고를 자동으로 만든다. 판정은 관리자 (11/6 지영 "자동신고+관리자 판정")</li>
  *   <li>귀중품을 두고 갔으면 대표자·참여자 알림 LEFT_ITEM. 벌칙 없음</li>
  * </ol>
@@ -59,7 +59,7 @@ class TidyCheckService implements TidyCheckUseCase {
     }
 
     @Override
-    public Recorded record(TidyCheck check) {
+    public Recorded submit(TidyCheck check) {
         requireRoom(check.roomId());
         Done done = tx.execute(status -> {
             String state = port.lockReservation(check.roomId(), check.reservationId())
@@ -74,6 +74,12 @@ class TidyCheckService implements TidyCheckUseCase {
             }
             if (!ENDED.contains(state)) {
                 throw new BusinessException(ErrorCode.RESERVATION_NOT_ENDED);
+            }
+            // 장치 토큰은 공용이라, 지난 예약에 신고를 만들지 못하게 이 방의 마지막 퇴실 예약만 받는다
+            boolean latest = port.lastEnded(check.roomId())
+                    .map(e -> e.reservationId() == check.reservationId()).orElse(false);
+            if (!latest) {
+                throw new BusinessException(ErrorCode.TIDY_CHECK_NOT_LATEST);
             }
             if (port.existsForReservation(check.reservationId())) {
                 throw new BusinessException(ErrorCode.TIDY_CHECK_EXISTS);

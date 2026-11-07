@@ -48,7 +48,7 @@ class MyReservationsAndCancelApiTest {
     @BeforeEach
     void members() {
         jdbc.sql("TRUNCATE reservation, reservation_participant, users RESTART IDENTITY CASCADE").update();
-        String[] names = {"김지영", "이영준", "박수연", "최재웅", "남궁민수", "정하", "홍길동"};
+        String[] names = {"홍길동", "이영준", "박수연", "최재웅", "남궁민수", "정하", "홍길동"};
         for (int i = 0; i < names.length; i++) {
             jdbc.sql("INSERT INTO users (email, student_id, name, verified_at) VALUES (:e, :s, :n, now())")
                     .param("e", "u" + (i + 1) + "@chosun.ac.kr").param("s", "2023000" + (i + 1))
@@ -169,7 +169,7 @@ class MyReservationsAndCancelApiTest {
     }
 
     @Test
-    @DisplayName("수용 기준: 키패드 번호·입실 QR 글자는 대표자에게만, 참여자에게는 null. 참여자 이름은 가린다(김*영)")
+    @DisplayName("수용 기준: 키패드 번호·입실 QR 글자는 대표자에게만, 참여자에게는 null. 참여자 이름은 가린다(홍*동)")
     void accessCodeOnlyForOwner() {
         reservation(1, 24, "BOOKED", 1, 2, 5);
 
@@ -179,7 +179,7 @@ class MyReservationsAndCancelApiTest {
             json.assertThat().extractingPath("$[0].qrText").isEqualTo("MSPACE:1:123456");
             json.assertThat().extractingPath("$[0].room.name").isEqualTo("1번 방");
             json.assertThat().extractingPath("$[0].participants[*].name").asArray()
-                    .containsExactly("김*영", "이*준", "남**수");
+                    .containsExactly("홍*동", "이*준", "남**수");
             json.assertThat().extractingPath("$[0].participants[0].owner").isEqualTo(true);
         });
         assertThat(mine(2)).hasStatusOk().bodyJson().satisfies(json -> {

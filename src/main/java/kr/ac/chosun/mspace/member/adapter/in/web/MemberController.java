@@ -21,7 +21,7 @@ class MemberController {
 
     /**
      * 참여자로 넣을 회원을 학번으로 찾는다 (FR-RSV-004). 로그인한 회원만 쓸 수 있다.
-     * 예: GET /api/members?studentId=20230001 → {"studentId":"20230001","name":"김*영","me":false}
+     * 예: GET /api/members?studentId=20230001 → {"studentId":"20230001","name":"홍*동","me":false}
      *
      * @param user      로그인한 회원 (없으면 401). 찾은 사람이 본인인지(me)만 판단한다
      * @param studentId 찾을 학번

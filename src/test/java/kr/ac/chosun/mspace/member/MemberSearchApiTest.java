@@ -29,11 +29,11 @@ class MemberSearchApiTest {
     @BeforeEach
     void members() {
         jdbc.sql("TRUNCATE reservation, reservation_participant, users RESTART IDENTITY CASCADE").update();
-        // 1 김지영(인증), 2 홍길동(인증), 3 박수연(인증 전)
+        // 1 홍길동(인증), 2 이몽룡(인증), 3 박수연(인증 전)
         jdbc.sql("""
                 INSERT INTO users (email, student_id, name, verified_at) VALUES
-                  ('u1@chosun.ac.kr', '20230001', '김지영', now()),
-                  ('u2@chosun.ac.kr', '20230002', '홍길동', now()),
+                  ('u1@chosun.ac.kr', '20230001', '홍길동', now()),
+                  ('u2@chosun.ac.kr', '20230002', '이몽룡', now()),
                   ('u3@chosun.ac.kr', '20230003', '박수연', NULL)
                 """).update();
     }
@@ -43,16 +43,16 @@ class MemberSearchApiTest {
     }
 
     @Test
-    @DisplayName("수용 기준: 인증 회원 학번 → 200, 이름은 가린다 (홍길동 → 홍*동), 이메일·회원 id는 안 나간다")
+    @DisplayName("수용 기준: 인증 회원 학번 → 200, 이름은 가린다 (이몽룡 → 이*룡), 이메일·회원 id는 안 나간다")
     void findsVerifiedMember() {
-        // given: setUp의 홍길동(인증)
+        // given: setUp의 이몽룡(인증)
         // when
         MvcTestResult result = search("20230002");
 
         // then
         assertThat(result).hasStatusOk().bodyJson().satisfies(json -> {
             json.assertThat().extractingPath("$.studentId").isEqualTo("20230002");
-            json.assertThat().extractingPath("$.name").isEqualTo("홍*동");
+            json.assertThat().extractingPath("$.name").isEqualTo("이*룡");
             json.assertThat().extractingPath("$.me").isEqualTo(false);
             json.assertThat().doesNotHavePath("$.email");
             json.assertThat().doesNotHavePath("$.id");
@@ -81,13 +81,13 @@ class MemberSearchApiTest {
     @DisplayName("앞뒤 공백은 지우고 찾는다")
     void stripsSpaces() {
         assertThat(search(" 20230001 ")).hasStatusOk().bodyJson()
-                .extractingPath("$.name").isEqualTo("김*영");
+                .extractingPath("$.name").isEqualTo("홍*동");
     }
 
     @Test
     @DisplayName("내 학번을 찾으면 me=true (화면이 \"추가\" 대신 \"추가됨\"을 보여 줌), 남은 false. 계정마다 달라 캐시 금지")
     void marksMe() {
-        // given: 로그인한 회원은 1번 김지영(20230001)
+        // given: 로그인한 회원은 1번 홍길동(20230001)
         // when
         MvcTestResult mine = search("20230001");
         MvcTestResult other = search("20230002");

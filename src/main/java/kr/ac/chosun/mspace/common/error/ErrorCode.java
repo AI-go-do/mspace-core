@@ -77,6 +77,7 @@ public enum ErrorCode {
     REPORT_ALREADY_JUDGED(HttpStatus.CONFLICT, "이미 판정한 신고입니다"),
     RESERVATION_NOT_ENDED(HttpStatus.CONFLICT, "아직 끝나지 않았거나 입실하지 않은 예약입니다"),
     TIDY_CHECK_EXISTS(HttpStatus.CONFLICT, "이 예약의 정리 확인 결과가 이미 있습니다"),
+    TIDY_CHECK_NOT_LATEST(HttpStatus.CONFLICT, "이 방에서 방금 끝난 예약이 아닙니다"),
     // 허위 신고 경고가 쌓이면 (FR-RPT-103 벌칙, 11/6)
     REPORT_SUSPENDED(HttpStatus.FORBIDDEN, "허위 신고 경고가 쌓여 신고가 정지되었습니다"),
 
@@ -85,6 +86,8 @@ public enum ErrorCode {
 
     // 키패드 (FR-ACC-001)
     DEVICE_UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "장치 토큰이 없거나 맞지 않습니다"),
+    DEVICE_ROOM_MISMATCH(HttpStatus.FORBIDDEN, "이 장치 토큰은 다른 방에 등록되어 있습니다"),
+    DEVICE_ID_MISMATCH(HttpStatus.FORBIDDEN, "이 장치 토큰은 다른 장치 이름(deviceId)으로 등록되어 있습니다"),
     // 내부용: 새로 뽑은 번호가 같은 방 다른 예약 번호와 겹침 → 서비스가 새 번호로 다시 한다 (응답으로 나가지 않음)
     ACCESS_CODE_TAKEN(HttpStatus.CONFLICT, "키패드 번호가 겹쳤습니다"),
 

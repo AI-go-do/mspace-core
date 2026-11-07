@@ -7,6 +7,8 @@
 # 토큰 값은 출력하지 않는다
 set -euo pipefail
 
+# 주소 끝의 / 는 뺀다. core 시크릿은 끝에 / 가 있어 //api/... 가 되면 JSON이 아닌 응답이 온다 (11-06 #82)
+SONAR_HOST_URL=${SONAR_HOST_URL%/}
 api() { curl -sf -m 30 -u "$SONAR_TOKEN:" "$SONAR_HOST_URL/api/$1"; }
 
 # 1) 스캐너가 남긴 작업 id로 서버 처리가 끝나기를 기다린다 (최대 5분)
@@ -19,7 +21,13 @@ status=PENDING
 deadline=$((SECONDS + 300))
 while [ "$SECONDS" -lt "$deadline" ]; do
   # 한 번 못 읽어도(네트워크 순간 끊김) 멈추지 않고 다시 묻는다
-  status=$(api "ce/task?id=$task_id" | jq -r '.task.status' || echo PENDING)
+  # 응답이 JSON이 아니면 앞부분을 남겨 원인을 보이게 한다 (5분 동안 조용히 기다리지 않게)
+  if ! body=$(api "ce/task?id=$task_id"); then
+    echo "참고: ce/task를 읽지 못했어요 (다시 물어요)" >&2; status=PENDING
+  else
+    status=$(echo "$body" | jq -r '.task.status // empty' 2>/dev/null) || status=
+    [ -n "$status" ] || { echo "참고: ce/task 응답에 상태가 없어요: $(echo "$body" | head -c 120)" >&2; status=PENDING; }
+  fi
   case "$status" in
     SUCCESS) break ;;
     FAILED|CANCELED) echo "Sonar 서버가 분석을 처리하지 못했어요: $status"; exit 1 ;;
@@ -44,13 +52,20 @@ issues=$(cond new_violations)
 count_type() {
   local out code
   out=$(curl -sS -m 30 -u "$SONAR_TOKEN:" -w '\n%{http_code}' \
-        "$SONAR_HOST_URL/api/issues/search?componentKeys=$SONAR_PROJECT&inNewCodePeriod=true&resolved=false&types=$1&ps=1" 2>&1) || true
+        "$SONAR_HOST_URL/api/issues/search?componentKeys=$SONAR_PROJECT&inNewCodePeriod=true&resolved=false&types=$1&ps=1") \
+    || { echo "참고: 유형 $1 이슈 수 요청이 끝까지 오지 않았어요 (위 curl 오류 참고)" >&2; return 0; }
   code=$(echo "$out" | tail -n1)
   if [ "$code" != "200" ]; then
     echo "참고: 유형 $1 이슈 수를 읽지 못했어요 (상태 $code: $(echo "$out" | sed '$d' | head -c 200))" >&2
     return 0
   fi
   echo "$out" | sed '$d' | jq -r '.total // empty'
+}
+# 실패할 때 어느 파일·줄인지 로그에 바로 보이게 최대 10건을 적는다 (학교 Sonar 화면은 밖에서 안 열릴 수 있음)
+list_type() {
+  api "issues/search?componentKeys=$SONAR_PROJECT&inNewCodePeriod=true&resolved=false&types=$1&ps=10" \
+    | jq -r '.issues[]? | "  - \(.component | sub("^[^:]*:"; "")):\(.line // "?") [\(.rule)] \(.message)"' 2>/dev/null \
+    || echo "  (목록을 읽지 못했어요)"
 }
 bugs=$(count_type BUG)
 vulns=$(count_type VULNERABILITY)
@@ -75,12 +90,12 @@ fi
 if [ -z "$bugs" ]; then
   echo "실패: 새 버그 수를 읽지 못했어요"; fail=1
 elif [ "$bugs" != "0" ]; then
-  echo "실패: 새 코드에 버그가 ${bugs}건 있어요. 대시보드 Issues에서 유형 Bug를 보세요"; fail=1
+  echo "실패: 새 코드에 버그가 ${bugs}건 있어요. 대시보드 Issues에서 유형 Bug를 보세요"; list_type BUG; fail=1
 fi
 if [ -z "$vulns" ]; then
   echo "실패: 새 취약점 수를 읽지 못했어요"; fail=1
 elif [ "$vulns" != "0" ]; then
-  echo "실패: 새 코드에 취약점이 ${vulns}건 있어요. 대시보드 Issues에서 유형 Vulnerability를 보세요"; fail=1
+  echo "실패: 새 코드에 취약점이 ${vulns}건 있어요. 대시보드 Issues에서 유형 Vulnerability를 보세요"; list_type VULNERABILITY; fail=1
 fi
 [ "$fail" = 0 ] && echo "팀 규칙 품질 게이트 통과"
 exit "$fail"
