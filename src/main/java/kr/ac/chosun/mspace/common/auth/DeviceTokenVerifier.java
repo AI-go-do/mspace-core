@@ -3,8 +3,10 @@ package kr.ac.chosun.mspace.common.auth;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import kr.ac.chosun.mspace.common.config.AccessPolicy;
 import kr.ac.chosun.mspace.common.error.BusinessException;
@@ -36,7 +38,8 @@ public class DeviceTokenVerifier {
 
     /**
      * 토큰이 맞고 그 방에 쓸 수 있는지 확인한다. 토큰은 시간 차 없이 비교한다(MessageDigest.isEqual).
-     * 장치별 토큰이면 요청의 deviceId도 등록된 이름과 같아야 한다(기록이 다른 장치 이름으로 남지 않게).
+     * 장치별 토큰이면 요청의 deviceId도 그 토큰으로 등록된 이름 중 하나여야 한다(기록이 다른 장치 이름으로 남지 않게).
+     * 보드 하나가 센서·키패드를 같이 보내는 경우(ESP32 sensor-2·keypad-2)를 위해 같은 방 장치끼리는 토큰을 같이 쓸 수 있다.
      * roomId·deviceId가 없으면(형식 오류이거나 GET) 그 값은 건너뛰고, 400은 부르는 쪽이 낸다.
      */
     public void verify(String authorization, Integer roomId, String deviceId) {
@@ -44,17 +47,19 @@ public class DeviceTokenVerifier {
             throw new BusinessException(ErrorCode.DEVICE_UNAUTHORIZED);
         }
         byte[] given = authorization.substring(BEARER.length()).getBytes(StandardCharsets.UTF_8);
-        Registered found = null;
+        Integer boundRoom = null;
+        boolean deviceMatched = false;
         for (Registered r : registered) {
             if (MessageDigest.isEqual(given, r.token().getBytes(StandardCharsets.UTF_8))) {
-                found = r;
+                boundRoom = r.roomId();
+                deviceMatched |= r.deviceId().equals(deviceId);
             }
         }
-        if (found != null) {
-            if (roomId != null && found.roomId() != roomId) {
+        if (boundRoom != null) {
+            if (roomId != null && !boundRoom.equals(roomId)) {
                 throw new BusinessException(ErrorCode.DEVICE_ROOM_MISMATCH);
             }
-            if (deviceId != null && !found.deviceId().equals(deviceId)) {
+            if (deviceId != null && !deviceMatched) {
                 throw new BusinessException(ErrorCode.DEVICE_ID_MISMATCH);
             }
             return;
@@ -72,7 +77,7 @@ public class DeviceTokenVerifier {
             return out;
         }
         Set<String> ids = new HashSet<>();
-        Set<String> tokens = new HashSet<>();
+        Map<String, Integer> roomOfToken = new HashMap<>();
         for (String entry : devices.split(",", -1)) {
             String[] parts = entry.trim().split(":", -1);
             if (parts.length != 3 || parts[0].isBlank() || parts[2].isBlank()) {
@@ -86,8 +91,12 @@ public class DeviceTokenVerifier {
             }
             String deviceId = parts[0].trim();
             String token = parts[2].trim();
-            if (!ids.add(deviceId) || !tokens.add(token)) {
-                throw new IllegalStateException("MSPACE_DEVICES에 같은 장치나 같은 토큰이 두 번 있습니다: " + deviceId);
+            if (!ids.add(deviceId)) {
+                throw new IllegalStateException("MSPACE_DEVICES에 같은 장치가 두 번 있습니다: " + deviceId);
+            }
+            Integer before = roomOfToken.putIfAbsent(token, roomId);
+            if (before != null && before != roomId) {
+                throw new IllegalStateException("MSPACE_DEVICES에서 한 토큰이 다른 방 장치에 같이 쓰였습니다: " + deviceId);
             }
             out.add(new Registered(deviceId, roomId, token));
         }

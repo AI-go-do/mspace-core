@@ -65,6 +65,17 @@ class DeviceTokenVerifierTest {
     }
 
     @Test
+    @DisplayName("보드 하나가 같은 방 장치 둘(sensor-2·keypad-2)을 보내면 토큰을 같이 써도 된다")
+    void sameRoomSharedBoardToken() {
+        DeviceTokenVerifier v = verifier("", "sensor-2:2:board,keypad-2:2:board,qr-1:1:other");
+
+        assertThatCode(() -> v.verify("Bearer board", 2, "sensor-2")).doesNotThrowAnyException();
+        assertThatCode(() -> v.verify("Bearer board", 2, "keypad-2")).doesNotThrowAnyException();
+        assertThat(codeOf(() -> v.verify("Bearer board", 2, "qr-1"))).isEqualTo(ErrorCode.DEVICE_ID_MISMATCH);
+        assertThat(codeOf(() -> v.verify("Bearer board", 1, "keypad-2"))).isEqualTo(ErrorCode.DEVICE_ROOM_MISMATCH);
+    }
+
+    @Test
     @DisplayName("roomId가 없으면 토큰만 확인한다 (400은 부르는 쪽에서)")
     void noRoomOnlyToken() {
         DeviceTokenVerifier v = verifier("", "keypad-1:1:aaa");
@@ -74,13 +85,13 @@ class DeviceTokenVerifierTest {
     }
 
     @Test
-    @DisplayName("MSPACE_DEVICES 형식이 틀리거나 장치·토큰이 겹치면 서버를 띄우지 않는다")
+    @DisplayName("MSPACE_DEVICES 형식이 틀리거나, 장치가 겹치거나, 한 토큰이 다른 방에 쓰이면 서버를 띄우지 않는다")
     void badConfigFailsFast() {
         assertThatThrownBy(() -> verifier("", "keypad-1:1")).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> verifier("", "keypad-1:x:aaa")).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> verifier("", "keypad-1:1:")).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> verifier("", "keypad-1:1:aaa,keypad-1:2:bbb")).isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(() -> verifier("", "keypad-1:1:aaa,qr-1:1:aaa")).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> verifier("", "keypad-1:1:aaa,qr-2:2:aaa")).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> verifier("", "keypad-1:1:aaa,")).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> verifier("", ",")).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> verifier("aaa", "keypad-1:1:aaa")).isInstanceOf(IllegalStateException.class);
