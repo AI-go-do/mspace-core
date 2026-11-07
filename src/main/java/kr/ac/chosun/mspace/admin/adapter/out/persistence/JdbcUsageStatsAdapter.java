@@ -188,7 +188,7 @@ class JdbcUsageStatsAdapter implements UsageStatsPort {
                         ), vent AS (
                             SELECT DISTINCT r.room_id, n.created_at
                             FROM notification n JOIN reservation r ON r.id = n.reservation_id
-                            WHERE n.kind = 'VENTILATE' AND n.created_at >= :from
+                            WHERE n.kind = 'VENTILATE' AND n.created_at >= :from AND n.created_at < :to
                               AND n.created_at <= CAST(:cap AS timestamptz) - make_interval(mins => :within)
                         ), resolved AS (
                             SELECT v.room_id, count(*) AS checked,
