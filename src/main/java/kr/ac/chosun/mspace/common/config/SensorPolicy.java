@@ -31,8 +31,9 @@ public record SensorPolicy(int offlineAfterSeconds, int futureToleranceMinutes, 
      * @param maxGapSeconds     이보다 길면 끊긴 것으로 보고 처음부터 (90)
      * @param minSpanSeconds    첫 값과 마지막 값이 이만큼은 떨어져야 함 (100)
      * @param alertEveryMinutes 같은 방 알림 간격 (30)
+     * @param resolvedWithinMinutes 관리자 통계: 환기 알림 뒤 이만큼 안에 기준 이하로 내려가면 "알림 효과 있음" (15)
      */
     public record Co2(int thresholdPpm, int consecutive, int minGapSeconds, int maxGapSeconds, int minSpanSeconds,
-                      int alertEveryMinutes) {
+                      int alertEveryMinutes, int resolvedWithinMinutes) {
     }
 }

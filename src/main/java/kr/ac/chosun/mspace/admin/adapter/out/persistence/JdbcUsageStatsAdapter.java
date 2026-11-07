@@ -168,4 +168,53 @@ class JdbcUsageStatsAdapter implements UsageStatsPort {
                 });
         return out;
     }
+
+    @Override
+    public Map<Integer, AlertRow> alerts(Instant from, Instant to, Instant cap, int thresholdPpm,
+                                         int resolvedWithinMinutes) {
+        // 노쇼 직전 알림: 시작 시각이 기간 안인 예약(rooms()와 같은 기준). 아직 입실 마감 전이라 결과가 안 난 것은 뺀다.
+        // 환기 알림: 같은 방·같은 시각 알림은 사람 수만큼 여러 줄이라 (방, 시각)으로 한 번만 센다(sensors()의 vent와 같음).
+        //   확인 시간이 아직 안 지난 알림은 결과가 안 났으니 뺀다. 내려감 = 확인 시간 안에 기준 이하(<= threshold) 값이 하나라도 있음
+        Map<Integer, AlertRow> out = new HashMap<>();
+        jdbc.sql("""
+                        WITH warned AS (
+                            SELECT r.room_id, count(*) AS n, count(*) FILTER (WHERE r.checked_in_at IS NOT NULL) AS ok
+                            FROM reservation r
+                            WHERE r.start_at >= :from AND r.start_at < :to
+                              AND EXISTS (SELECT 1 FROM notification_log l
+                                          WHERE l.reservation_id = r.id AND l.kind = 'NO_SHOW_SOON')
+                              AND (r.checked_in_at IS NOT NULL OR r.checkin_deadline <= :cap)
+                            GROUP BY r.room_id
+                        ), vent AS (
+                            SELECT DISTINCT r.room_id, n.created_at
+                            FROM notification n JOIN reservation r ON r.id = n.reservation_id
+                            WHERE n.kind = 'VENTILATE' AND n.created_at >= :from
+                              AND n.created_at <= CAST(:cap AS timestamptz) - make_interval(mins => :within)
+                        ), resolved AS (
+                            SELECT v.room_id, count(*) AS checked,
+                                   count(*) FILTER (WHERE EXISTS (
+                                       SELECT 1 FROM sensor_event e
+                                       WHERE e.room_id = v.room_id AND e.kind = 'CO2' AND e.ppm <= :threshold
+                                         AND e.observed_at > v.created_at
+                                         AND e.observed_at <= v.created_at + make_interval(mins => :within))) AS ok
+                            FROM vent v
+                            GROUP BY v.room_id
+                        )
+                        SELECT rm.id, coalesce(w.n, 0) AS warned, coalesce(w.ok, 0) AS checked_in,
+                               coalesce(x.checked, 0) AS vent_checked, coalesce(x.ok, 0) AS vent_ok
+                        FROM rooms rm
+                        LEFT JOIN warned w ON w.room_id = rm.id
+                        LEFT JOIN resolved x ON x.room_id = rm.id
+                        """)
+                .param("from", Timestamp.from(from))
+                .param("to", Timestamp.from(to))
+                .param("cap", Timestamp.from(cap))
+                .param("threshold", thresholdPpm)
+                .param("within", resolvedWithinMinutes)
+                .query(rs -> {
+                    out.put(rs.getInt("id"), new AlertRow(rs.getLong("warned"), rs.getLong("checked_in"),
+                            rs.getLong("vent_checked"), rs.getLong("vent_ok")));
+                });
+        return out;
+    }
 }

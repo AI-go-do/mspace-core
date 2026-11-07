@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import kr.ac.chosun.mspace.admin.application.UsageStatsPort.AlertRow;
 import kr.ac.chosun.mspace.admin.application.UsageStatsPort.HourRow;
 import kr.ac.chosun.mspace.admin.application.UsageStatsPort.RoomRow;
 import kr.ac.chosun.mspace.admin.application.UsageStatsPort.SensorRow;
@@ -63,26 +64,32 @@ class UsageStatsService implements UsageStatsUseCase {
         Instant now = clock.instant();
         Instant cap = now.isBefore(b) ? now : b;
         int threshold = sensorPolicy.co2().thresholdPpm();
+        int within = sensorPolicy.co2().resolvedWithinMinutes();
 
         List<RoomRow> rows = port.rooms(a, b, cap);
         Map<Integer, Long> users = port.uniqueUsers(a, b);
         // 아직 오지 않은 기간이면 센서 값은 없다
         Map<Integer, SensorRow> sensors = cap.isAfter(a) ? port.sensors(a, cap, threshold) : Map.of();
+        Map<Integer, AlertRow> alerts = cap.isAfter(a) ? port.alerts(a, b, cap, threshold, within) : Map.of();
 
         // 이용률 분모: 지난 시간만 (오늘·미래가 섞이면 아직 안 온 시간까지 나누지 않게)
         long minutesSoFar = Math.max(0, ChronoUnit.MINUTES.between(a, cap));
         List<Usage> rooms = new ArrayList<>();
         SensorRow all = SensorRow.EMPTY;
+        AlertRow allAlerts = AlertRow.EMPTY;
         RoomRow total = new RoomRow(0, null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         for (RoomRow r : rows) {
             SensorRow s = sensors.getOrDefault(r.roomId(), SensorRow.EMPTY);
-            rooms.add(usage(r, users.getOrDefault(r.roomId(), 0L), s, threshold, minutesSoFar));
+            AlertRow al = alerts.getOrDefault(r.roomId(), AlertRow.EMPTY);
+            rooms.add(usage(r, users.getOrDefault(r.roomId(), 0L), s, al, threshold, within, minutesSoFar));
             total = add(total, r);
             all = add(all, s);
+            allAlerts = add(allAlerts, al);
         }
-        Usage whole = usage(total, users.getOrDefault(0, 0L), all, threshold, minutesSoFar * rows.size());
+        Usage whole = usage(total, users.getOrDefault(0, 0L), all, allAlerts, threshold, within,
+                minutesSoFar * rows.size());
         whole = new Usage(null, null, whole.reservations(), whole.rates(), whole.minutes(), whole.shortUses(),
-                whole.uniqueUsers(), whole.sensor());
+                whole.uniqueUsers(), whole.sensor(), whole.alerts());
 
         Map<Integer, HourRow> hours = new HashMap<>();
         port.byHour(a, b).forEach(h -> hours.put(h.hour(), h));
@@ -94,7 +101,8 @@ class UsageStatsService implements UsageStatsUseCase {
         return new UsageStats(start, end, days, whole, rooms, byHour);
     }
 
-    private static Usage usage(RoomRow r, long uniqueUsers, SensorRow s, int threshold, long openMinutes) {
+    private static Usage usage(RoomRow r, long uniqueUsers, SensorRow s, AlertRow al, int threshold, int within,
+                               long openMinutes) {
         long decided = r.total() - r.canceled() - r.pending();
         Rates rates = new Rates(rate(r.noShow(), decided), rate(r.used(), decided), rate(r.usedMinutes(), openMinutes));
         Minutes minutes = new Minutes(r.bookedMinutes(), r.usedMinutes(),
@@ -106,7 +114,15 @@ class UsageStatsService implements UsageStatsUseCase {
         return new Usage(r.roomId(), r.roomName(),
                 new Reservations(r.total(), r.canceled(), r.pending(), r.noShow(), r.used(), r.forced(),
                         r.awayReleased(), r.autoCheckedOut()),
-                rates, minutes, r.shortUses(), uniqueUsers, sensor);
+                rates, minutes, r.shortUses(), uniqueUsers, sensor,
+                new Alerts(al.noShowWarned(), al.noShowCheckedIn(), rate(al.noShowCheckedIn(), al.noShowWarned()),
+                        al.ventilationChecked(), al.ventilationResolved(),
+                        rate(al.ventilationResolved(), al.ventilationChecked()), within));
+    }
+
+    private static AlertRow add(AlertRow a, AlertRow b) {
+        return new AlertRow(a.noShowWarned() + b.noShowWarned(), a.noShowCheckedIn() + b.noShowCheckedIn(),
+                a.ventilationChecked() + b.ventilationChecked(), a.ventilationResolved() + b.ventilationResolved());
     }
 
     private static Double rate(long part, long whole) {

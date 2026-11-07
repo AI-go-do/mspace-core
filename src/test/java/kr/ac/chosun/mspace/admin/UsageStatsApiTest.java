@@ -219,6 +219,67 @@ class UsageStatsApiTest {
         json.extractingPath("$.total.sensor.co2Readings").isEqualTo(3);
     }
 
+    long reservationId(int room, Timestamp start) {
+        return jdbc.sql("SELECT id FROM reservation WHERE room_id = :room AND start_at = :start")
+                .param("room", room).param("start", start).query((rs, n) -> rs.getLong(1)).single();
+    }
+
+    void noShowSoon(long reservationId, long userId) {
+        jdbc.sql("INSERT INTO notification_log (reservation_id, user_id, kind) VALUES (:r, :u, 'NO_SHOW_SOON')")
+                .param("r", reservationId).param("u", userId).update();
+    }
+
+    void ventilate(long reservationId, long userId, Timestamp t) {
+        jdbc.sql("""
+                        INSERT INTO notification (user_id, reservation_id, kind, title, body, created_at)
+                        VALUES (:u, :r, 'VENTILATE', '환기해 주세요', 'x', :t)
+                        """).param("u", userId).param("r", reservationId).param("t", t).update();
+    }
+
+    @Test
+    @DisplayName("알림 효과: 노쇼 직전 알림 2건 중 1건 입실, 환기 알림 2번 중 15분 안에 기준 이하로 내려간 것 1번")
+    void alertEffect() {
+        noShowSoon(r1, 1);                                  // 알림 뒤 입실
+        noShowSoon(reservationId(1, at(13, 0)), 1);         // 알림 받고도 노쇼
+        co2(1, at(10, 45), 900);                            // 10:33 알림 → 12분 뒤 900 (내려감)
+        long r2 = reservationId(2, at(10, 0));
+        ventilate(r2, 4, at(10, 20));                       // 2번 방 알림 → 15분 안에 값 없음
+        co2(2, at(10, 50), 800);                            // 30분 뒤라 효과로 치지 않는다
+
+        var json = assertThat(day()).bodyJson();
+        json.extractingPath("$.rooms[0].alerts.noShowWarned").isEqualTo(2);
+        json.extractingPath("$.rooms[0].alerts.noShowCheckedIn").isEqualTo(1);
+        json.extractingPath("$.rooms[0].alerts.noShowCheckedInRate").isEqualTo(0.5);
+        json.extractingPath("$.rooms[0].alerts.ventilationChecked").isEqualTo(1);
+        json.extractingPath("$.rooms[0].alerts.ventilationResolved").isEqualTo(1);
+        json.extractingPath("$.rooms[0].alerts.resolvedWithinMinutes").isEqualTo(15);
+        json.extractingPath("$.rooms[1].alerts.ventilationChecked").isEqualTo(1);
+        json.extractingPath("$.rooms[1].alerts.ventilationResolved").isEqualTo(0);
+        json.extractingPath("$.rooms[1].alerts.ventilationResolvedRate").isEqualTo(0.0);
+        json.extractingPath("$.rooms[2].alerts.noShowCheckedInRate").isNull();
+        json.extractingPath("$.total.alerts.noShowWarned").isEqualTo(2);
+        json.extractingPath("$.total.alerts.ventilationChecked").isEqualTo(2);
+        json.extractingPath("$.total.alerts.ventilationResolvedRate").isEqualTo(0.5);
+    }
+
+    @Test
+    @DisplayName("알림 효과: 확인 시간(15분)이 아직 안 지난 환기 알림과 입실 마감 전 노쇼 알림은 세지 않는다")
+    void alertEffectPending() {
+        // 지금 = 오늘 12:00. 11:50 알림은 12:05까지 봐야 해서 아직 결과가 없다
+        Timestamp now = Timestamp.from(TODAY.atTime(11, 50).atZone(SEOUL).toInstant());
+        long today = reservation(3, 1, Timestamp.from(TODAY.atTime(11, 30).atZone(SEOUL).toInstant()),
+                Timestamp.from(TODAY.atTime(12, 30).atZone(SEOUL).toInstant()), "IN_USE", now, null, null);
+        ventilate(today, 1, now);
+        long later = reservation(4, 4, Timestamp.from(TODAY.atTime(12, 0).atZone(SEOUL).toInstant()),
+                Timestamp.from(TODAY.atTime(13, 0).atZone(SEOUL).toInstant()), "BOOKED", null, null, null);
+        noShowSoon(later, 4);                               // 입실 마감 12:15 전
+
+        var json = assertThat(usage(ADMIN, "?from=" + TODAY + "&to=" + TODAY)).bodyJson();
+        json.extractingPath("$.total.alerts.ventilationChecked").isEqualTo(0);
+        json.extractingPath("$.total.alerts.noShowWarned").isEqualTo(0);
+        json.extractingPath("$.total.alerts.ventilationResolvedRate").isNull();
+    }
+
     @Test
     @DisplayName("학생은 403 ADMIN_ONLY")
     void studentForbidden() {
