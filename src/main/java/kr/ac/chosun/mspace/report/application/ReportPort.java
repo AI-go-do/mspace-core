@@ -11,9 +11,9 @@ public interface ReportPort {
      * 신고 권한 근거 예약을 찾는다: 이 회원이 이용자(대표자·참여자)로 들어간 IN_USE 예약 중,
      * 방이 신고 대상 방과 같거나 옆 방(room_adjacency)인 것. 같은 방 예약을 먼저 고른다.
      *
-     * @return 근거 예약 id. 없으면 신고할 수 없다
+     * @return 근거 예약. 없으면 신고할 수 없다
      */
-    Optional<Long> findBasisReservation(long userId, int roomId);
+    Optional<Basis> findBasisReservation(long userId, int roomId);
 
     /** 방이 있는지 (사용 중지된 방도 있음으로 본다) */
     boolean roomExists(int roomId);
@@ -24,5 +24,17 @@ public interface ReportPort {
     long saveCamera(int roomId, long targetReservationId, String content);
 
     record Saved(long id, Instant createdAt) {
+    }
+
+    /**
+     * 신고 근거 예약과 어질러짐 신고 검사(FR-RPT-101, 11/8)에 쓰는 사실.
+     *
+     * @param reservationId  근거 예약 id
+     * @param roomId         근거 예약의 방 (신고 대상 방과 같으면 자기 방)
+     * @param checkedInAt    입실 시각
+     * @param continued      연장으로 생긴 예약인지 (continued_from_id가 있음)
+     * @param hasCheckInPhoto 그 예약에 입실 사진(CHECK_IN)이 있는지
+     */
+    record Basis(long reservationId, int roomId, Instant checkedInAt, boolean continued, boolean hasCheckInPhoto) {
     }
 }
