@@ -71,6 +71,9 @@ public enum ErrorCode {
     // 신고 (FR-RPT-101)
     REPORT_NOISE_NOT_CONFIRMED(HttpStatus.BAD_REQUEST, "소음 신고는 \"정말 소란인가요?\"를 체크해야 보낼 수 있습니다"),
     REPORT_NOT_ALLOWED(HttpStatus.FORBIDDEN, "지금 그 방이나 옆 방을 사용 중인 예약자만 신고할 수 있습니다"),
+    REPORT_MESSY_OWN_ROOM_ONLY(HttpStatus.FORBIDDEN, "어질러짐은 지금 쓰고 있는 방만 신고할 수 있습니다"),
+    REPORT_MESSY_TOO_LATE(HttpStatus.CONFLICT, "어질러짐은 입실한 뒤 바로만 신고할 수 있습니다"),
+    REPORT_CHECKIN_PHOTO_REQUIRED(HttpStatus.CONFLICT, "어질러짐을 신고하려면 입실 사진을 먼저 올려 주세요"),
     // 관리자 판정 (FR-RPT-103)
     REPORT_NOT_FOUND(HttpStatus.NOT_FOUND, "찾을 수 없는 신고입니다"),
     REPORT_NOT_JUDGEABLE(HttpStatus.CONFLICT, "소음 신고는 판정 대상이 아닙니다"),

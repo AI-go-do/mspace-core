@@ -40,7 +40,7 @@ class ReportApiTest {
 
     @BeforeEach
     void setUp() {
-        jdbc.sql("TRUNCATE report, reservation, reservation_participant, users RESTART IDENTITY CASCADE").update();
+        jdbc.sql("TRUNCATE report, reservation_photo, reservation, reservation_participant, users RESTART IDENTITY CASCADE").update();
         for (int i = 1; i <= 10; i++) {
             jdbc.sql("INSERT INTO users (email, student_id, name, verified_at) VALUES (:e, :s, '회원', now())")
                     .param("e", "u" + i + "@chosun.ac.kr").param("s", "202300" + (10 + i)).update();
@@ -109,7 +109,7 @@ class ReportApiTest {
     @DisplayName("참여자도 신고할 수 있고, 옆 방(1번 → 2번)도 신고할 수 있다")
     void participantReportsAdjacentRoom() {
         assertThat(report(2, 2, "WINDOW_OPEN")).hasStatus(201);
-        assertThat(report(5, 1, "MESSY")).hasStatus(201);
+        assertThat(report(5, 1, "BROKEN")).hasStatus(201);
 
         assertThat(jdbc.sql("SELECT reporter_reservation_id FROM report ORDER BY id").query(Long.class).list())
                 .containsExactly(room1, room2);
@@ -212,13 +212,103 @@ class ReportApiTest {
         String tooLong = "가".repeat(501);
 
         assertThat(report(1, """
-                {"roomId":1,"category":"MESSY","content":"%s"}""".formatted(ok))).hasStatus(201);
+                {"roomId":1,"category":"BROKEN","content":"%s"}""".formatted(ok))).hasStatus(201);
         assertThat(report(1, """
-                {"roomId":1,"category":"MESSY","content":"%s"}""".formatted(tooLong))).hasStatus(400);
+                {"roomId":1,"category":"BROKEN","content":"%s"}""".formatted(tooLong))).hasStatus(400);
         assertThat(report(1, """
-                {"roomId":1,"category":"MESSY","content":"   "}""")).hasStatus(201);
+                {"roomId":1,"category":"BROKEN","content":"   "}""")).hasStatus(201);
         assertThat(jdbc.sql("SELECT content IS NULL FROM report ORDER BY id").query(Boolean.class).list())
                 .containsExactly(false, true);
+    }
+
+    /** 근거 예약의 입실 시각을 지금부터 minutesAgo분 전으로 바꾼다 */
+    void checkedInMinutesAgo(long reservationId, int minutesAgo) {
+        jdbc.sql("UPDATE reservation SET checked_in_at = now() - make_interval(mins => :m) WHERE id = :id")
+                .param("m", minutesAgo).param("id", reservationId).update();
+    }
+
+    void checkInPhoto(long reservationId) {
+        jdbc.sql("""
+                INSERT INTO reservation_photo (reservation_id, kind, uploaded_by, content_type, size_bytes, data)
+                VALUES (:id, 'CHECK_IN', 1, 'image/jpeg', 3, decode('ffd8ff', 'hex'))
+                """).param("id", reservationId).update();
+    }
+
+    @Test
+    @DisplayName("어질러짐: 입실 뒤 5분 안이고 입실 사진이 있으면 201")
+    void messyWithinWindowWithPhoto() {
+        checkedInMinutesAgo(room1, 4);
+        checkInPhoto(room1);
+
+        MvcTestResult r = report(2, 1, "MESSY");
+
+        assertThat(r).hasStatus(201);
+        assertThat(jdbc.sql("SELECT reporter_reservation_id FROM report").query(Long.class).single()).isEqualTo(room1);
+    }
+
+    @Test
+    @DisplayName("어질러짐: 입실 뒤 5분이 지나면 사진이 있어도 409 REPORT_MESSY_TOO_LATE")
+    void messyTooLate() {
+        checkedInMinutesAgo(room1, 6);
+        checkInPhoto(room1);
+
+        MvcTestResult r = report(1, 1, "MESSY");
+
+        assertThat(r).hasStatus(409);
+        assertThat(r).bodyJson().extractingPath("$.code").isEqualTo("REPORT_MESSY_TOO_LATE");
+        assertThat(r).bodyJson().extractingPath("$.message").asString().contains("5분");
+        assertThat(reportCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("어질러짐: 5분 안이어도 입실 사진이 없으면 409 REPORT_CHECKIN_PHOTO_REQUIRED")
+    void messyNeedsCheckInPhoto() {
+        checkedInMinutesAgo(room1, 1);
+
+        MvcTestResult r = report(1, 1, "MESSY");
+
+        assertThat(r).hasStatus(409);
+        assertThat(r).bodyJson().extractingPath("$.code").isEqualTo("REPORT_CHECKIN_PHOTO_REQUIRED");
+        assertThat(reportCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("어질러짐: 옆 방은 403 REPORT_MESSY_OWN_ROOM_ONLY (다른 종류는 옆 방도 됨)")
+    void messyOwnRoomOnly() {
+        checkedInMinutesAgo(room2, 1);
+        checkInPhoto(room2);
+
+        MvcTestResult r = report(5, 1, "MESSY");
+
+        assertThat(r).hasStatus(403);
+        assertThat(r).bodyJson().extractingPath("$.code").isEqualTo("REPORT_MESSY_OWN_ROOM_ONLY");
+        assertThat(report(5, 1, "WINDOW_OPEN")).hasStatus(201);
+    }
+
+    @Test
+    @DisplayName("어질러짐: 연장으로 생긴 예약은 입실 직후여도 409 REPORT_MESSY_TOO_LATE")
+    void messyNotOnContinuedReservation() {
+        // 연장으로 생긴 예약처럼 앞 예약을 가리키게 한다 (어느 예약이든 continued_from_id만 있으면 된다)
+        jdbc.sql("UPDATE reservation SET continued_from_id = :from, checked_in_at = now() WHERE id = :id")
+                .param("from", room2).param("id", room1).update();
+        checkInPhoto(room1);
+
+        MvcTestResult r = report(1, 1, "MESSY");
+
+        assertThat(r).hasStatus(409);
+        assertThat(r).bodyJson().extractingPath("$.code").isEqualTo("REPORT_MESSY_TOO_LATE");
+        assertThat(r).bodyJson().extractingPath("$.message").asString().contains("연장");
+    }
+
+    @Test
+    @DisplayName("비품 고장·창문·소음은 입실 사진·5분 제한 없이 사용 중이면 언제든 201")
+    void otherCategoriesUnchanged() {
+        checkedInMinutesAgo(room1, 50);
+
+        assertThat(report(1, 1, "BROKEN")).hasStatus(201);
+        assertThat(report(1, 1, "WINDOW_OPEN")).hasStatus(201);
+        assertThat(report(1, """
+                {"roomId":1,"category":"NOISE","noiseConfirmed":true}""")).hasStatus(201);
     }
 
     @Test
