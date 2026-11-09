@@ -161,7 +161,7 @@ public class ContinueReservationService implements ContinueReservationUseCase {
         }
         String code = codes.issue();
         long id = port.insert(new NewReservation(r.roomId(), userId, start, command.endAt(), code, r.participantIds(),
-                command.idempotencyKey(), true, command.createdVia(), true, reservationId));
+                command.idempotencyKey(), true, command.createdVia(), true, reservationId, null, now));
         return new Created(id, r.roomId(), start.atZone(SEOUL), command.endAt().atZone(SEOUL),
                 ReservationStatus.IN_USE, r.participantIds().size(), code, false);
     }

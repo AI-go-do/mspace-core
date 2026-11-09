@@ -34,9 +34,15 @@ public interface CreateReservationUseCase {
      *
      * @param idempotencyKey 멱등 키(Idempotency-Key 헤더, 64자 이하). 없으면 null (웹 화면)
      * @param createdVia     어디서 만들었나 (X-Created-Via 헤더). 통계용이고 권한과는 상관없다
+     * @param relayOfferId   빈방 릴레이로 나에게 넘어온 자리를 받는 것이면 그 넘김 id (미리 예약만). 아니면 null
      */
     record Command(int roomId, Instant startAt, Instant endAt, List<String> participantStudentIds,
-                   String idempotencyKey, CreatedVia createdVia) {
+                   String idempotencyKey, CreatedVia createdVia, Long relayOfferId) {
+
+        public Command(int roomId, Instant startAt, Instant endAt, List<String> participantStudentIds,
+                       String idempotencyKey, CreatedVia createdVia) {
+            this(roomId, startAt, endAt, participantStudentIds, idempotencyKey, createdVia, null);
+        }
 
         /** 웹 화면에서 */
         public Command(int roomId, Instant startAt, Instant endAt, List<String> participantStudentIds,

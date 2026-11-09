@@ -99,6 +99,7 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
         try {
             lockInOrder(r);
             rejectIfBlocked(r);
+            rejectIfHeld(r);
             long id = jdbc.sql("""
                             INSERT INTO reservation (room_id, owner_id, start_at, end_at, headcount, access_code,
                                                      idempotency_key, is_instant, created_via,
@@ -297,6 +298,30 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
         lockWithin(-(long) r.roomId(), deadline);
         for (Long userId : r.participantIds().stream().sorted().toList()) {
             lockWithin(userId, deadline);
+        }
+    }
+
+    /**
+     * 빈방 릴레이(Q-18): 취소된 자리를 기다리던 학생에게 넘겨 두었으면, 받을 시간(5분)이 끝날 때까지 그 학생만 잡을 수 있다.
+     * 방 잠금 뒤에 보므로 넘김 만들기(같은 방 잠금)와 엇갈리지 않는다. 새 예약·즉시 시작·연장이 모두 여기를 지난다
+     */
+    private void rejectIfHeld(NewReservation r) {
+        boolean held = jdbc.sql("""
+                        SELECT EXISTS (SELECT 1 FROM relay_offer o
+                                       WHERE o.room_id = :room AND o.status = 'OPEN'
+                                         AND o.expires_at > COALESCE(CAST(:at AS timestamptz), now())
+                                         AND tstzrange(o.start_at, o.end_at) && tstzrange(:start, :end)
+                                         AND NOT (o.id = COALESCE(:offer, -1) AND o.user_id = :owner))
+                        """)
+                .param("room", r.roomId())
+                .param("at", r.at() == null ? null : Timestamp.from(r.at()), java.sql.Types.TIMESTAMP)
+                .param("start", Timestamp.from(r.startAt()))
+                .param("end", Timestamp.from(r.endAt()))
+                .param("offer", r.relayOfferId(), java.sql.Types.BIGINT)
+                .param("owner", r.ownerId())
+                .query((rs, n) -> rs.getBoolean(1)).single();
+        if (held) {
+            throw new BusinessException(ErrorCode.RELAY_HELD);
         }
     }
 
