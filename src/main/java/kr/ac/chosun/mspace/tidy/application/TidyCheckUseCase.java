@@ -37,4 +37,19 @@ public interface TidyCheckUseCase {
     }
 
     Recorded submit(TidyCheck check);
+
+    int DEFAULT_DAYS = 7;
+    int MAX_DAYS = 92;
+
+    /**
+     * 관리자 정리 확인 목록의 한 줄.
+     * @param endedAt  그 예약이 퇴실한 시각
+     * @param reportId 치울 것이 있어 자동으로 만든 신고. 깨끗했으면 null
+     */
+    record Listed(long reservationId, int roomId, String roomName, Instant endedAt, Result result, List<String> items,
+                  List<LeftItem> leftItems, Long reportId, Instant observedAt) {
+    }
+
+    /** 관리자만(403 ADMIN_ONLY). 최근 days일(1–{@value MAX_DAYS}, 기본 {@value DEFAULT_DAYS})에 받은 결과, 최근 순 */
+    List<Listed> list(long adminId, Integer days);
 }

@@ -330,4 +330,58 @@ class TidyCheckApiTest {
         }
         assertThat(jdbc.sql("SELECT count(*) FROM tidy_check").query((rs, n) -> rs.getLong(1)).single()).isZero();
     }
+
+    MvcTestResult list(long userId, String days) {
+        var req = mvc.get().uri("/api/tidy-checks").header("X-User-Id", String.valueOf(userId));
+        return days == null ? req.exchange() : req.param("days", days).exchange();
+    }
+
+    @Test
+    @DisplayName("관리자 정리 확인 목록: 받은 결과를 최근 순으로, 방 이름·퇴실 시각·자동 신고 번호와 함께 준다")
+    void adminList() {
+        // given: 앞 예약은 치울 것 있음, 그 뒤 퇴실한 예약은 깨끗함
+        long reportId = ((Number) JsonPath.read(body(post(1, check("e-a", ended, "NEEDS_CLEANING",
+                "[\"cup\",\"backpack\"]", "[\"BAG\"]"))), "$.reportId")).longValue();
+        jdbc.sql("UPDATE reservation SET status = 'CHECKED_OUT', checked_out_at = now() WHERE id = :id")
+                .param("id", now).update();
+        assertThat(post(1, check("e-b", now, "CLEAN", "[]", "[]"))).hasStatusOk();
+
+        // when
+        MvcTestResult r = list(ADMIN, null);
+
+        // then
+        assertThat(r).hasStatusOk().bodyJson().satisfies(j -> {
+            j.assertThat().extractingPath("$.items.length()").isEqualTo(2);
+            j.assertThat().extractingPath("$.items[0].reservationId").isEqualTo((int) now);
+            j.assertThat().extractingPath("$.items[0].result").isEqualTo("CLEAN");
+            j.assertThat().extractingPath("$.items[0].reportId").isNull();
+            j.assertThat().extractingPath("$.items[1].reservationId").isEqualTo((int) ended);
+            j.assertThat().extractingPath("$.items[1].roomId").isEqualTo(1);
+            j.assertThat().extractingPath("$.items[1].roomName").isNotNull();
+            j.assertThat().extractingPath("$.items[1].endedAt").asString().endsWith("+09:00");
+            j.assertThat().extractingPath("$.items[1].result").isEqualTo("NEEDS_CLEANING");
+            j.assertThat().extractingPath("$.items[1].items").isEqualTo(List.of("cup", "backpack"));
+            j.assertThat().extractingPath("$.items[1].leftItems").isEqualTo(List.of("BAG"));
+            j.assertThat().extractingPath("$.items[1].reportId").isEqualTo((int) reportId);
+            j.assertThat().extractingPath("$.items[1].observedAt").isEqualTo("2026-11-06T15:01:00+09:00");
+        });
+    }
+
+    @Test
+    @DisplayName("관리자 정리 확인 목록: days일 전보다 먼저 받은 결과는 빠진다")
+    void adminListDays() {
+        assertThat(post(1, check("e-old", ended, "CLEAN", "[]", "[]"))).hasStatusOk();
+        jdbc.sql("UPDATE tidy_check SET received_at = now() - interval '8 days'").update();
+
+        assertThat(list(ADMIN, null)).hasStatusOk().bodyJson().extractingPath("$.items.length()").isEqualTo(0);
+        assertThat(list(ADMIN, "9")).hasStatusOk().bodyJson().extractingPath("$.items.length()").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("관리자 정리 확인 목록: 학생은 403 ADMIN_ONLY, days가 1–92 밖이면 400")
+    void adminListGuards() {
+        assertThat(list(OWNER, null)).hasStatus(403).bodyJson().extractingPath("$.code").isEqualTo("ADMIN_ONLY");
+        assertThat(list(ADMIN, "0")).hasStatus(400);
+        assertThat(list(ADMIN, "93")).hasStatus(400);
+    }
 }
