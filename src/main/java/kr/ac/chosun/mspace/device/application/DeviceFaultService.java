@@ -6,9 +6,6 @@ import java.time.Instant;
 import kr.ac.chosun.mspace.common.config.AccessPolicy;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
-import kr.ac.chosun.mspace.reservation.application.ExcuseNoShowsUseCase;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionOperations;
 
@@ -18,8 +15,6 @@ import org.springframework.transaction.support.TransactionOperations;
  */
 @Service
 class DeviceFaultService implements DeviceFaultUseCase {
-
-    private static final Logger log = LoggerFactory.getLogger(DeviceFaultService.class);
 
     /** 한 번에 받는 오류 구간 상한. 젯슨이 하루 넘게 꺼져 있었으면 나눠 보낸다 */
     static final Duration MAX_PERIOD = Duration.ofHours(24);
@@ -34,15 +29,13 @@ class DeviceFaultService implements DeviceFaultUseCase {
     static final int MAX_ATTEMPTS_PER_ROOM_PER_DAY = 200;
 
     private final DeviceFaultPort port;
-    private final ExcuseNoShowsUseCase excuses;
     private final AccessPolicy access;
     private final TransactionOperations tx;
     private final Clock clock;
 
-    DeviceFaultService(DeviceFaultPort port, ExcuseNoShowsUseCase excuses, AccessPolicy access,
+    DeviceFaultService(DeviceFaultPort port, AccessPolicy access,
                        TransactionOperations tx, Clock clock) {
         this.port = port;
-        this.excuses = excuses;
         this.access = access;
         this.tx = tx;
         this.clock = clock;
@@ -72,17 +65,10 @@ class DeviceFaultService implements DeviceFaultUseCase {
                 .orElse(null);
         });
         if (matched == null) {
-            return new Recorded(true, 0, 0);
+            return new Recorded(true, 0);
         }
-        // 맞은 게 없어도 무르기를 돌린다. 맞을 때만 돌리면 응답 시간 차이로 번호가 맞았는지 알 수 있다
-        // 무르기가 잠금 대기 상한 등으로 실패해도 기록은 이미 저장됐으니 성공으로 답하고, 1분 정리가 다시 무름
-        int excused;
-        try {
-            excused = excuses.excuse(now);
-        } catch (RuntimeException e) {
-            log.warn("장치 오류 무르기 실패({}), 1분 정리가 다시 함", e.getClass().getSimpleName());
-            excused = 0;
-        }
-        return new Recorded(false, matched, excused);
+        // 무르기는 여기서 하지 않고 1분 정리가 함(늦어도 1분). 번호가 맞았을 때만 할 일이 늘면
+        // 응답 시간 차이로 번호가 맞았는지 짐작할 수 있어서, 이 요청은 맞든 안 맞든 같은 일만 한다
+        return new Recorded(false, matched);
     }
 }

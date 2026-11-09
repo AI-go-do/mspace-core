@@ -146,6 +146,10 @@ class DeviceFaultApiTest {
 
         assertThat(r).hasStatus(200).bodyJson().extractingPath("$.result").isEqualTo("STORED");
         assertThat(r).bodyJson().doesNotHavePath("$.matched").doesNotHavePath("$.excused");
+        // 요청 안에서는 무르지 않는다 (응답 시간으로 번호가 맞았는지 알 수 없게). 1분 정리가 무름
+        assertThat(excused(id)).as("요청 직후에는 아직").isFalse();
+        now("10:21");
+        sweeps.sweep();
         assertThat(excused(id)).isTrue();
         assertThat(jdbc.sql("SELECT status FROM reservation WHERE id = :id").param("id", id).query(String.class)
                 .single()).as("상태는 노쇼 그대로 (기록)").isEqualTo("NO_SHOW");
@@ -187,6 +191,7 @@ class DeviceFaultApiTest {
         now("10:25");
 
         fault("qr-1-3", "10:00", "10:20", attempt("10:03", code(second)));
+        sweeps.sweep();
 
         assertThat(excused(first)).isFalse();
         assertThat(excused(second)).isTrue();

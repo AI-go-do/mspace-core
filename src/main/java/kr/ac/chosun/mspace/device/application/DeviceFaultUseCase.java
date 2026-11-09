@@ -37,8 +37,8 @@ public interface DeviceFaultUseCase {
 
     /**
      * @param matched 눌린 번호 중 예약을 찾은 수
-     * @param excused 이번에 무른 노쇼 예약 수 (이 오류 말고 앞서 온 오류로 무른 것도 같이 셀 수 있음)
+     * 무르기는 1분 정리가 한다 (응답 시간으로 번호가 맞았는지 알 수 없게)
      */
-    record Recorded(boolean duplicate, int matched, int excused) {
+    record Recorded(boolean duplicate, int matched) {
     }
 }
