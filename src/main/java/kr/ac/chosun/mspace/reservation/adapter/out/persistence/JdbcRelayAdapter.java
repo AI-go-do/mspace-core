@@ -194,7 +194,7 @@ class JdbcRelayAdapter implements RelayPort {
     public List<OfferRow> offersToPass() {
         return jdbc.sql("""
                         SELECT %s FROM relay_offer
-                        WHERE status IN ('DECLINED', 'EXPIRED') AND NOT passed_on
+                        WHERE status IN ('DECLINED', 'EXPIRED', 'TAKEN') AND NOT passed_on
                         ORDER BY id FOR UPDATE SKIP LOCKED
                         """.formatted(OFFER_COLUMNS))
                 .query(JdbcRelayAdapter::offerRow).list();
@@ -203,6 +203,18 @@ class JdbcRelayAdapter implements RelayPort {
     @Override
     public void markPassed(long offerId) {
         jdbc.sql("UPDATE relay_offer SET passed_on = true WHERE id = :id").param("id", offerId).update();
+    }
+
+    @Override
+    public List<Span> busy(int roomId, Instant start, Instant end) {
+        return jdbc.sql("""
+                        SELECT start_at, end_at FROM reservation
+                        WHERE room_id = :room AND status IN ('BOOKED', 'IN_USE')
+                          AND tstzrange(start_at, end_at) && tstzrange(:start, :end)
+                        ORDER BY start_at
+                        """)
+                .param("room", roomId).param("start", Timestamp.from(start)).param("end", Timestamp.from(end))
+                .query((rs, n) -> new Span(rs.getTimestamp(1).toInstant(), rs.getTimestamp(2).toInstant())).list();
     }
 
     @Override

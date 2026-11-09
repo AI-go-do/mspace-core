@@ -20,6 +20,7 @@ import kr.ac.chosun.mspace.notification.application.NotificationInbox.NewNotific
 import kr.ac.chosun.mspace.reservation.application.RelayPort.OfferRow;
 import kr.ac.chosun.mspace.reservation.application.RelayPort.Released;
 import kr.ac.chosun.mspace.reservation.application.RelayPort.SlotState;
+import kr.ac.chosun.mspace.reservation.application.RelayPort.Span;
 import kr.ac.chosun.mspace.reservation.application.RelayPort.WaitRow;
 import kr.ac.chosun.mspace.room.application.RoomQuery;
 import org.slf4j.Logger;
@@ -155,8 +156,7 @@ class RelayService implements RelayUseCase {
             port.lockRoom(r.roomId());
             Instant locked = clock.instant();  // 잠금 뒤 시각으로 마감·5분을 잼
             if (open(r.startAt(), locked)) {
-                port.offerToNext(r.roomId(), r.startAt(), r.endAt(), reservationId, locked, expiry(locked))
-                        .ifPresent(o -> stored.addAll(notify(o, locked)));
+                offerFree(r.roomId(), r.startAt(), r.endAt(), reservationId, locked, stored);
             }
         });
         inbox.publish(stored);
@@ -176,15 +176,9 @@ class RelayService implements RelayUseCase {
                 port.lockRoom(done.roomId());
                 port.markPassed(done.id());
                 Instant locked = clock.instant();  // 잠금 뒤 시각으로 마감·5분을 잼
-                if (!open(done.startAt(), locked)) {
-                    continue;
-                }
-                Optional<OfferRow> next = port.offerToNext(done.roomId(), done.startAt(), done.endAt(),
-                        done.sourceReservationId(), locked, expiry(locked));
-                if (next.isPresent()) {
-                    stored.addAll(notify(next.get(), locked));
-                    n++;
-                }
+                // 받은(TAKEN) 넘김은 받은 예약이 안 덮은 남은 칸만, 넘김·시간 지남은 구간 전체가 대상
+                n += offerFree(done.roomId(), done.startAt(), done.endAt(), done.sourceReservationId(), locked,
+                        stored);
             }
             // 취소 뒤 첫 넘기기가 실패한 것도 여기서 다시 (줄 선 사람이 있는데 넘김이 한 번도 없는 취소)
             Instant cutoff = clock.instant().plus(Duration.ofMinutes(relay.stopBeforeMinutes()));
@@ -198,17 +192,38 @@ class RelayService implements RelayUseCase {
                 if (!open(r.startAt(), locked)) {
                     continue;
                 }
-                Optional<OfferRow> next = port.offerToNext(r.roomId(), r.startAt(), r.endAt(), reservationId, locked,
-                        expiry(locked));
-                if (next.isPresent()) {
-                    stored.addAll(notify(next.get(), locked));
-                    n++;
-                }
+                n += offerFree(r.roomId(), r.startAt(), r.endAt(), reservationId, locked, stored);
             }
             return n;
         });
         inbox.publish(stored);
         return passed == null ? 0 : passed;
+    }
+
+    /**
+     * 구간 안에서 아직 아무도 잡지 않은 부분마다 줄 첫 사람에게 넘긴다. 방 잠금 안에서 부른다.
+     * 보통은 구간 전체 하나. 일부만 받았으면(14:00–15:00 중 14:00–14:30) 남은 14:30–15:00을 그 칸 기다린 사람에게
+     */
+    private int offerFree(int roomId, Instant start, Instant end, long sourceReservationId, Instant now,
+                          List<Notification> stored) {
+        int n = 0;
+        Instant from = start;
+        List<Span> busy = new ArrayList<>(port.busy(roomId, start, end));
+        busy.add(new Span(end, end));
+        for (Span b : busy) {
+            Instant to = b.start().isBefore(end) ? b.start() : end;
+            if (from.isBefore(to) && open(from, now)) {
+                Optional<OfferRow> next = port.offerToNext(roomId, from, to, sourceReservationId, now, expiry(now));
+                if (next.isPresent()) {
+                    stored.addAll(notify(next.get(), now));
+                    n++;
+                }
+            }
+            if (b.end().isAfter(from)) {
+                from = b.end();
+            }
+        }
+        return n;
     }
 
     /** 아직 넘길 수 있는 때인지: 시작 stopBeforeMinutes분 전보다 이르다 */

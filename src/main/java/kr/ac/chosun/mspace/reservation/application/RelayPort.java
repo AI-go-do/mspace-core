@@ -44,10 +44,13 @@ public interface RelayPort {
     /** 시작이 from보다 늦고, 줄 선 사람이 있는데 넘김이 한 번도 안 만들어진 취소 예약 (첫 넘기기가 실패한 것) */
     List<Long> unofferedCancellations(Instant from);
 
-    /** 아직 다음 사람을 찾지 않은 DECLINED·EXPIRED 넘김. 잠그고 읽는다 */
+    /** 아직 다음 사람을 찾지 않은 DECLINED·EXPIRED·TAKEN 넘김(TAKEN은 일부만 받았을 때 남은 칸 때문). 잠그고 읽는다 */
     List<OfferRow> offersToPass();
 
     void markPassed(long offerId);
+
+    /** 이 구간과 겹치는 끝나지 않은(BOOKED·IN_USE) 예약 구간, 시작 순 */
+    List<Span> busy(int roomId, Instant start, Instant end);
 
     /** 취소된 예약 (방·시작·끝). 취소 상태가 아니면 빈 값 */
     Optional<Released> canceledReservation(long reservationId);
@@ -75,5 +78,8 @@ public interface RelayPort {
     }
 
     record Released(int roomId, Instant startAt, Instant endAt) {
+    }
+
+    record Span(Instant start, Instant end) {
     }
 }

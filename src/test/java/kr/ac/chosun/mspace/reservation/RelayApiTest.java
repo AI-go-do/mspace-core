@@ -197,6 +197,30 @@ class RelayApiTest {
     }
 
     @Test
+    @DisplayName("넘겨받은 사람이 일부만 받으면 남은 칸은 그 칸을 기다린 다음 사람에게 넘어간다")
+    void partialTakePassesRest() {
+        // given: B가 14:00 칸, C가 14:30 칸을 기다리고, 팀 A(14:00–15:00)가 취소해 B에게 넘어옴
+        waitFor(4, 1, "14:00");
+        now("10:01");
+        waitFor(7, 1, "14:30");
+        now("10:10");
+        cancel(1, teamA);
+
+        // when: B가 14:00–14:30만 받는다
+        now("10:12");
+        id(book(4, "14:00", "14:30", offerId(4)));
+
+        // then: 남은 14:30–15:00이 C에게 10:17까지 넘어오고, 다른 사람은 그 30분을 못 잡는다
+        assertThat(offers(7)).hasStatusOk().bodyJson()
+                .hasPathSatisfying("$[0].startAt", v -> v.assertThat().isEqualTo("2030-03-05T14:30:00+09:00"))
+                .hasPathSatisfying("$[0].endAt", v -> v.assertThat().isEqualTo("2030-03-05T15:00:00+09:00"))
+                .hasPathSatisfying("$[0].expiresAt", v -> v.assertThat().isEqualTo("2030-03-05T10:17:00+09:00"));
+        assertThat(book(10, "14:30", "15:00", null)).hasStatus(409).bodyJson().extractingPath("$.code")
+                .isEqualTo("RELAY_HELD");
+        id(book(7, "14:30", "15:00", offerId(7)));
+    }
+
+    @Test
     @DisplayName("넘길게요를 누르면 다음 사람에게 넘어가고, 5분이 지나면 1분 정리가 그다음 사람에게 넘긴다")
     void declineThenExpire() {
         // given: B → C → D 순서로 14:00 칸을 기다린다
