@@ -16,9 +16,15 @@ public interface RoomAvailabilityPort {
     /** [from, to)와 겹치는 끝나지 않은(BOOKED, IN_USE) 예약의 시간 */
     List<BookedTime> findActiveReservations(Instant from, Instant to);
 
+    /** [from, to)와 겹치는 풀리지 않은 관리자 기간 막기 (Q-23) */
+    List<BlockedTime> findActiveBlocks(Instant from, Instant to);
+
     record RoomInfo(int id, String name, int minPeople, int maxPeople) {
     }
 
     record BookedTime(int roomId, Instant startAt, Instant endAt) {
+    }
+
+    record BlockedTime(int roomId, Instant startAt, Instant endAt, BlockReason reason, String memo) {
     }
 }
