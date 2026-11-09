@@ -37,7 +37,8 @@ class SensorEventController {
      * 예: POST /api/sensor-events, Authorization: Bearer 장치토큰
      * {"eventId":"…","roomId":1,"deviceId":"sensor-1","kind":"OCCUPANCY","occupied":false,
      *  "sources":{"pir":false,"radar":false},"observedAt":"2026-11-04T14:05:00+09:00"}
-     * {"eventId":"…","roomId":1,"deviceId":"sensor-1","kind":"CO2","ppm":1080,"source":"scd40","observedAt":"…"}
+     * {"eventId":"…","roomId":1,"deviceId":"sensor-1","kind":"CO2","ppm":1080,"source":"scd40",
+     *  "temperatureC":25.4,"humidityPct":47,"observedAt":"…"}   (온도·습도는 선택, CO2에만)
      * → 200 {"result":"STORED"} 또는 {"result":"DUPLICATE"}. 401 토큰 문제, 400 형식 문제(장치는 다시 안 보냄).
      */
     @PostMapping("/api/sensor-events")
@@ -48,7 +49,8 @@ class SensorEventController {
     }
 
     record SensorEventRequest(String eventId, Integer roomId, String deviceId, String kind, Boolean occupied,
-                              JsonNode sources, Integer ppm, String source, String observedAt) {
+                              JsonNode sources, Integer ppm, String source, Double temperatureC, Double humidityPct,
+                              String observedAt) {
 
         SensorEvent toEvent() {
             if (eventId == null || eventId.isBlank() || eventId.length() > 64 || roomId == null
@@ -61,7 +63,13 @@ class SensorEventController {
             if (sourcesJson != null && sourcesJson.length() > MAX_SOURCES_LENGTH) {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST);
             }
-            return new SensorEvent(eventId, roomId, deviceId, parsedKind(), occupied, sourcesJson, ppm, source, observed());
+            return new SensorEvent(eventId, roomId, deviceId, parsedKind(), occupied, sourcesJson, ppm, source,
+                    oneDecimal(temperatureC), oneDecimal(humidityPct), observed());
+        }
+
+        /** DB 칸이 소수 한 자리라 반올림해 둔다 (25.46 → 25.5) */
+        private static Double oneDecimal(Double v) {
+            return v == null ? null : Math.round(v * 10) / 10.0;
         }
 
         private Kind parsedKind() {
