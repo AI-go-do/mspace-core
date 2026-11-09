@@ -1,6 +1,7 @@
 package kr.ac.chosun.mspace.reservation.application;
 
 import java.time.Clock;
+import kr.ac.chosun.mspace.room.application.RoomWatchUseCase;
 import java.time.Instant;
 import java.util.function.ToIntFunction;
 import org.slf4j.Logger;
@@ -21,12 +22,15 @@ class SweepReservationsService implements SweepReservationsUseCase {
     private final ReservationSweepPort sweeps;
     private final ExcuseNoShowsUseCase excuses;
     private final RelayUseCase relay;
+    private final RoomWatchUseCase watches;
     private final Clock clock;
 
-    SweepReservationsService(ReservationSweepPort sweeps, ExcuseNoShowsUseCase excuses, RelayUseCase relay, Clock clock) {
+    SweepReservationsService(ReservationSweepPort sweeps, ExcuseNoShowsUseCase excuses, RelayUseCase relay,
+                             RoomWatchUseCase watches, Clock clock) {
         this.sweeps = sweeps;
         this.excuses = excuses;
         this.relay = relay;
+        this.watches = watches;
         this.clock = clock;
     }
 
@@ -51,6 +55,12 @@ class SweepReservationsService implements SweepReservationsUseCase {
             step("릴레이 넘기기", relay::advance, now);
         } catch (RuntimeException e) {
             log.error("예약 정리(릴레이 넘기기) 실패, 다음 번에 다시", e);
+        }
+        // 빈방 알림: 퇴실·노쇼 등으로 방금 빈 방을 지켜보던 사람에게 (위 단계들 뒤라 이번에 빈 방도 잡힌다)
+        try {
+            step("빈방 알림", watches::notifyFreed, now);
+        } catch (RuntimeException e) {
+            log.error("예약 정리(빈방 알림) 실패, 다음 번에 다시", e);
         }
         if (swept.noShows() > 0 || swept.autoCheckedOut() > 0 || swept.awayReleased() > 0) {
             log.info("예약 정리: 노쇼 {}건, 자동 퇴실 {}건, 자리 비움 퇴실 {}건",

@@ -12,6 +12,7 @@ public enum ErrorCode {
     ROOM_BLOCK_INVALID(HttpStatus.BAD_REQUEST, "막을 기간이 올바르지 않습니다"),
     ROOM_BLOCK_OVERLAP(HttpStatus.CONFLICT, "이 방은 이미 그 시간에 막혀 있습니다. 먼저 풀거나 시간을 바꿔 주세요"),
     ROOM_BLOCK_NOT_FOUND(HttpStatus.NOT_FOUND, "없는 기간 막기입니다"),
+    ROOM_WATCH_FREE(HttpStatus.CONFLICT, "지금 비어 있어요. 바로 예약해 주세요"),
     RELAY_WAIT_LIMIT(HttpStatus.CONFLICT, "기다리기는 한 사람당 동시에 3개까지예요"),
     RELAY_TOO_LATE(HttpStatus.CONFLICT, "시작 30분 전부터는 기다리기를 걸 수 없어요"),
     RELAY_SLOT_FREE(HttpStatus.CONFLICT, "그 시간은 비어 있어요. 바로 예약해 주세요"),
