@@ -227,44 +227,56 @@ class RelayApiTest {
     }
 
     @Test
-    @DisplayName("받기가 다른 방 넘김 행을 쥔 동안 넘기기 정리가 그 행을 기다려도 교착 없이 둘 다 끝난다")
+    @DisplayName("받기가 방 잠금을 쥔 동안 넘기기 정리가 그 잠금을 기다려도, 받기가 다른 방 넘김 행을 바꾸고 둘 다 교착 없이 끝난다")
     void takeAndAdvanceConcurrently() throws Exception {
-        // given: B가 1번 방·2번 방 14:00 칸을 기다리고, 두 방 예약이 취소돼 B에게 둘 다 넘어옴. 2번 방 넘김은 방금 5분 지남
+        // given: B는 1번 방·2번 방 14:00 칸을 기다리고, C는 1번 방 15:00 칸을 기다린다.
+        // 세 예약이 취소돼 B에게 1·2번 방, C에게 1번 방 15:00이 넘어오고, B의 2번 방·C의 1번 방 넘김은 방금 5분 지남
+        // → advance가 손댈 방은 1번·2번 둘 다
         long teamRoom2 = id(mvc.post().uri("/api/reservations").header("X-User-Id", "7")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                         {"roomId":2,"startAt":"2030-03-05T14:00:00+09:00","endAt":"2030-03-05T15:00:00+09:00",
                          "participantStudentIds":["20230008","20230009"]}""")
                 .exchange());
+        long teamRoom1Later = id(book(10, "15:00", "16:00", null));
         waitFor(4, 1, "14:00");
         waitFor(4, 2, "14:00");
         now("10:10");
         cancel(1, teamA);
         cancel(7, teamRoom2);
-        jdbc.sql("UPDATE relay_offer SET expires_at = :t WHERE room_id = 2")
+        waitFor(7, 1, "15:00");
+        cancel(10, teamRoom1Later);
+        jdbc.sql("UPDATE relay_offer SET expires_at = :t WHERE (user_id = 4 AND room_id = 2) OR user_id = 7")
                 .param("t", java.sql.Timestamp.from(at("10:09"))).update();
 
         java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
         try (java.sql.Connection take = dataSource.getConnection()) {
             take.setAutoCommit(false);
             try (var st = take.createStatement()) {
-                // when 1: 받기가 하는 순서 그대로 1번 방 잠금을 쥐고, B의 다른 열린 넘김(2번 방, 막 5분 지남) 행을 바꾼다
-                st.execute("SET LOCAL lock_timeout = '5s'");
-                st.execute("SELECT pg_advisory_xact_lock(-1)");
-                int changed = st.executeUpdate(
-                        "UPDATE relay_offer SET status = 'DECLINED' WHERE user_id = 4 AND room_id = 2 AND status = 'OPEN'");
-                assertThat(changed).isEqualTo(1);
+                st.execute("SET LOCAL lock_timeout = '5s'");  // 교착·막힘이면 멈추지 않고 실패
+                long takePid;
+                try (var rs = st.executeQuery("SELECT pg_backend_pid()")) {
+                    rs.next();
+                    takePid = rs.getLong(1);
+                }
 
-                // when 2: 1분 정리(advance)를 시작하고, 받기가 쥔 2번 방 넘김 행에서 실제로 기다리는지 확인
+                // when 1: 받기가 하는 순서대로 먼저 1번 방 잠금을 쥔다
+                st.execute("SELECT pg_advisory_xact_lock(-1)");
+
+                // when 2: advance를 시작하고, 받기 세션에 막혀 기다리는 걸 pg_blocking_pids로 확인
                 var advance = pool.submit(() -> relays.advance(clock.instant()));
                 long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
-                while (backendsWaitingOnLock() == 0) {
-                    assertThat(advance.isDone()).as("advance가 받기의 잠금을 기다려야 함").isFalse();
+                while (blockedBy(takePid) == 0) {
+                    assertThat(advance.isDone()).as("advance가 받기의 1번 방 잠금을 기다려야 함").isFalse();
                     assertThat(System.nanoTime()).as("advance가 10초 안에 잠금 대기에 들어가야 함").isLessThan(deadline);
                     Thread.sleep(20);
                 }
 
-                // then 1: 받기는 advance가 쥔 것(2번 방 잠금)을 기다리지 않으므로 그대로 커밋된다
+                // then 1: advance가 기다리는 중에 받기가 B의 2번 방 넘김 행을 바꿔도 막히지 않는다
+                // (advance는 손댈 방 잠금을 다 잡기 전에는 넘김 행을 쥐지 않음)
+                int changed = st.executeUpdate(
+                        "UPDATE relay_offer SET status = 'DECLINED' WHERE user_id = 4 AND room_id = 2 AND status = 'OPEN'");
+                assertThat(changed).isEqualTo(1);
                 take.commit();
 
                 // then 2: advance도 예외 없이 끝난다(교착이면 ExecutionException)
@@ -275,11 +287,14 @@ class RelayApiTest {
         }
         assertThat(jdbc.sql("SELECT status FROM relay_offer WHERE user_id = 4 AND room_id = 2").query(String.class).single())
                 .isEqualTo("DECLINED");
+        assertThat(jdbc.sql("SELECT status FROM relay_offer WHERE user_id = 7").query(String.class).single())
+                .isEqualTo("EXPIRED");
     }
 
-    int backendsWaitingOnLock() {
-        return jdbc.sql("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()")
-                .query(Integer.class).single();
+    /** 받기 세션(pid)에 막혀 잠금을 기다리는 세션 수 */
+    int blockedBy(long pid) {
+        return jdbc.sql("SELECT count(*) FROM pg_stat_activity WHERE :pid = ANY(pg_blocking_pids(pid))")
+                .param("pid", (int) pid).query(Integer.class).single();
     }
 
     @Test
