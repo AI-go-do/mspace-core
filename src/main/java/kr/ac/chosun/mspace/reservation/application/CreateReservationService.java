@@ -10,6 +10,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -17,6 +18,7 @@ import kr.ac.chosun.mspace.common.config.ExtensionPolicy;
 import kr.ac.chosun.mspace.common.config.ReservationPolicy;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
+import kr.ac.chosun.mspace.common.privacy.MaskedName;
 import kr.ac.chosun.mspace.friend.application.FriendCheck;
 import kr.ac.chosun.mspace.notification.application.Notification;
 import kr.ac.chosun.mspace.notification.application.NotificationInbox;
@@ -62,10 +64,10 @@ public class CreateReservationService implements CreateReservationUseCase {
     static final DateTimeFormatter UNTIL = DateTimeFormatter.ofPattern("M/d HH:mm");
 
     /** 참여자 알림 종류 */
-    static final String PARTICIPANT_KIND = "PARTICIPANT_ADDED";
+    static final String PARTICIPANT_KIND = "RESERVATION_INVITED";
 
-    /** 참여자 알림 시각: "11/10 14:00" */
-    private static final DateTimeFormatter START = DateTimeFormatter.ofPattern("M/d HH:mm");
+    /** 참여자 알림 시각: "11/10(화) 14:00" */
+    private static final DateTimeFormatter START = DateTimeFormatter.ofPattern("M/d(E) HH:mm", Locale.KOREAN);
     private static final DateTimeFormatter END = DateTimeFormatter.ofPattern("HH:mm");
 
     private final ReservationCommandPort port;
@@ -309,15 +311,15 @@ public class CreateReservationService implements CreateReservationUseCase {
             throw new BusinessException(ErrorCode.RELAY_OFFER_INVALID);
         }
 
-        // 참여자 알림. 문구에 이름·학번은 넣지 않는다(알림함 규칙). 입실 번호도 대표자만 받으니 넣지 않는다
-        // 자정을 넘기면 끝에도 날짜를 붙인다 (11/3 23:00–11/4 01:00)
+        // 참여자 알림 (11/9 지영 카드 선택: 영준 docs #80 안). 대표자 이름은 가려서(홍*동) 넣는다. 친구끼리만 참여자가 되고
+        // 가린 이름은 내 예약 화면에도 이미 보인다. 학번·입실 번호는 넣지 않는다
         ZonedDateTime from = time.start().atZone(SEOUL);
         ZonedDateTime to = time.end().atZone(SEOUL);
-        String body = "%s %s–%s 예약에 함께 쓰는 사람으로 들어갔어요. 입실 번호는 대표자에게 있어요.".formatted(
-                room.name(), START.format(from),
-                (from.toLocalDate().equals(to.toLocalDate()) ? END : START).format(to));
+        String owner = port.findName(ownerId).map(MaskedName::of).filter(n -> !n.isEmpty()).orElse("대표자");
+        String body = "%s님이 %s–%s %s에 함께 예약했어요.".formatted(owner, START.format(from),
+                (from.toLocalDate().equals(to.toLocalDate()) ? END : START).format(to), room.name());
         List<NewNotification> items = ids.values().stream()
-                .map(u -> new NewNotification(u, id, PARTICIPANT_KIND, "함께 쓸 예약이 잡혔어요", body))
+                .map(u -> new NewNotification(u, id, PARTICIPANT_KIND, "함께 쓰는 예약이 생겼어요", body))
                 .toList();
         List<Notification> notified = inbox.store(items, now);
 

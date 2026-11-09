@@ -34,6 +34,11 @@ class CreateReservationRetryTest {
 
     /** insert를 부를 때마다 센다. 처음 deadlocks번은 교착 예외, 그다음은 성공(id 42) */
     static class FakePort implements ReservationCommandPort {
+
+        @Override
+        public Optional<String> findName(long userId) {
+            return Optional.of("홍길동");
+        }
         final int deadlocks;
         int insertCalls;
 

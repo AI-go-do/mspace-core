@@ -144,7 +144,7 @@ class SensorEventApiTest {
 
     /** 예약을 만들 때 생기는 참여자 알림(결정.md 27)은 ParticipantNoticeApiTest가 본다. 여기서는 지우고 이 기능의 알림만 센다 */
     void forgetParticipantNotices() {
-        jdbc.sql("DELETE FROM notification WHERE kind = 'PARTICIPANT_ADDED'").update();
+        jdbc.sql("DELETE FROM notification WHERE kind = 'RESERVATION_INVITED'").update();
         channel.sent.clear();
     }
 

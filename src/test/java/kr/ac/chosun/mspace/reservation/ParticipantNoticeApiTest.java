@@ -64,12 +64,12 @@ class ParticipantNoticeApiTest {
     }
 
     List<Long> notified() {
-        return jdbc.sql("SELECT user_id FROM notification WHERE kind = 'PARTICIPANT_ADDED' ORDER BY user_id")
+        return jdbc.sql("SELECT user_id FROM notification WHERE kind = 'RESERVATION_INVITED' ORDER BY user_id")
                 .query(Long.class).list();
     }
 
     @Test
-    @DisplayName("미리 예약을 만들면 대표자를 뺀 참여자 두 명이 알림을 받고, 문구에 방·시각만 있고 이름·번호는 없다")
+    @DisplayName("미리 예약을 만들면 대표자를 뺀 참여자 두 명이 알림을 받고, 문구에 가린 대표자 이름·시각·방이 있고 학번은 없다")
     void participantsNotified() {
         // when
         MvcTestResult r = reserve(1, "14:00", "16:00", null, "20230002", "20230003");
@@ -78,9 +78,9 @@ class ParticipantNoticeApiTest {
         assertThat(r).hasStatus(201);
         assertThat(notified()).containsExactly(2L, 3L);
         var row = jdbc.sql("SELECT reservation_id, title, body FROM notification LIMIT 1").query().singleRow();
-        assertThat(row).containsEntry("reservation_id", 1L).containsEntry("title", "함께 쓸 예약이 잡혔어요");
+        assertThat(row).containsEntry("reservation_id", 1L).containsEntry("title", "함께 쓰는 예약이 생겼어요");
         assertThat((String) row.get("body"))
-                .isEqualTo("1번 방 11/3 14:00–16:00 예약에 함께 쓰는 사람으로 들어갔어요. 입실 번호는 대표자에게 있어요.")
+                .isEqualTo("홍*동님이 11/3(화) 14:00–16:00 1번 방에 함께 예약했어요.")
                 .doesNotContain("홍길동").doesNotContain("2023000");
     }
 
@@ -97,7 +97,7 @@ class ParticipantNoticeApiTest {
         // then
         assertThat(r).hasStatus(201);
         assertThat(jdbc.sql("SELECT body FROM notification LIMIT 1").query(String.class).single())
-                .startsWith("1번 방 11/3 23:00–11/4 01:00 예약에");
+                .isEqualTo("홍*동님이 11/3(화) 23:00–11/4(수) 01:00 1번 방에 함께 예약했어요.");
     }
 
     @Test
@@ -114,7 +114,7 @@ class ParticipantNoticeApiTest {
         assertThat(r).hasStatus(201);
         assertThat(notified()).containsExactly(2L, 3L);
         assertThat(jdbc.sql("SELECT body FROM notification LIMIT 1").query(String.class).single())
-                .startsWith("1번 방 11/3 10:10–11:00");
+                .isEqualTo("홍*동님이 11/3(화) 10:10–11:00 1번 방에 함께 예약했어요.");
     }
 
     @Test
