@@ -32,7 +32,8 @@ import org.springframework.transaction.support.TransactionOperations;
  * <ul>
  *   <li>넘김 만들기는 예약 저장과 같은 방 잠금 안에서 한다. 넘겨받은 사람이 아닌 예약은 저장 때 409 RELAY_HELD
  *       (JdbcReservationAdapter). 같은 구간 열린 넘김은 DB 제약(one_open_offer)으로 하나뿐</li>
- *   <li>기다리기 걸기는 회원 잠금 안에서 세고 넣는다 (동시에 4개를 걸어도 3개까지만)</li>
+ *   <li>기다리기 걸기는 방 → 회원 잠금 안에서 칸을 보고 세고 넣는다 (동시에 4개를 걸어도 3개까지만,
+ *       취소와 겹쳐도 빈 칸에 기다리기가 남지 않음)</li>
  *   <li>넘김 알림은 알림함에 같은 트랜잭션으로, 바깥 채널은 커밋 뒤</li>
  * </ul>
  */
@@ -88,6 +89,9 @@ class RelayService implements RelayUseCase {
         }
         rooms.findActive(roomId).orElseThrow(() -> new BusinessException(ErrorCode.ROOM_NOT_FOUND));
         return tx.execute(s -> {
+            // 예약 저장·넘김 만들기와 같은 순서(방 → 회원). 방 잠금 안에서 칸을 봐야 취소와 겹쳐도
+            // released()가 이 기다리기 커밋을 기다렸다가 보고 넘긴다
+            port.lockRoom(roomId);
             port.lockUser(userId);
             Optional<WaitRow> same = port.findActiveWait(userId, roomId, startAt);
             if (same.isPresent()) {
