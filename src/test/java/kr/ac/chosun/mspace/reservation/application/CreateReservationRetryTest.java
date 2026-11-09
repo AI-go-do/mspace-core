@@ -100,6 +100,11 @@ class CreateReservationRetryTest {
         public List<BookedTime> findActiveReservations(Instant from, Instant to) {
             return List.of();
         }
+
+        @Override
+        public List<BlockedTime> findActiveBlocks(Instant from, Instant to) {
+            return List.of();
+        }
     };
 
     CreateReservationService service(FakePort port) {

@@ -1,6 +1,7 @@
 package kr.ac.chosun.mspace.reservation.application;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -9,6 +10,9 @@ public interface RelayPort {
 
     /** 방 잠금 (예약 저장과 같은 번호 -방 id). 넘김 만들기와 예약 저장이 한 줄로 서게 */
     void lockRoom(int roomId);
+
+    /** 넘기기 일(advance) 잠금. advance끼리 한 줄로 서게 해서 여러 방 잠금을 서로 다른 순서로 잡는 교착을 막는다 */
+    void lockAdvance();
 
     /** 회원 잠금 (예약 저장과 같은 번호 = 회원 id). 기다리기 3개 세기와 걸기가 한 줄로 서게 */
     void lockUser(long userId);
@@ -35,13 +39,25 @@ public interface RelayPort {
     /** 열린 넘김을 DECLINED로 (기다리기도 DECLINED). 바꿨으면 true */
     boolean declineOffer(long userId, long offerId, Instant now);
 
-    /** 받을 시간이 지난 열린 넘김을 EXPIRED로 (기다리기도 DECLINED). 바뀐 수 */
-    int expireOffers(Instant now);
+    /** advance가 손댈 방 전부 (방 번호 순). 행을 바꾸기 전에 이 방들을 먼저 다 잠근다 */
+    List<Integer> roomsToAdvance(Instant now, Instant from);
 
-    /** 아직 다음 사람을 찾지 않은 DECLINED·EXPIRED 넘김. 잠그고 읽는다 */
-    List<OfferRow> offersToPass();
+    /** 받을 시간이 지난 열린 넘김이 있는 방 (방 번호 순) */
+    List<Integer> roomsWithExpiredOffers(Instant now);
+
+    /** 이 방의 받을 시간이 지난 열린 넘김을 EXPIRED로 (기다리기도 DECLINED). 방 잠금 안에서 부른다. 바뀐 수 */
+    int expireOffers(int roomId, Instant now);
+
+    /** 시작이 from보다 늦고, 줄 선 사람이 있는데 넘김이 한 번도 안 만들어진 취소 예약 (첫 넘기기가 실패한 것) */
+    List<Long> unofferedCancellations(Instant from);
+
+    /** 아직 다음 사람을 찾지 않은 DECLINED·EXPIRED·TAKEN 넘김(TAKEN은 일부만 받았을 때 남은 칸 때문). 이미 잠근 방(roomIds)의 것만 잠그고 읽는다 */
+    List<OfferRow> offersToPass(Collection<Integer> roomIds);
 
     void markPassed(long offerId);
+
+    /** 이 구간과 겹치는 끝나지 않은(BOOKED·IN_USE) 예약 구간, 시작 순 */
+    List<Span> busy(int roomId, Instant start, Instant end);
 
     /** 취소된 예약 (방·시작·끝). 취소 상태가 아니면 빈 값 */
     Optional<Released> canceledReservation(long reservationId);
@@ -53,7 +69,7 @@ public interface RelayPort {
     Optional<OfferRow> offerToNext(int roomId, Instant start, Instant end, long sourceReservationId, Instant now,
                                    Instant expiresAt);
 
-    /** 받기: 열린 넘김을 TAKEN으로, 그 사람의 다른 기다리기는 CANCELED, 다른 열린 넘김은 DECLINED. 바꿨으면 true */
+    /** 받기: 받을 시간이 남은(expires_at > now) 열린 넘김을 TAKEN으로, 그 사람의 다른 기다리기는 CANCELED, 다른 열린 넘김은 DECLINED. 바꿨으면 true */
     boolean take(long offerId, long userId, long reservationId, Instant now);
 
     String roomName(int roomId);
@@ -69,5 +85,8 @@ public interface RelayPort {
     }
 
     record Released(int roomId, Instant startAt, Instant endAt) {
+    }
+
+    record Span(Instant start, Instant end) {
     }
 }

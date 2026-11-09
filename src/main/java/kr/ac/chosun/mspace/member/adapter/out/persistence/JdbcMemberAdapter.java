@@ -7,6 +7,7 @@ import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.member.application.MemberPort;
 import kr.ac.chosun.mspace.member.application.MemberQueryPort;
+import kr.ac.chosun.mspace.member.application.MemberQueryPort.Profile;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
@@ -68,6 +69,14 @@ class JdbcMemberAdapter implements MemberPort, MemberQueryPort {
         return jdbc.sql("SELECT id, name FROM users WHERE student_id = :sid AND verified_at IS NOT NULL")
                 .param("sid", studentId)
                 .query((rs, n) -> new VerifiedMember(rs.getLong("id"), rs.getString("name")))
+                .optional();
+    }
+
+    @Override
+    public Optional<Profile> findProfile(long memberId) {
+        return jdbc.sql("SELECT student_id, name FROM users WHERE id = :id")
+                .param("id", memberId)
+                .query((rs, n) -> new Profile(rs.getString("student_id"), rs.getString("name")))
                 .optional();
     }
 }

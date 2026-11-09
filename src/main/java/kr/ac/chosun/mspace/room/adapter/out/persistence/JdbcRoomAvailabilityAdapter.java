@@ -4,6 +4,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import kr.ac.chosun.mspace.room.application.BlockReason;
 import kr.ac.chosun.mspace.room.application.RoomAvailabilityPort;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
@@ -50,6 +51,20 @@ class JdbcRoomAvailabilityAdapter implements RoomAvailabilityPort {
                 .param("to", Timestamp.from(to))
                 .query((rs, n) -> new BookedTime(rs.getInt("room_id"),
                         rs.getTimestamp("start_at").toInstant(), rs.getTimestamp("end_at").toInstant()))
+                .list();
+    }
+
+    @Override
+    public List<BlockedTime> findActiveBlocks(Instant from, Instant to) {
+        return jdbc.sql("""
+                        SELECT room_id, start_at, end_at, reason, memo FROM room_block
+                         WHERE released_at IS NULL AND start_at < :to AND end_at > :from
+                        """)
+                .param("from", Timestamp.from(from))
+                .param("to", Timestamp.from(to))
+                .query((rs, n) -> new BlockedTime(rs.getInt("room_id"),
+                        rs.getTimestamp("start_at").toInstant(), rs.getTimestamp("end_at").toInstant(),
+                        BlockReason.valueOf(rs.getString("reason")), rs.getString("memo")))
                 .list();
     }
 }

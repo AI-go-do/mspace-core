@@ -8,13 +8,13 @@ CREATE TABLE relay_wait (
     start_at   timestamptz  NOT NULL,                      -- 기다리는 30분 칸의 시작
     status     varchar(10)  NOT NULL DEFAULT 'WAITING'
                CHECK (status IN ('WAITING', 'OFFERED', 'TAKEN', 'DECLINED', 'CANCELED')),
-    created_at timestamptz  NOT NULL,                      -- 줄 선 순서
+    created_at timestamptz  NOT NULL,                      -- 줄 선 때 (순서는 id: 방 잠금 안에서 넣음)
     ended_at   timestamptz,
     CONSTRAINT wait_ended CHECK ((status IN ('WAITING', 'OFFERED')) = (ended_at IS NULL))
 );
 -- 같은 사람이 같은 칸에 두 번 줄 서지 않게. 줄 순서도 이 인덱스로 찾는다
 CREATE UNIQUE INDEX one_wait_per_slot ON relay_wait (user_id, room_id, start_at) WHERE status IN ('WAITING', 'OFFERED');
-CREATE INDEX relay_wait_queue ON relay_wait (room_id, start_at, created_at, id) WHERE status = 'WAITING';
+CREATE INDEX relay_wait_queue ON relay_wait (room_id, start_at, id) WHERE status = 'WAITING';
 
 CREATE TABLE relay_offer (
     id                    bigint       GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -28,7 +28,7 @@ CREATE TABLE relay_offer (
     expires_at            timestamptz  NOT NULL,             -- 이때까지 안 받으면 다음 사람
     status                varchar(10)  NOT NULL DEFAULT 'OPEN'
                           CHECK (status IN ('OPEN', 'TAKEN', 'DECLINED', 'EXPIRED')),
-    passed_on             boolean      NOT NULL DEFAULT false, -- 넘김·시간 지남 뒤 다음 사람 찾기를 마쳤는지
+    passed_on             boolean      NOT NULL DEFAULT false, -- 넘김·시간 지남·받기 뒤 (남은 칸) 다음 사람 찾기를 마쳤는지
     reservation_id        bigint       REFERENCES reservation(id), -- 받아서 만든 예약
     CONSTRAINT offer_period CHECK (start_at < end_at),
     CONSTRAINT offer_taken_has_reservation CHECK ((status = 'TAKEN') = (reservation_id IS NOT NULL)),
@@ -37,4 +37,5 @@ CREATE TABLE relay_offer (
         WHERE (status = 'OPEN')
 );
 CREATE INDEX relay_offer_user ON relay_offer (user_id) WHERE status = 'OPEN';
-CREATE INDEX relay_offer_to_pass ON relay_offer (id) WHERE status IN ('DECLINED', 'EXPIRED') AND NOT passed_on;
+-- 넘길게요·시간 지남·일부만 받음(남은 칸) 뒤 다음 사람 찾기
+CREATE INDEX relay_offer_to_pass ON relay_offer (id) WHERE status IN ('DECLINED', 'EXPIRED', 'TAKEN') AND NOT passed_on;

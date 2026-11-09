@@ -72,6 +72,12 @@ class RelayApiTest {
     @Autowired
     SweepReservationsUseCase sweeps;
 
+    @Autowired
+    kr.ac.chosun.mspace.reservation.application.RelayUseCase relays;
+
+    @Autowired
+    javax.sql.DataSource dataSource;
+
     long teamA;
 
     static Instant at(String time) {
@@ -170,6 +176,125 @@ class RelayApiTest {
                 .isEqualTo(taken);
         assertThat(waitStatus(4)).isEqualTo("TAKEN");
         assertThat(offers(4)).hasStatusOk().bodyJson().extractingPath("$.length()").isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("취소 뒤 첫 넘기기가 실패해도 1분 정리가 줄 첫 사람에게 넘긴다")
+    void sweepRetriesFailedRelease() {
+        // given: B가 14:00 칸을 기다리는데, 팀 A 취소 뒤 첫 넘기기가 실패했다 (넘김이 없고 B는 그대로 줄에 있음)
+        waitFor(4, 1, "14:00");
+        now("10:10");
+        cancel(1, teamA);
+        jdbc.sql("DELETE FROM notification").update();
+        jdbc.sql("DELETE FROM relay_offer").update();
+        jdbc.sql("UPDATE relay_wait SET status = 'WAITING' WHERE user_id = 4").update();
+
+        // when: 1분 정리
+        now("10:11");
+        sweeps.sweep();
+
+        // then: B에게 10:16까지 넘어오고 알림도 간다. 한 번 더 돌아도 또 만들지 않는다
+        assertThat(offers(4)).hasStatusOk().bodyJson().extractingPath("$[0].expiresAt")
+                .isEqualTo("2030-03-05T10:16:00+09:00");
+        sweeps.sweep();
+        assertThat(jdbc.sql("SELECT count(*) FROM relay_offer").query(Integer.class).single()).isEqualTo(1);
+        assertThat(jdbc.sql("SELECT count(*) FROM notification WHERE user_id = 4 AND kind = 'RELAY_OFFER'")
+                .query(Integer.class).single()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("넘겨받은 사람이 일부만 받으면 남은 칸은 그 칸을 기다린 다음 사람에게 넘어간다")
+    void partialTakePassesRest() {
+        // given: B가 14:00 칸, C가 14:30 칸을 기다리고, 팀 A(14:00–15:00)가 취소해 B에게 넘어옴
+        waitFor(4, 1, "14:00");
+        now("10:01");
+        waitFor(7, 1, "14:30");
+        now("10:10");
+        cancel(1, teamA);
+
+        // when: B가 14:00–14:30만 받는다
+        now("10:12");
+        id(book(4, "14:00", "14:30", offerId(4)));
+
+        // then: 남은 14:30–15:00이 C에게 10:17까지 넘어오고, 다른 사람은 그 30분을 못 잡는다
+        assertThat(offers(7)).hasStatusOk().bodyJson()
+                .hasPathSatisfying("$[0].startAt", v -> v.assertThat().isEqualTo("2030-03-05T14:30:00+09:00"))
+                .hasPathSatisfying("$[0].endAt", v -> v.assertThat().isEqualTo("2030-03-05T15:00:00+09:00"))
+                .hasPathSatisfying("$[0].expiresAt", v -> v.assertThat().isEqualTo("2030-03-05T10:17:00+09:00"));
+        assertThat(book(10, "14:30", "15:00", null)).hasStatus(409).bodyJson().extractingPath("$.code")
+                .isEqualTo("RELAY_HELD");
+        id(book(7, "14:30", "15:00", offerId(7)));
+    }
+
+    @Test
+    @DisplayName("받기가 방 잠금을 쥔 동안 넘기기 정리가 그 잠금을 기다려도, 받기가 다른 방 넘김 행을 바꾸고 둘 다 교착 없이 끝난다")
+    void takeAndAdvanceConcurrently() throws Exception {
+        // given: B는 1번 방·2번 방 14:00 칸을 기다리고, C는 1번 방 15:00 칸을 기다린다.
+        // 세 예약이 취소돼 B에게 1·2번 방, C에게 1번 방 15:00이 넘어오고, B의 2번 방·C의 1번 방 넘김은 방금 5분 지남
+        // → advance가 손댈 방은 1번·2번 둘 다
+        long teamRoom2 = id(mvc.post().uri("/api/reservations").header("X-User-Id", "7")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"roomId":2,"startAt":"2030-03-05T14:00:00+09:00","endAt":"2030-03-05T15:00:00+09:00",
+                         "participantStudentIds":["20230008","20230009"]}""")
+                .exchange());
+        long teamRoom1Later = id(book(10, "15:00", "16:00", null));
+        waitFor(4, 1, "14:00");
+        waitFor(4, 2, "14:00");
+        now("10:10");
+        cancel(1, teamA);
+        cancel(7, teamRoom2);
+        waitFor(7, 1, "15:00");
+        cancel(10, teamRoom1Later);
+        jdbc.sql("UPDATE relay_offer SET expires_at = :t WHERE (user_id = 4 AND room_id = 2) OR user_id = 7")
+                .param("t", java.sql.Timestamp.from(at("10:09"))).update();
+
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try (java.sql.Connection take = dataSource.getConnection()) {
+            take.setAutoCommit(false);
+            try (var st = take.createStatement()) {
+                st.execute("SET LOCAL lock_timeout = '5s'");  // 교착·막힘이면 멈추지 않고 실패
+                long takePid;
+                try (var rs = st.executeQuery("SELECT pg_backend_pid()")) {
+                    rs.next();
+                    takePid = rs.getLong(1);
+                }
+
+                // when 1: 받기가 하는 순서대로 먼저 1번 방 잠금을 쥔다
+                st.execute("SELECT pg_advisory_xact_lock(-1)");
+
+                // when 2: advance를 시작하고, 받기 세션에 막혀 기다리는 걸 pg_blocking_pids로 확인
+                var advance = pool.submit(() -> relays.advance(clock.instant()));
+                long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+                while (blockedBy(takePid) == 0) {
+                    assertThat(advance.isDone()).as("advance가 받기의 1번 방 잠금을 기다려야 함").isFalse();
+                    assertThat(System.nanoTime()).as("advance가 10초 안에 잠금 대기에 들어가야 함").isLessThan(deadline);
+                    Thread.sleep(20);
+                }
+
+                // then 1: advance가 기다리는 중에 받기가 B의 2번 방 넘김 행을 바꿔도 막히지 않는다
+                // (advance는 손댈 방 잠금을 다 잡기 전에는 넘김 행을 쥐지 않음)
+                int changed = st.executeUpdate(
+                        "UPDATE relay_offer SET status = 'DECLINED' WHERE user_id = 4 AND room_id = 2 AND status = 'OPEN'");
+                assertThat(changed).isEqualTo(1);
+                take.commit();
+
+                // then 2: advance도 예외 없이 끝난다(교착이면 ExecutionException)
+                assertThat(advance.get(30, java.util.concurrent.TimeUnit.SECONDS)).isNotNegative();
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(jdbc.sql("SELECT status FROM relay_offer WHERE user_id = 4 AND room_id = 2").query(String.class).single())
+                .isEqualTo("DECLINED");
+        assertThat(jdbc.sql("SELECT status FROM relay_offer WHERE user_id = 7").query(String.class).single())
+                .isEqualTo("EXPIRED");
+    }
+
+    /** 받기 세션(pid)에 막혀 잠금을 기다리는 세션 수 */
+    int blockedBy(long pid) {
+        return jdbc.sql("SELECT count(*) FROM pg_stat_activity WHERE :pid = ANY(pg_blocking_pids(pid))")
+                .param("pid", (int) pid).query(Integer.class).single();
     }
 
     @Test

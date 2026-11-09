@@ -28,4 +28,11 @@ class MemberSearchService implements MemberSearchUseCase {
                 .map(m -> new FoundMember(id, MaskedName.of(m.name()), m.id() == requesterId))
                 .orElseThrow(() -> new BusinessException(ErrorCode.MEMBER_NOT_FOUND));
     }
+
+    @Override
+    public MyProfile myProfile(long memberId) {
+        return members.findProfile(memberId)
+                .map(p -> new MyProfile(p.studentId(), p.name()))
+                .orElseThrow(() -> new BusinessException(ErrorCode.MEMBER_NOT_FOUND));
+    }
 }

@@ -4,6 +4,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import kr.ac.chosun.mspace.reservation.application.RelayPort;
@@ -21,7 +22,7 @@ class JdbcRelayAdapter implements RelayPort {
     private static final String WAIT_ORDER = """
             (SELECT count(*) FROM relay_wait q
              WHERE q.room_id = w.room_id AND q.start_at = w.start_at AND q.status = 'WAITING'
-               AND (q.created_at, q.id) <= (w.created_at, w.id))""";
+               AND q.id <= w.id)""";
 
     private final JdbcClient jdbc;
 
@@ -32,6 +33,11 @@ class JdbcRelayAdapter implements RelayPort {
     @Override
     public void lockRoom(int roomId) {
         lock(-(long) roomId);
+    }
+
+    @Override
+    public void lockAdvance() {
+        lock(Long.MIN_VALUE);  // 방(-방 id)·회원(id)·신고 정지(4조+id) 번호와 겹치지 않음
     }
 
     @Override
@@ -134,19 +140,61 @@ class JdbcRelayAdapter implements RelayPort {
 
     @Override
     public boolean declineOffer(long userId, long offerId, Instant now) {
-        return endOffers("o.id = :id AND o.user_id = :user AND o.status = 'OPEN'", "DECLINED", now, offerId, userId) == 1;
+        return endOffers("o.id = :id AND o.user_id = :user AND o.status = 'OPEN'", "DECLINED", now, offerId, userId, 0) == 1;
     }
 
     @Override
-    public int expireOffers(Instant now) {
-        return endOffers("o.status = 'OPEN' AND o.expires_at <= :now", "EXPIRED", now, 0, 0);
+    public int expireOffers(int roomId, Instant now) {
+        return endOffers("o.room_id = :room AND o.status = 'OPEN' AND o.expires_at <= :now", "EXPIRED", now, 0, 0,
+                roomId);
     }
+
+    @Override
+    public List<Integer> roomsToAdvance(Instant now, Instant from) {
+        // advance가 손댈 방: 5분 지난 열린 넘김, 다음 사람을 아직 안 찾은 넘김, 첫 넘기기가 실패한 취소
+        return jdbc.sql("""
+                        SELECT room_id FROM relay_offer WHERE status = 'OPEN' AND expires_at <= :now
+                        UNION
+                        SELECT room_id FROM relay_offer WHERE status IN ('DECLINED', 'EXPIRED', 'TAKEN') AND NOT passed_on
+                        UNION
+                        SELECT r.room_id FROM reservation r
+                        WHERE r.status = 'CANCELED' AND r.start_at > :from
+                          AND EXISTS (SELECT 1 FROM relay_wait w
+                                      WHERE w.room_id = r.room_id AND w.status = 'WAITING'
+                                        AND w.start_at >= r.start_at AND w.start_at < r.end_at)
+                          AND NOT EXISTS (SELECT 1 FROM relay_offer o WHERE o.source_reservation_id = r.id)
+                        ORDER BY 1
+                        """)
+                .param("now", Timestamp.from(now)).param("from", Timestamp.from(from)).query(Integer.class).list();
+    }
+
+    @Override
+    public List<Integer> roomsWithExpiredOffers(Instant now) {
+        return jdbc.sql("SELECT DISTINCT room_id FROM relay_offer WHERE status = 'OPEN' AND expires_at <= :now ORDER BY room_id")
+                .param("now", Timestamp.from(now)).query(Integer.class).list();
+    }
+
+    @Override
+    public List<Long> unofferedCancellations(Instant from) {
+        // 취소 뒤 첫 넘기기(released)가 실패해 남은 것: 줄 선 사람이 있는데 그 예약에서 나온 넘김이 하나도 없는 취소
+        return jdbc.sql("""
+                        SELECT r.id FROM reservation r
+                        WHERE r.status = 'CANCELED' AND r.start_at > :from
+                          AND EXISTS (SELECT 1 FROM relay_wait w
+                                      WHERE w.room_id = r.room_id AND w.status = 'WAITING'
+                                        AND w.start_at >= r.start_at AND w.start_at < r.end_at)
+                          AND NOT EXISTS (SELECT 1 FROM relay_offer o WHERE o.source_reservation_id = r.id)
+                        ORDER BY r.id
+                        """)
+                .param("from", Timestamp.from(from)).query(Long.class).list();
+    }
+
 
     /**
      * 넘김을 끝내고(넘김·시간 지남), 그 사람의 기다리기도 끝낸다: 넘겨받은 기다리기와, 같은 구간 안 칸에 걸어 둔 다른 기다리기
      * (안 끝내면 같은 자리가 그 사람에게 다시 온다)
      */
-    private int endOffers(String where, String status, Instant now, long offerId, long userId) {
+    private int endOffers(String where, String status, Instant now, long offerId, long userId, int roomId) {
         return jdbc.sql("""
                         WITH o AS (
                             UPDATE relay_offer o SET status = :status
@@ -163,22 +211,38 @@ class JdbcRelayAdapter implements RelayPort {
                         SELECT count(*) FROM o
                         """.formatted(where))
                 .param("status", status).param("now", Timestamp.from(now)).param("id", offerId).param("user", userId)
+                .param("room", roomId)
                 .query((rs, n) -> rs.getInt(1)).single();
     }
 
     @Override
-    public List<OfferRow> offersToPass() {
+    public List<OfferRow> offersToPass(Collection<Integer> roomIds) {
+        if (roomIds.isEmpty()) {
+            return List.of();
+        }
         return jdbc.sql("""
                         SELECT %s FROM relay_offer
-                        WHERE status IN ('DECLINED', 'EXPIRED') AND NOT passed_on
+                        WHERE status IN ('DECLINED', 'EXPIRED', 'TAKEN') AND NOT passed_on AND room_id IN (:rooms)
                         ORDER BY id FOR UPDATE SKIP LOCKED
                         """.formatted(OFFER_COLUMNS))
-                .query(JdbcRelayAdapter::offerRow).list();
+                .param("rooms", roomIds).query(JdbcRelayAdapter::offerRow).list();
     }
 
     @Override
     public void markPassed(long offerId) {
         jdbc.sql("UPDATE relay_offer SET passed_on = true WHERE id = :id").param("id", offerId).update();
+    }
+
+    @Override
+    public List<Span> busy(int roomId, Instant start, Instant end) {
+        return jdbc.sql("""
+                        SELECT start_at, end_at FROM reservation
+                        WHERE room_id = :room AND status IN ('BOOKED', 'IN_USE')
+                          AND tstzrange(start_at, end_at) && tstzrange(:start, :end)
+                        ORDER BY start_at
+                        """)
+                .param("room", roomId).param("start", Timestamp.from(start)).param("end", Timestamp.from(end))
+                .query((rs, n) -> new Span(rs.getTimestamp(1).toInstant(), rs.getTimestamp(2).toInstant())).list();
     }
 
     @Override
@@ -205,7 +269,7 @@ class JdbcRelayAdapter implements RelayPort {
                               AND NOT EXISTS (SELECT 1 FROM relay_offer o
                                               WHERE o.room_id = :room AND o.status = 'OPEN'
                                                 AND tstzrange(o.start_at, o.end_at) && tstzrange(:start, :end))
-                            ORDER BY w.created_at, w.id
+                            ORDER BY w.id  -- 줄 순서는 번호: 방 잠금 안에서 넣으니 번호가 곧 줄 선 순서 (서버 시계와 무관)
                             LIMIT 1 FOR UPDATE SKIP LOCKED
                         ), w AS (
                             UPDATE relay_wait SET status = 'OFFERED' WHERE id IN (SELECT id FROM next)
@@ -228,7 +292,7 @@ class JdbcRelayAdapter implements RelayPort {
         return jdbc.sql("""
                         WITH o AS (
                             UPDATE relay_offer SET status = 'TAKEN', reservation_id = :res
-                            WHERE id = :id AND user_id = :user AND status = 'OPEN'
+                            WHERE id = :id AND user_id = :user AND status = 'OPEN' AND expires_at > :now
                             RETURNING wait_id
                         ), mine AS (
                             UPDATE relay_wait SET status = 'TAKEN', ended_at = :now

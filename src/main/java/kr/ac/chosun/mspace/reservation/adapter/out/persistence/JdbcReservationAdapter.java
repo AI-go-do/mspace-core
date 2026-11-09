@@ -15,6 +15,7 @@ import kr.ac.chosun.mspace.reservation.application.ContinuationPort;
 import kr.ac.chosun.mspace.reservation.application.ReservationCommandPort;
 import kr.ac.chosun.mspace.reservation.application.UsageChainPort;
 import kr.ac.chosun.mspace.reservation.domain.ReservationStatus;
+import kr.ac.chosun.mspace.room.application.BlockReason;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.ServerErrorMessage;
 import org.springframework.beans.factory.annotation.Value;
@@ -97,6 +98,7 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
     public long insert(NewReservation r) {
         try {
             lockInOrder(r);
+            rejectIfBlocked(r);
             rejectIfHeld(r);
             long id = jdbc.sql("""
                             INSERT INTO reservation (room_id, owner_id, start_at, end_at, headcount, access_code,
@@ -161,6 +163,29 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
             }
             throw e;
         }
+    }
+
+    /**
+     * 관리자가 막아 둔 칸이면 409 ROOM_BLOCKED (Q-23, core #95). 미리 예약·즉시 시작·연장이 모두 이 insert를 지난다.
+     * 방 잠금을 잡은 뒤에 보므로, 같은 방을 막는 관리자 요청(같은 잠금)과 엇갈려 둘 다 통과하는 일이 없다.
+     * room_block의 EXCLUDE 인덱스(방 + 기간, 풀리지 않은 것만)를 탄다
+     */
+    private void rejectIfBlocked(NewReservation r) {
+        jdbc.sql("""
+                        SELECT reason, end_at FROM room_block
+                        WHERE room_id = :room AND released_at IS NULL
+                          AND tstzrange(start_at, end_at) && tstzrange(:start, :end)
+                        ORDER BY end_at DESC LIMIT 1
+                        """)
+                .param("room", r.roomId())
+                .param("start", Timestamp.from(r.startAt()))
+                .param("end", Timestamp.from(r.endAt()))
+                .query((rs, n) -> BlockReason.valueOf(rs.getString("reason"))
+                        .blockedMessage(rs.getTimestamp("end_at").toInstant()))
+                .optional()
+                .ifPresent(message -> {
+                    throw new BusinessException(ErrorCode.ROOM_BLOCKED, message);
+                });
     }
 
     /** 멱등 키로 찾기. 제약 one_reservation_per_key(owner_id, idempotency_key)의 인덱스를 탄다 */
