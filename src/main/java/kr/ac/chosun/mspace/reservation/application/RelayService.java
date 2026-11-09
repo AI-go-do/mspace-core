@@ -166,7 +166,11 @@ class RelayService implements RelayUseCase {
     public int advance(Instant now) {
         List<Notification> stored = new ArrayList<>();
         Integer passed = tx.execute(s -> {
-            port.expireOffers(now);
+            // 받기(예약 저장)는 방 잠금 → 넘김 줄 순서라 여기도 방 잠금을 먼저 잡고 넘김을 바꾼다 (교착 방지)
+            for (int roomId : port.roomsWithExpiredOffers(now)) {
+                port.lockRoom(roomId);
+                port.expireOffers(roomId, now);
+            }
             int n = 0;
             for (OfferRow done : port.offersToPass()) {
                 port.lockRoom(done.roomId());
@@ -177,6 +181,25 @@ class RelayService implements RelayUseCase {
                 }
                 Optional<OfferRow> next = port.offerToNext(done.roomId(), done.startAt(), done.endAt(),
                         done.sourceReservationId(), locked, expiry(locked));
+                if (next.isPresent()) {
+                    stored.addAll(notify(next.get(), locked));
+                    n++;
+                }
+            }
+            // 취소 뒤 첫 넘기기가 실패한 것도 여기서 다시 (줄 선 사람이 있는데 넘김이 한 번도 없는 취소)
+            Instant cutoff = clock.instant().plus(Duration.ofMinutes(relay.stopBeforeMinutes()));
+            for (long reservationId : port.unofferedCancellations(cutoff)) {
+                Released r = port.canceledReservation(reservationId).orElse(null);
+                if (r == null) {
+                    continue;
+                }
+                port.lockRoom(r.roomId());
+                Instant locked = clock.instant();
+                if (!open(r.startAt(), locked)) {
+                    continue;
+                }
+                Optional<OfferRow> next = port.offerToNext(r.roomId(), r.startAt(), r.endAt(), reservationId, locked,
+                        expiry(locked));
                 if (next.isPresent()) {
                     stored.addAll(notify(next.get(), locked));
                     n++;

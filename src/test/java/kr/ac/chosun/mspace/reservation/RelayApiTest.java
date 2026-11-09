@@ -173,6 +173,30 @@ class RelayApiTest {
     }
 
     @Test
+    @DisplayName("취소 뒤 첫 넘기기가 실패해도 1분 정리가 줄 첫 사람에게 넘긴다")
+    void sweepRetriesFailedRelease() {
+        // given: B가 14:00 칸을 기다리는데, 팀 A 취소 뒤 첫 넘기기가 실패했다 (넘김이 없고 B는 그대로 줄에 있음)
+        waitFor(4, 1, "14:00");
+        now("10:10");
+        cancel(1, teamA);
+        jdbc.sql("DELETE FROM notification").update();
+        jdbc.sql("DELETE FROM relay_offer").update();
+        jdbc.sql("UPDATE relay_wait SET status = 'WAITING' WHERE user_id = 4").update();
+
+        // when: 1분 정리
+        now("10:11");
+        sweeps.sweep();
+
+        // then: B에게 10:16까지 넘어오고 알림도 간다. 한 번 더 돌아도 또 만들지 않는다
+        assertThat(offers(4)).hasStatusOk().bodyJson().extractingPath("$[0].expiresAt")
+                .isEqualTo("2030-03-05T10:16:00+09:00");
+        sweeps.sweep();
+        assertThat(jdbc.sql("SELECT count(*) FROM relay_offer").query(Integer.class).single()).isEqualTo(1);
+        assertThat(jdbc.sql("SELECT count(*) FROM notification WHERE user_id = 4 AND kind = 'RELAY_OFFER'")
+                .query(Integer.class).single()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("넘길게요를 누르면 다음 사람에게 넘어가고, 5분이 지나면 1분 정리가 그다음 사람에게 넘긴다")
     void declineThenExpire() {
         // given: B → C → D 순서로 14:00 칸을 기다린다

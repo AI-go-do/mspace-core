@@ -35,8 +35,14 @@ public interface RelayPort {
     /** 열린 넘김을 DECLINED로 (기다리기도 DECLINED). 바꿨으면 true */
     boolean declineOffer(long userId, long offerId, Instant now);
 
-    /** 받을 시간이 지난 열린 넘김을 EXPIRED로 (기다리기도 DECLINED). 바뀐 수 */
-    int expireOffers(Instant now);
+    /** 받을 시간이 지난 열린 넘김이 있는 방 (방 번호 순) */
+    List<Integer> roomsWithExpiredOffers(Instant now);
+
+    /** 이 방의 받을 시간이 지난 열린 넘김을 EXPIRED로 (기다리기도 DECLINED). 방 잠금 안에서 부른다. 바뀐 수 */
+    int expireOffers(int roomId, Instant now);
+
+    /** 시작이 from보다 늦고, 줄 선 사람이 있는데 넘김이 한 번도 안 만들어진 취소 예약 (첫 넘기기가 실패한 것) */
+    List<Long> unofferedCancellations(Instant from);
 
     /** 아직 다음 사람을 찾지 않은 DECLINED·EXPIRED 넘김. 잠그고 읽는다 */
     List<OfferRow> offersToPass();
@@ -53,7 +59,7 @@ public interface RelayPort {
     Optional<OfferRow> offerToNext(int roomId, Instant start, Instant end, long sourceReservationId, Instant now,
                                    Instant expiresAt);
 
-    /** 받기: 열린 넘김을 TAKEN으로, 그 사람의 다른 기다리기는 CANCELED, 다른 열린 넘김은 DECLINED. 바꿨으면 true */
+    /** 받기: 받을 시간이 남은(expires_at > now) 열린 넘김을 TAKEN으로, 그 사람의 다른 기다리기는 CANCELED, 다른 열린 넘김은 DECLINED. 바꿨으면 true */
     boolean take(long offerId, long userId, long reservationId, Instant now);
 
     String roomName(int roomId);

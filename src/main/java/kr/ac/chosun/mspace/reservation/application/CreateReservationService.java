@@ -282,7 +282,8 @@ public class CreateReservationService implements CreateReservationUseCase {
         long id = port.insert(new NewReservation(room.id(), ownerId, time.start(), time.end(), accessCode,
                 participantIds, command.idempotencyKey(), instant, command.createdVia(), false, null, offerId, now));
         // 받은 넘김 표시. 같은 트랜잭션이라 저장이 실패하면 넘김도 그대로 남는다
-        if (offerId != null && !relays.take(offerId, ownerId, id, now)) {
+        // 방 잠금을 기다리는 사이 5분이 지났을 수 있어 지금 시각으로 다시 본다
+        if (offerId != null && !relays.take(offerId, ownerId, id, clock.instant())) {
             throw new BusinessException(ErrorCode.RELAY_OFFER_INVALID);
         }
         return new Created(id, room.id(), time.start().atZone(SEOUL), time.end().atZone(SEOUL),
