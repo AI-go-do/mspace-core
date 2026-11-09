@@ -176,6 +176,9 @@ class RoomBlockApiTest {
         assertThat(block(ADMIN, """
                 {"roomId":99,"startAt":"2030-03-05T12:00:00+09:00","endAt":"2030-03-05T13:00:00+09:00","reason":"RENTAL"}
                 """)).hasStatus(404);
+        assertThat(block(ADMIN, """
+                {"startAt":"2030-03-05T12:00:00+09:00","endAt":"2030-03-05T13:00:00+09:00","reason":"RENTAL"}
+                """)).hasStatus(400).bodyJson().extractingPath("$.code").isEqualTo("ROOM_BLOCK_INVALID");
 
         assertThat(block("12:00", "14:00", "INSPECTION")).hasStatus(201);
         assertThat(block("13:30", "15:00", "RENTAL")).hasStatus(409)

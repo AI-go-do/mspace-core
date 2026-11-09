@@ -3,6 +3,8 @@ package kr.ac.chosun.mspace.room.adapter.in.web;
 import java.time.OffsetDateTime;
 import java.util.List;
 import kr.ac.chosun.mspace.common.auth.LoginUser;
+import kr.ac.chosun.mspace.common.error.BusinessException;
+import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.room.application.BlockReason;
 import kr.ac.chosun.mspace.room.application.RoomBlockUseCase;
 import kr.ac.chosun.mspace.room.application.RoomBlockUseCase.Block;
@@ -42,6 +44,10 @@ class RoomBlockController {
     @PostMapping("/api/admin/room-blocks")
     @ResponseStatus(HttpStatus.CREATED)
     Created create(LoginUser user, @RequestBody BlockRequest request) {
+        if (request.roomId() == null) {
+            // int로 받으면 빠진 roomId가 0이 되어 404(ROOM_NOT_FOUND)가 난다. 빠진 값은 입력 오류로 (수연 리뷰)
+            throw new BusinessException(ErrorCode.ROOM_BLOCK_INVALID, "방을 골라 주세요");
+        }
         return blocks.create(user.id(), new NewBlock(request.roomId(),
                 request.startAt() == null ? null : request.startAt().toInstant(),
                 request.endAt() == null ? null : request.endAt().toInstant(), request.reason(), request.memo()));
@@ -65,6 +71,6 @@ class RoomBlockController {
         return blocks.cancelConflicts(user.id(), id);
     }
 
-    record BlockRequest(int roomId, OffsetDateTime startAt, OffsetDateTime endAt, BlockReason reason, String memo) {
+    record BlockRequest(Integer roomId, OffsetDateTime startAt, OffsetDateTime endAt, BlockReason reason, String memo) {
     }
 }
