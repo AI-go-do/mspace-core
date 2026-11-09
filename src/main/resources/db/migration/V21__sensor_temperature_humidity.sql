@@ -5,3 +5,10 @@ ALTER TABLE sensor_event
     ADD COLUMN temperature_c numeric(4, 1) CHECK (temperature_c BETWEEN -40 AND 85),
     ADD COLUMN humidity_pct  numeric(4, 1) CHECK (humidity_pct BETWEEN 0 AND 100),
     ADD CONSTRAINT climate_only_with_co2 CHECK (kind = 'CO2' OR (temperature_c IS NULL AND humidity_pct IS NULL));
+
+-- 최근 온도·습도 찾기(관리자 "지금" 탭, 10초마다). V11 인덱스에는 이 칸이 없어서, 온도를 한 번도 안 보낸 방은
+-- LIMIT 1이 그 방 CO2 기록을 끝까지 읽는다. 값이 있는 줄만 담은 작은 인덱스로 바로 끝나게 한다
+CREATE INDEX sensor_event_room_temperature ON sensor_event (room_id, observed_at DESC, id DESC)
+    WHERE kind = 'CO2' AND temperature_c IS NOT NULL;
+CREATE INDEX sensor_event_room_humidity ON sensor_event (room_id, observed_at DESC, id DESC)
+    WHERE kind = 'CO2' AND humidity_pct IS NOT NULL;

@@ -43,7 +43,7 @@ class JdbcRoomEnvironmentAdapter implements RoomEnvironmentPort {
 
     @Override
     public List<Latest> latest() {
-        // 방마다 세 번 거꾸로 읽기(LIMIT 1). 모두 V11 인덱스 (room_id, kind, observed_at DESC) 앞부분으로 끝난다
+        // 방마다 세 번 거꾸로 읽기(LIMIT 1). CO2는 V11 인덱스, 온도·습도는 V21 부분 인덱스(값 있는 줄만) 앞부분으로 끝난다
         return jdbc.sql("""
                         SELECT r.id AS room_id, c.ppm, c.observed_at AS ppm_at, t.temperature_c, h.humidity_pct,
                                c.received_at
