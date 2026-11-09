@@ -149,6 +149,25 @@ class JdbcRelayAdapter implements RelayPort {
     }
 
     @Override
+    public List<Integer> roomsToAdvance(Instant now, Instant from) {
+        // advance가 손댈 방: 5분 지난 열린 넘김, 다음 사람을 아직 안 찾은 넘김, 첫 넘기기가 실패한 취소
+        return jdbc.sql("""
+                        SELECT room_id FROM relay_offer WHERE status = 'OPEN' AND expires_at <= :now
+                        UNION
+                        SELECT room_id FROM relay_offer WHERE status IN ('DECLINED', 'EXPIRED', 'TAKEN') AND NOT passed_on
+                        UNION
+                        SELECT r.room_id FROM reservation r
+                        WHERE r.status = 'CANCELED' AND r.start_at > :from
+                          AND EXISTS (SELECT 1 FROM relay_wait w
+                                      WHERE w.room_id = r.room_id AND w.status = 'WAITING'
+                                        AND w.start_at >= r.start_at AND w.start_at < r.end_at)
+                          AND NOT EXISTS (SELECT 1 FROM relay_offer o WHERE o.source_reservation_id = r.id)
+                        ORDER BY 1
+                        """)
+                .param("now", Timestamp.from(now)).param("from", Timestamp.from(from)).query(Integer.class).list();
+    }
+
+    @Override
     public List<Integer> roomsWithExpiredOffers(Instant now) {
         return jdbc.sql("SELECT DISTINCT room_id FROM relay_offer WHERE status = 'OPEN' AND expires_at <= :now ORDER BY room_id")
                 .param("now", Timestamp.from(now)).query(Integer.class).list();

@@ -8,8 +8,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import kr.ac.chosun.mspace.common.config.RelayPolicy;
 import kr.ac.chosun.mspace.common.config.ReservationPolicy;
 import kr.ac.chosun.mspace.common.error.BusinessException;
@@ -167,14 +169,22 @@ class RelayService implements RelayUseCase {
         List<Notification> stored = new ArrayList<>();
         Integer passed = tx.execute(s -> {
             port.lockAdvance();  // advance끼리 한 줄로: 여러 방 잠금을 서로 다른 순서로 잡아 생기는 교착 방지
-            // 받기(예약 저장)는 방 잠금 → 넘김 줄 순서라 여기도 방 잠금을 먼저 잡고 넘김을 바꾼다 (교착 방지)
+            // 받기(예약 저장)는 방 잠금 → 넘김 행 순서. 받기가 다른 방 넘김 행을 기다리는 동안 여기서 그 행을 쥐고
+            // 그 방 잠금을 기다리면 교착이라, 손댈 방을 먼저 모두(방 번호 순) 잠근 뒤에 행을 바꾼다
+            Instant cutoff = clock.instant().plus(Duration.ofMinutes(relay.stopBeforeMinutes()));
+            List<Integer> toLock = port.roomsToAdvance(now, cutoff);
+            toLock.forEach(port::lockRoom);
+            Set<Integer> rooms = new HashSet<>(toLock);
             for (int roomId : port.roomsWithExpiredOffers(now)) {
-                port.lockRoom(roomId);
-                port.expireOffers(roomId, now);
+                if (rooms.contains(roomId)) {
+                    port.expireOffers(roomId, now);
+                }
             }
             int n = 0;
             for (OfferRow done : port.offersToPass()) {
-                port.lockRoom(done.roomId());
+                if (!rooms.contains(done.roomId())) {
+                    continue;  // 방을 잠근 뒤에 새로 생긴 것: 다음 advance가 한다
+                }
                 port.markPassed(done.id());
                 Instant locked = clock.instant();  // 잠금 뒤 시각으로 마감·5분을 잼
                 // 받은(TAKEN) 넘김은 받은 예약이 안 덮은 남은 칸만, 넘김·시간 지남은 구간 전체가 대상
@@ -182,13 +192,11 @@ class RelayService implements RelayUseCase {
                         stored);
             }
             // 취소 뒤 첫 넘기기가 실패한 것도 여기서 다시 (줄 선 사람이 있는데 넘김이 한 번도 없는 취소)
-            Instant cutoff = clock.instant().plus(Duration.ofMinutes(relay.stopBeforeMinutes()));
             for (long reservationId : port.unofferedCancellations(cutoff)) {
                 Released r = port.canceledReservation(reservationId).orElse(null);
-                if (r == null) {
+                if (r == null || !rooms.contains(r.roomId())) {
                     continue;
                 }
-                port.lockRoom(r.roomId());
                 Instant locked = clock.instant();
                 if (!open(r.startAt(), locked)) {
                     continue;

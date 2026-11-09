@@ -38,6 +38,9 @@ public interface RelayPort {
     /** 열린 넘김을 DECLINED로 (기다리기도 DECLINED). 바꿨으면 true */
     boolean declineOffer(long userId, long offerId, Instant now);
 
+    /** advance가 손댈 방 전부 (방 번호 순). 행을 바꾸기 전에 이 방들을 먼저 다 잠근다 */
+    List<Integer> roomsToAdvance(Instant now, Instant from);
+
     /** 받을 시간이 지난 열린 넘김이 있는 방 (방 번호 순) */
     List<Integer> roomsWithExpiredOffers(Instant now);
 
