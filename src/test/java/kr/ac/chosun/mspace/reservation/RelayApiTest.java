@@ -72,6 +72,12 @@ class RelayApiTest {
     @Autowired
     SweepReservationsUseCase sweeps;
 
+    @Autowired
+    kr.ac.chosun.mspace.reservation.application.RelayUseCase relays;
+
+    @Autowired
+    javax.sql.DataSource dataSource;
+
     long teamA;
 
     static Instant at(String time) {
@@ -221,49 +227,59 @@ class RelayApiTest {
     }
 
     @Test
-    @DisplayName("다른 방 넘김이 5분 지나는 순간 받기와 넘기기 정리가 동시에 돌아도 둘 다 끝난다 (교착 없음)")
+    @DisplayName("받기가 다른 방 넘김 행을 쥔 동안 넘기기 정리가 그 행을 기다려도 교착 없이 둘 다 끝난다")
     void takeAndAdvanceConcurrently() throws Exception {
-        for (int round = 0; round < 10; round++) {
-            // given: B가 1번 방·2번 방 14:00 칸을 기다리고, 두 방 예약이 취소돼 B에게 둘 다 넘어옴. 2번 방 넘김은 방금 5분 지남
-            members();
-            long teamRoom2 = id(mvc.post().uri("/api/reservations").header("X-User-Id", "7")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content("""
-                            {"roomId":2,"startAt":"2030-03-05T14:00:00+09:00","endAt":"2030-03-05T15:00:00+09:00",
-                             "participantStudentIds":["20230008","20230009"]}""")
-                    .exchange());
-            waitFor(4, 1, "14:00");
-            waitFor(4, 2, "14:00");
-            now("10:10");
-            cancel(1, teamA);
-            cancel(7, teamRoom2);
-            jdbc.sql("UPDATE relay_offer SET expires_at = :t WHERE room_id = 2")
-                    .param("t", java.sql.Timestamp.from(at("10:09"))).update();
-            long offerRoom1 = jdbc.sql("SELECT id FROM relay_offer WHERE user_id = 4 AND room_id = 1 AND status = 'OPEN'")
-                    .query(Long.class).single();
+        // given: B가 1번 방·2번 방 14:00 칸을 기다리고, 두 방 예약이 취소돼 B에게 둘 다 넘어옴. 2번 방 넘김은 방금 5분 지남
+        long teamRoom2 = id(mvc.post().uri("/api/reservations").header("X-User-Id", "7")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"roomId":2,"startAt":"2030-03-05T14:00:00+09:00","endAt":"2030-03-05T15:00:00+09:00",
+                         "participantStudentIds":["20230008","20230009"]}""")
+                .exchange());
+        waitFor(4, 1, "14:00");
+        waitFor(4, 2, "14:00");
+        now("10:10");
+        cancel(1, teamA);
+        cancel(7, teamRoom2);
+        jdbc.sql("UPDATE relay_offer SET expires_at = :t WHERE room_id = 2")
+                .param("t", java.sql.Timestamp.from(at("10:09"))).update();
 
-            // when: 받기(1번 방 잠금 → B의 2번 방 넘김 행)와 1분 정리(2번 방 넘김 행 → 방 잠금)를 같이 시작
-            java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
-            java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
-            try {
-                var take = pool.submit(() -> {
-                    go.await();
-                    return book(4, "14:00", "15:00", offerRoom1);
-                });
-                var sweep = pool.submit(() -> {
-                    go.await();
-                    sweeps.sweep();
-                    return null;
-                });
-                go.countDown();
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try (java.sql.Connection take = dataSource.getConnection()) {
+            take.setAutoCommit(false);
+            try (var st = take.createStatement()) {
+                // when 1: 받기가 하는 순서 그대로 1번 방 잠금을 쥐고, B의 다른 열린 넘김(2번 방, 막 5분 지남) 행을 바꾼다
+                st.execute("SET LOCAL lock_timeout = '5s'");
+                st.execute("SELECT pg_advisory_xact_lock(-1)");
+                int changed = st.executeUpdate(
+                        "UPDATE relay_offer SET status = 'DECLINED' WHERE user_id = 4 AND room_id = 2 AND status = 'OPEN'");
+                assertThat(changed).isEqualTo(1);
 
-                // then: 둘 다 끝나고 받기는 성공
-                assertThat(take.get(30, java.util.concurrent.TimeUnit.SECONDS)).hasStatus(201);
-                sweep.get(30, java.util.concurrent.TimeUnit.SECONDS);
-            } finally {
-                pool.shutdownNow();
+                // when 2: 1분 정리(advance)를 시작하고, 받기가 쥔 2번 방 넘김 행에서 실제로 기다리는지 확인
+                var advance = pool.submit(() -> relays.advance(clock.instant()));
+                long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+                while (backendsWaitingOnLock() == 0) {
+                    assertThat(advance.isDone()).as("advance가 받기의 잠금을 기다려야 함").isFalse();
+                    assertThat(System.nanoTime()).as("advance가 10초 안에 잠금 대기에 들어가야 함").isLessThan(deadline);
+                    Thread.sleep(20);
+                }
+
+                // then 1: 받기는 advance가 쥔 것(2번 방 잠금)을 기다리지 않으므로 그대로 커밋된다
+                take.commit();
+
+                // then 2: advance도 예외 없이 끝난다(교착이면 ExecutionException)
+                assertThat(advance.get(30, java.util.concurrent.TimeUnit.SECONDS)).isNotNegative();
             }
+        } finally {
+            pool.shutdownNow();
         }
+        assertThat(jdbc.sql("SELECT status FROM relay_offer WHERE user_id = 4 AND room_id = 2").query(String.class).single())
+                .isEqualTo("DECLINED");
+    }
+
+    int backendsWaitingOnLock() {
+        return jdbc.sql("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()")
+                .query(Integer.class).single();
     }
 
     @Test
