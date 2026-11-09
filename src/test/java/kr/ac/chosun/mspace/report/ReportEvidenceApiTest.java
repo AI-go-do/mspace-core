@@ -108,6 +108,7 @@ class ReportEvidenceApiTest {
         json.extractingPath("$.previous.checkedOutAt").asString().endsWith("+09:00");
         json.extractingPath("$.previous.photo.exists").isEqualTo(true);
         json.extractingPath("$.previous.photo.url").isEqualTo("/api/reservations/" + previous + "/photos/CHECK_OUT");
+        json.extractingPath("$.previous.tidyCheck").isNull();
         json.extractingPath("$.reporter.reservationId").isEqualTo((int) mine);
         json.extractingPath("$.reporter.photo.kind").isEqualTo("CHECK_IN");
         json.extractingPath("$.reporter.photo.exists").isEqualTo(true);
@@ -116,6 +117,28 @@ class ReportEvidenceApiTest {
                 .header("X-User-Id", String.valueOf(ADMIN)).exchange();
         assertThat(image).hasStatus(200);
         assertThat(image).hasContentType("image/png");
+    }
+
+    @Test
+    @DisplayName("직전 예약 뒤 방 카메라 정리 확인 결과가 있으면 previous.tidyCheck로 함께 준다")
+    void previousTidyCheck() {
+        // given: 앞 팀이 나간 뒤 카메라가 "깨끗함, 가방 두고 감"이라고 남김
+        jdbc.sql("""
+                INSERT INTO tidy_check (event_id, reservation_id, room_id, device_id, result, items, left_items,
+                                        observed_at, received_at)
+                VALUES ('e-prev', :rid, 1, 'jetson-b', 'CLEAN', ARRAY['chair', 'backpack'], ARRAY['BAG'],
+                        '2026-11-09T14:53:00+09:00', now())
+                """).param("rid", previous).update();
+        long id = report();
+
+        // when
+        var json = assertThat(evidence(ADMIN, id)).bodyJson();
+
+        // then
+        json.extractingPath("$.previous.tidyCheck.result").isEqualTo("CLEAN");
+        json.extractingPath("$.previous.tidyCheck.items").isEqualTo(java.util.List.of("chair", "backpack"));
+        json.extractingPath("$.previous.tidyCheck.leftItems").isEqualTo(java.util.List.of("BAG"));
+        json.extractingPath("$.previous.tidyCheck.observedAt").isEqualTo("2026-11-09T14:53:00+09:00");
     }
 
     @Test

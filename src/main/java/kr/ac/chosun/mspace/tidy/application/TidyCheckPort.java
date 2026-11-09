@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Optional;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.CurrentReservation;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.LastEnded;
+import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Listed;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.TidyCheck;
 
 /** 표는 V19__tidy_check.sql. 구현: JdbcTidyCheckAdapter */
@@ -33,4 +34,9 @@ public interface TidyCheckPort {
     List<Long> members(long reservationId);
 
     String roomName(int roomId);
+
+    boolean isAdmin(long userId);
+
+    /** since 이후에 받은 결과, 받은 시각 최근 순 (tidy_check_recent 인덱스) */
+    List<Listed> receivedSince(Instant since);
 }

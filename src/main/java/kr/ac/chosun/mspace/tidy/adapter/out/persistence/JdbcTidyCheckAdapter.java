@@ -2,6 +2,7 @@ package kr.ac.chosun.mspace.tidy.adapter.out.persistence;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import kr.ac.chosun.mspace.common.error.BusinessException;
@@ -9,6 +10,9 @@ import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckPort;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.CurrentReservation;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.LastEnded;
+import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.LeftItem;
+import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Listed;
+import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Result;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.TidyCheck;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -119,5 +123,34 @@ class JdbcTidyCheckAdapter implements TidyCheckPort {
     public String roomName(int roomId) {
         return jdbc.sql("SELECT name FROM rooms WHERE id = :room").param("room", roomId)
                 .query((rs, n) -> rs.getString(1)).single();
+    }
+
+    @Override
+    public boolean isAdmin(long userId) {
+        return jdbc.sql("SELECT role = 'ADMIN' FROM users WHERE id = :id").param("id", userId)
+                .query((rs, n) -> rs.getBoolean(1)).optional().orElse(false);
+    }
+
+    @Override
+    public List<Listed> receivedSince(Instant since) {
+        return jdbc.sql("""
+                        SELECT t.reservation_id, t.room_id, ro.name, r.checked_out_at, t.result, t.items, t.left_items,
+                               t.report_id, t.observed_at
+                        FROM tidy_check t
+                        JOIN reservation r ON r.id = t.reservation_id
+                        JOIN rooms ro ON ro.id = t.room_id
+                        WHERE t.received_at >= :since
+                        ORDER BY t.received_at DESC, t.id DESC
+                        """)
+                .param("since", Timestamp.from(since))
+                .query((rs, n) -> {
+                    Timestamp ended = rs.getTimestamp(4);
+                    return new Listed(rs.getLong(1), rs.getInt(2), rs.getString(3),
+                            ended == null ? null : ended.toInstant(), Result.valueOf(rs.getString(5)),
+                            List.of((String[]) rs.getArray(6).getArray()),
+                            Arrays.stream((String[]) rs.getArray(7).getArray()).map(LeftItem::valueOf).toList(),
+                            rs.getObject(8, Long.class), rs.getTimestamp(9).toInstant());
+                })
+                .list();
     }
 }

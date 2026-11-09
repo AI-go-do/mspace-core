@@ -1,6 +1,7 @@
 package kr.ac.chosun.mspace.tidy.application;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -127,5 +128,17 @@ class TidyCheckService implements TidyCheckUseCase {
         if (!port.roomExists(roomId)) {
             throw new BusinessException(ErrorCode.ROOM_NOT_FOUND);
         }
+    }
+
+    @Override
+    public List<Listed> list(long adminId, Integer days) {
+        if (!port.isAdmin(adminId)) {
+            throw new BusinessException(ErrorCode.ADMIN_ONLY);
+        }
+        int d = days == null ? DEFAULT_DAYS : days;
+        if (d < 1 || d > MAX_DAYS) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST, "days는 1–" + MAX_DAYS + " 사이여야 합니다");
+        }
+        return port.receivedSince(clock.instant().minus(Duration.ofDays(d)));
     }
 }
