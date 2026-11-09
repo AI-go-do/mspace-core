@@ -8,6 +8,12 @@ public interface MemberQueryPort {
     /** 학생 인증을 마친(verified_at 있음) 회원의 id와 실명. 없거나 인증 전이면 빈 값 */
     Optional<VerifiedMember> findVerified(String studentId);
 
+    /** 로그인한 본인의 학번과 실명 (마이 화면). 회원이 없으면 빈 값 */
+    Optional<Profile> findProfile(long memberId);
+
     record VerifiedMember(long id, String name) {
+    }
+
+    record Profile(String studentId, String name) {
     }
 }

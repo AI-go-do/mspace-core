@@ -64,7 +64,20 @@ class SensorEventController {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST);
             }
             return new SensorEvent(eventId, roomId, deviceId, parsedKind(), occupied, sourcesJson, ppm, source,
-                    oneDecimal(temperatureC), oneDecimal(humidityPct), observed());
+                    oneDecimal(temperatureC), oneDecimal(humidityPct), observed(), light(), pir());
+        }
+
+        /** sources.light: 우노 조도 원시값 0–1023 (mspace-device gateway). 숫자가 아니거나 범위 밖이면 없는 것으로 */
+        private Integer light() {
+            JsonNode v = sources == null ? null : sources.get("light");
+            return v != null && v.isNumber() && v.asDouble() >= 0 && v.asDouble() <= 1023
+                    ? (int) Math.round(v.asDouble()) : null;
+        }
+
+        /** sources.pir: PIR 움직임 감지. 참/거짓이 아니면 없는 것으로 */
+        private Boolean pir() {
+            JsonNode v = sources == null ? null : sources.get("pir");
+            return v != null && v.isBoolean() ? v.booleanValue() : null;
         }
 
         /** DB 칸이 소수 한 자리라 반올림해 둔다 (25.46 → 25.5) */

@@ -8,6 +8,10 @@ public enum ErrorCode {
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다"),
     ROOM_DATE_OUT_OF_RANGE(HttpStatus.BAD_REQUEST, "오늘부터 예약 가능한 기간 안의 날짜만 조회할 수 있습니다"),
     ROOM_NOT_FOUND(HttpStatus.NOT_FOUND, "없거나 지금 사용할 수 없는 방입니다"),
+    ROOM_BLOCKED(HttpStatus.CONFLICT, "관리자가 막아 둔 시간이라 예약할 수 없습니다"),
+    ROOM_BLOCK_INVALID(HttpStatus.BAD_REQUEST, "막을 기간이 올바르지 않습니다"),
+    ROOM_BLOCK_OVERLAP(HttpStatus.CONFLICT, "이 방은 이미 그 시간에 막혀 있습니다. 먼저 풀거나 시간을 바꿔 주세요"),
+    ROOM_BLOCK_NOT_FOUND(HttpStatus.NOT_FOUND, "없는 기간 막기입니다"),
     RELAY_WAIT_LIMIT(HttpStatus.CONFLICT, "기다리기는 한 사람당 동시에 3개까지예요"),
     RELAY_TOO_LATE(HttpStatus.CONFLICT, "시작 30분 전부터는 기다리기를 걸 수 없어요"),
     RELAY_SLOT_FREE(HttpStatus.CONFLICT, "그 시간은 비어 있어요. 바로 예약해 주세요"),
@@ -103,6 +107,7 @@ public enum ErrorCode {
 
     // 로그인 (FR-AUTH-001)
     SCHOOL_EMAIL_ONLY(HttpStatus.BAD_REQUEST, "학교 메일(@chosun.ac.kr)만 사용할 수 있습니다"),
+    DEVICE_FAULT_TOO_MANY(HttpStatus.TOO_MANY_REQUESTS, "이 방 장치 오류 번호를 하루에 너무 많이 보냈어요"),
     EMAIL_CODE_TOO_SOON(HttpStatus.TOO_MANY_REQUESTS, "인증번호는 1분에 한 번만 보낼 수 있습니다"),
     EMAIL_CODE_NOT_FOUND(HttpStatus.BAD_REQUEST, "인증번호를 먼저 받아 주세요"),
     EMAIL_CODE_EXPIRED(HttpStatus.BAD_REQUEST, "인증번호가 만료되었습니다. 다시 받아 주세요"),
