@@ -35,7 +35,10 @@ class DeviceFaultController {
     /**
      * 예: POST /api/device-faults {"eventId":"qr-1-0005","roomId":1,"deviceId":"qr-1","kind":"SERVER_UNREACHABLE",
      * "startedAt":"…+09:00","endedAt":"…+09:00","attempts":[{"at":"…+09:00","code":"123456","via":"QR"}]}
-     * → 200 {"result":"STORED","matched":1,"excused":1} 또는 {"result":"DUPLICATE",…}
+     * → 200 {"result":"STORED"} 또는 {"result":"DUPLICATE"}
+     * <p>
+     * 몇 개가 예약과 맞았는지·무른 수는 응답에 넣지 않는다. 장치 토큰이 새면 번호를 넣어 보고 맞는지 확인하는
+     * 통로(키패드 5번 잠금을 거치지 않음)가 되기 때문 (CodeRabbit #99). 장치는 결과가 필요 없고, 무른 것은 알림으로 간다
      */
     @PostMapping("/api/device-faults")
     FaultResponse record(@RequestHeader(name = "Authorization", required = false) String authorization,
@@ -45,7 +48,7 @@ class DeviceFaultController {
         }
         devices.verify(authorization, request.roomId(), request.deviceId());
         Recorded r = faults.record(request.toFault());
-        return new FaultResponse(r.duplicate() ? "DUPLICATE" : "STORED", r.matched(), r.excused());
+        return new FaultResponse(r.duplicate() ? "DUPLICATE" : "STORED");
     }
 
     record AttemptRequest(String at, String code, String via) {
@@ -87,6 +90,6 @@ class DeviceFaultController {
         }
     }
 
-    record FaultResponse(String result, int matched, int excused) {
+    record FaultResponse(String result) {
     }
 }

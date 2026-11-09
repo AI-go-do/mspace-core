@@ -145,8 +145,7 @@ class DeviceFaultApiTest {
         MvcTestResult r = fault("qr-1-1", "09:55", "10:20", attempt("10:02", code(id)));
 
         assertThat(r).hasStatus(200).bodyJson().extractingPath("$.result").isEqualTo("STORED");
-        assertThat(r).bodyJson().extractingPath("$.matched").isEqualTo(1);
-        assertThat(r).bodyJson().extractingPath("$.excused").isEqualTo(1);
+        assertThat(r).bodyJson().doesNotHavePath("$.matched").doesNotHavePath("$.excused");
         assertThat(excused(id)).isTrue();
         assertThat(jdbc.sql("SELECT status FROM reservation WHERE id = :id").param("id", id).query(String.class)
                 .single()).as("상태는 노쇼 그대로 (기록)").isEqualTo("NO_SHOW");
@@ -164,8 +163,8 @@ class DeviceFaultApiTest {
         long id = book("10:00", "11:00");
         now("10:12");
 
-        assertThat(fault("qr-1-2", "10:00", "10:10", attempt("10:05", code(id))))
-                .bodyJson().extractingPath("$.excused").isEqualTo(0);
+        assertThat(fault("qr-1-2", "10:00", "10:10", attempt("10:05", code(id)))).hasStatus(200);
+        assertThat(excused(id)).as("아직 노쇼 전").isFalse();
         now("10:20");
         sweeps.sweep();
 
@@ -210,7 +209,7 @@ class DeviceFaultApiTest {
         MvcTestResult r = fault("qr-1-4", "10:00", "10:30",
                 attempt("10:05", wrong) + "," + attempt("10:20", code(id)));
 
-        assertThat(r).hasStatus(200).bodyJson().extractingPath("$.matched").isEqualTo(0);
+        assertThat(r).hasStatus(200).bodyJson().extractingPath("$.result").isEqualTo("STORED");
         assertThat(excused(id)).isFalse();
         assertThat(jdbc.sql("SELECT count(*) FROM device_fault_attempt WHERE reservation_id IS NULL")
                 .query(Long.class).single()).isEqualTo(2);

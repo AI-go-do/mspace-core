@@ -36,7 +36,12 @@ class SweepReservationsService implements SweepReservationsUseCase {
         // 한쪽이 잠금 대기 상한을 넘어도 다른 쪽은 돌고, 넘은 쪽은 다음 번(1분 뒤)에 다시 한다
         int noShows = step("노쇼", sweeps::markNoShows, now);
         // 장치 오류가 노쇼 처리보다 먼저 왔으면 방금 노쇼가 된 예약을 여기서 무른다 (방의 사과, Q-19)
-        step("장치 오류 노쇼 무르기", excuses::excuse, now);
+        // 알림함 저장 등 잠금 말고 다른 오류가 나도 뒤 단계(자동 퇴실·자리 비움)는 돌게 여기서 막는다. 다음 번(1분 뒤)에 다시 한다
+        try {
+            step("장치 오류 노쇼 무르기", excuses::excuse, now);
+        } catch (RuntimeException e) {
+            log.error("예약 정리(장치 오류 노쇼 무르기) 실패, 다음 번에 다시", e);
+        }
         int autoCheckedOut = step("자동 퇴실", sweeps::autoCheckout, now);
         var swept = new Swept(noShows, autoCheckedOut, step("자리 비움", sweeps::releaseAway, now));
         if (swept.noShows() > 0 || swept.autoCheckedOut() > 0 || swept.awayReleased() > 0) {
