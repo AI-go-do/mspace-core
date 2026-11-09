@@ -181,10 +181,8 @@ class RelayService implements RelayUseCase {
                 }
             }
             int n = 0;
-            for (OfferRow done : port.offersToPass()) {
-                if (!rooms.contains(done.roomId())) {
-                    continue;  // 방을 잠근 뒤에 새로 생긴 것: 다음 advance가 한다
-                }
+            // 잠근 방의 것만 (방을 잠근 뒤 다른 방에 새로 생긴 것은 다음 advance가 한다)
+            for (OfferRow done : port.offersToPass(rooms)) {
                 port.markPassed(done.id());
                 Instant locked = clock.instant();  // 잠금 뒤 시각으로 마감·5분을 잼
                 // 받은(TAKEN) 넘김은 받은 예약이 안 덮은 남은 칸만, 넘김·시간 지남은 구간 전체가 대상

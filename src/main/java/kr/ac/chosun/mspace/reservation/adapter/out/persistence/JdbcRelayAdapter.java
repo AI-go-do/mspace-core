@@ -4,6 +4,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import kr.ac.chosun.mspace.reservation.application.RelayPort;
@@ -215,13 +216,16 @@ class JdbcRelayAdapter implements RelayPort {
     }
 
     @Override
-    public List<OfferRow> offersToPass() {
+    public List<OfferRow> offersToPass(Collection<Integer> roomIds) {
+        if (roomIds.isEmpty()) {
+            return List.of();
+        }
         return jdbc.sql("""
                         SELECT %s FROM relay_offer
-                        WHERE status IN ('DECLINED', 'EXPIRED', 'TAKEN') AND NOT passed_on
+                        WHERE status IN ('DECLINED', 'EXPIRED', 'TAKEN') AND NOT passed_on AND room_id IN (:rooms)
                         ORDER BY id FOR UPDATE SKIP LOCKED
                         """.formatted(OFFER_COLUMNS))
-                .query(JdbcRelayAdapter::offerRow).list();
+                .param("rooms", roomIds).query(JdbcRelayAdapter::offerRow).list();
     }
 
     @Override

@@ -1,6 +1,7 @@
 package kr.ac.chosun.mspace.reservation.application;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -50,8 +51,8 @@ public interface RelayPort {
     /** 시작이 from보다 늦고, 줄 선 사람이 있는데 넘김이 한 번도 안 만들어진 취소 예약 (첫 넘기기가 실패한 것) */
     List<Long> unofferedCancellations(Instant from);
 
-    /** 아직 다음 사람을 찾지 않은 DECLINED·EXPIRED·TAKEN 넘김(TAKEN은 일부만 받았을 때 남은 칸 때문). 잠그고 읽는다 */
-    List<OfferRow> offersToPass();
+    /** 아직 다음 사람을 찾지 않은 DECLINED·EXPIRED·TAKEN 넘김(TAKEN은 일부만 받았을 때 남은 칸 때문). 이미 잠근 방(roomIds)의 것만 잠그고 읽는다 */
+    List<OfferRow> offersToPass(Collection<Integer> roomIds);
 
     void markPassed(long offerId);
 
