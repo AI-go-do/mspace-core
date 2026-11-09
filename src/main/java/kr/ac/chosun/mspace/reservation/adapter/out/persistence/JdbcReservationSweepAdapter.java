@@ -114,7 +114,8 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
      *   <li>이미 정지 중이면 새로 걸지 않는다(NOT EXISTS). 두 정리가 동시에 돌아 둘 다 통과해도
      *       one_suspension_at_a_time(기간 겹침 금지)이 한 줄만 받고 나머지는 ON CONFLICT DO NOTHING</li>
      * </ul>
-     * 대표자 기록만 센다 (참여자는 체크인 번호가 없어 노쇼 책임이 대표자에게 있음). 정지 사유는 둘 다 NO_SHOW
+     * 대표자 기록만 센다 (참여자는 체크인 번호가 없어 노쇼 책임이 대표자에게 있음). 정지 사유는 둘 다 NO_SHOW.
+     * 장치 오류로 무른 노쇼(no_show_excused_at, Q-19)는 세지 않는다
      */
     private void suspendRepeatedNoShows(List<Long> owners, Instant now) {
         Timestamp at = Timestamp.from(now);
@@ -126,11 +127,13 @@ class JdbcReservationSweepAdapter implements ReservationSweepPort {
                              CASE r.status WHEN 'NO_SHOW' THEN least(r.checkin_deadline, r.end_at)
                                            ELSE r.checked_out_at END AS happened_at
                       FROM reservation r
-                      WHERE r.owner_id IN (:owners) AND r.status IN ('NO_SHOW', 'AWAY_RELEASED')) h
+                      WHERE r.owner_id IN (:owners) AND r.status IN ('NO_SHOW', 'AWAY_RELEASED')
+                        AND r.no_show_excused_at IS NULL) h
                 WHERE h.happened_at > (SELECT max(CASE r2.status WHEN 'NO_SHOW' THEN least(r2.checkin_deadline, r2.end_at)
                                                                 ELSE r2.checked_out_at END)
                                        FROM reservation r2
-                                       WHERE r2.owner_id = h.owner_id AND r2.status IN ('NO_SHOW', 'AWAY_RELEASED'))
+                                       WHERE r2.owner_id = h.owner_id AND r2.status IN ('NO_SHOW', 'AWAY_RELEASED')
+                                         AND r2.no_show_excused_at IS NULL)
                                       - make_interval(days => :windowDays)
                   AND h.happened_at >= coalesce(
                         (SELECT max(s.ends_at) FROM user_suspension s
