@@ -1,18 +1,23 @@
 package kr.ac.chosun.mspace.reservation.adapter.in.web;
 
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import kr.ac.chosun.mspace.common.auth.LoginUser;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
+import kr.ac.chosun.mspace.reservation.application.RelayChanceUseCase;
+import kr.ac.chosun.mspace.reservation.application.RelayChanceUseCase.Chance;
 import kr.ac.chosun.mspace.reservation.application.RelayUseCase;
 import kr.ac.chosun.mspace.reservation.application.RelayUseCase.Offer;
 import kr.ac.chosun.mspace.reservation.application.RelayUseCase.Wait;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -22,9 +27,21 @@ import org.springframework.web.bind.annotation.RestController;
 class RelayController {
 
     private final RelayUseCase relay;
+    private final RelayChanceUseCase chances;
 
-    RelayController(RelayUseCase relay) {
+    RelayController(RelayUseCase relay, RelayChanceUseCase chances) {
         this.relay = relay;
+        this.chances = chances;
+    }
+
+    /**
+     * 기다릴 칸 고르기: 그날 차 있는 예약이 시작 30분 전까지 취소될 가능성(%). 예: GET /api/relay/chances?date=2030-03-05
+     * 200 [{"roomId":1,"startAt":…,"endAt":…,"percent":20,"reasons":["BOOKED_EARLY"],"waiting":2}] (높은 순)
+     * / 400 오늘부터 예약 가능한 기간 밖(ROOM_DATE_OUT_OF_RANGE)
+     */
+    @GetMapping("/api/relay/chances")
+    List<Chance> chances(LoginUser user, @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return chances.chances(user.id(), date);
     }
 
     /** 내 기다리기. 200 [{"id":3,"roomId":2,"startAt":"…+09:00","order":1}] */
