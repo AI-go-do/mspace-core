@@ -85,6 +85,22 @@ class ParticipantNoticeApiTest {
     }
 
     @Test
+    @DisplayName("자정을 넘는 예약은 끝 시각에도 날짜를 붙인다")
+    void overnightShowsEndDate() {
+        // when: 11/3 23:00–11/4 01:00
+        MvcTestResult r = mvc.post().uri("/api/reservations").header("X-User-Id", "1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"roomId":1,"startAt":"2026-11-03T23:00:00+09:00","endAt":"2026-11-04T01:00:00+09:00","participantStudentIds":["20230002","20230003"]}""")
+                .exchange();
+
+        // then
+        assertThat(r).hasStatus(201);
+        assertThat(jdbc.sql("SELECT body FROM notification LIMIT 1").query(String.class).single())
+                .startsWith("1번 방 11/3 23:00–11/4 01:00 예약에");
+    }
+
+    @Test
     @DisplayName("즉시 시작도 참여자에게 알림이 간다")
     void instantStartNotifies() {
         // when: 10:10에 눌러서 11:00까지

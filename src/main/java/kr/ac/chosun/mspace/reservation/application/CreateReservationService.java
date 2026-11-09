@@ -5,6 +5,7 @@ import static kr.ac.chosun.mspace.common.config.TimeConfig.SEOUL;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -309,8 +310,12 @@ public class CreateReservationService implements CreateReservationUseCase {
         }
 
         // 참여자 알림. 문구에 이름·학번은 넣지 않는다(알림함 규칙). 입실 번호도 대표자만 받으니 넣지 않는다
+        // 자정을 넘기면 끝에도 날짜를 붙인다 (11/3 23:00–11/4 01:00)
+        ZonedDateTime from = time.start().atZone(SEOUL);
+        ZonedDateTime to = time.end().atZone(SEOUL);
         String body = "%s %s–%s 예약에 함께 쓰는 사람으로 들어갔어요. 입실 번호는 대표자에게 있어요.".formatted(
-                room.name(), START.format(time.start().atZone(SEOUL)), END.format(time.end().atZone(SEOUL)));
+                room.name(), START.format(from),
+                (from.toLocalDate().equals(to.toLocalDate()) ? END : START).format(to));
         List<NewNotification> items = ids.values().stream()
                 .map(u -> new NewNotification(u, id, PARTICIPANT_KIND, "함께 쓸 예약이 잡혔어요", body))
                 .toList();
