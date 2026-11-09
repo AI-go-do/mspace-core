@@ -56,14 +56,17 @@ class DeviceFaultService implements DeviceFaultUseCase {
         Integer matched = tx.execute(s -> {
             // 같은 방 요청끼리 줄 세워 세고 넣음: 동시에 여러 요청이 와도 상한을 넘지 않게
             port.lockRoomCount(fault.roomId());
-            if (port.attemptsSince(fault.roomId(), now.minus(Duration.ofDays(1))) + fault.attempts().size()
-                    > MAX_ATTEMPTS_PER_ROOM_PER_DAY) {
-                throw new BusinessException(ErrorCode.DEVICE_FAULT_TOO_MANY);
-            }
+            // 중복 확인을 먼저: 상한 근처에서 같은 eventId를 다시 보내도 429가 아니라 DUPLICATE (이미 센 번호를 또 세지 않게)
             return port.insert(fault, now)
-                .map(id -> (int) fault.attempts().stream()
-                        .filter(a -> port.insertAttempt(id, fault.roomId(), a, access.openBeforeMinutes()))
-                        .count())
+                .map(id -> {
+                    if (port.attemptsSince(fault.roomId(), now.minus(Duration.ofDays(1))) + fault.attempts().size()
+                            > MAX_ATTEMPTS_PER_ROOM_PER_DAY) {
+                        throw new BusinessException(ErrorCode.DEVICE_FAULT_TOO_MANY);   // 롤백되어 이벤트도 안 남음
+                    }
+                    return (int) fault.attempts().stream()
+                            .filter(a -> port.insertAttempt(id, fault.roomId(), a, access.openBeforeMinutes()))
+                            .count();
+                })
                 .orElse(null);
         });
         // 무르기는 응답과 따로 바로 돈다. 번호가 맞았을 때만 할 일이 늘면 응답 시간 차이로 번호가 맞았는지

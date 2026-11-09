@@ -305,5 +305,9 @@ class DeviceFaultApiTest {
         assertThat(fault("qr-1-l3", "10:00", "10:10", attempt("10:05", "123456"))).hasStatus(429)
                 .bodyJson().extractingPath("$.code").isEqualTo("DEVICE_FAULT_TOO_MANY");
         assertThat(fault("qr-1-l4", "10:00", "10:10", "")).as("번호 없는 오류 기록은 받는다").hasStatus(200);
+        assertThat(fault("qr-1-l2", "10:00", "10:10", hundred)).as("상한 근처에서 같은 이벤트를 다시 보내면 429가 아니라 중복")
+                .hasStatus(200).bodyJson().extractingPath("$.result").isEqualTo("DUPLICATE");
+        assertThat(jdbc.sql("SELECT count(*) FROM device_fault WHERE event_id = 'qr-1-l3'").query(Long.class).single())
+                .as("429면 이벤트도 안 남음").isZero();
     }
 }
