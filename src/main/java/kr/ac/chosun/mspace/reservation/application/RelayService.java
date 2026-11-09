@@ -93,6 +93,11 @@ class RelayService implements RelayUseCase {
             // released()가 이 기다리기 커밋을 기다렸다가 보고 넘긴다
             port.lockRoom(roomId);
             port.lockUser(userId);
+            Instant locked = clock.instant();  // 잠금을 기다리는 사이 마감이 지났을 수 있음
+            if (!open(startAt, locked)) {
+                throw new BusinessException(ErrorCode.RELAY_TOO_LATE,
+                        "시작 %d분 전부터는 기다리기를 걸 수 없어요".formatted(relay.stopBeforeMinutes()));
+            }
             Optional<WaitRow> same = port.findActiveWait(userId, roomId, startAt);
             if (same.isPresent()) {
                 return wait(same.get());
@@ -104,7 +109,7 @@ class RelayService implements RelayUseCase {
             if (state.mine()) {
                 throw new BusinessException(ErrorCode.RELAY_SLOT_FREE, "내가 들어 있는 예약이라 기다릴 필요가 없어요");
             }
-            if (port.countActiveWaits(userId, now) >= relay.maxWaits()) {
+            if (port.countActiveWaits(userId, locked) >= relay.maxWaits()) {
                 throw new BusinessException(ErrorCode.RELAY_WAIT_LIMIT,
                         "기다리기는 한 사람당 동시에 %d개까지예요".formatted(relay.maxWaits()));
             }
@@ -148,8 +153,11 @@ class RelayService implements RelayUseCase {
         List<Notification> stored = new ArrayList<>();
         tx.executeWithoutResult(s -> {
             port.lockRoom(r.roomId());
-            port.offerToNext(r.roomId(), r.startAt(), r.endAt(), reservationId, now, expiry(now))
-                    .ifPresent(o -> stored.addAll(notify(o, now)));
+            Instant locked = clock.instant();  // 잠금 뒤 시각으로 마감·5분을 잼
+            if (open(r.startAt(), locked)) {
+                port.offerToNext(r.roomId(), r.startAt(), r.endAt(), reservationId, locked, expiry(locked))
+                        .ifPresent(o -> stored.addAll(notify(o, locked)));
+            }
         });
         inbox.publish(stored);
     }
@@ -163,13 +171,14 @@ class RelayService implements RelayUseCase {
             for (OfferRow done : port.offersToPass()) {
                 port.lockRoom(done.roomId());
                 port.markPassed(done.id());
-                if (!open(done.startAt(), now)) {
+                Instant locked = clock.instant();  // 잠금 뒤 시각으로 마감·5분을 잼
+                if (!open(done.startAt(), locked)) {
                     continue;
                 }
                 Optional<OfferRow> next = port.offerToNext(done.roomId(), done.startAt(), done.endAt(),
-                        done.sourceReservationId(), now, expiry(now));
+                        done.sourceReservationId(), locked, expiry(locked));
                 if (next.isPresent()) {
-                    stored.addAll(notify(next.get(), now));
+                    stored.addAll(notify(next.get(), locked));
                     n++;
                 }
             }
