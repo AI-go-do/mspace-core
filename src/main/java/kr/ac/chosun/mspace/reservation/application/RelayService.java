@@ -22,6 +22,8 @@ import kr.ac.chosun.mspace.reservation.application.RelayPort.Released;
 import kr.ac.chosun.mspace.reservation.application.RelayPort.SlotState;
 import kr.ac.chosun.mspace.reservation.application.RelayPort.WaitRow;
 import kr.ac.chosun.mspace.room.application.RoomQuery;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionOperations;
 
@@ -38,6 +40,8 @@ import org.springframework.transaction.support.TransactionOperations;
 class RelayService implements RelayUseCase {
 
     static final String KIND = "RELAY_OFFER";
+
+    private static final Logger log = LoggerFactory.getLogger(RelayService.class);
 
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("M/d HH:mm");
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm");
@@ -122,7 +126,12 @@ class RelayService implements RelayUseCase {
         if (!port.declineOffer(userId, offerId, now)) {
             throw new BusinessException(ErrorCode.RELAY_OFFER_NOT_FOUND);
         }
-        advance(now);
+        // 넘기기는 이미 저장됐으니, 다음 사람에게 넘기는 일이 실패해도 응답은 성공. 1분 정리가 다시 넘긴다
+        try {
+            advance(now);
+        } catch (RuntimeException e) {
+            log.warn("릴레이 다음 사람에게 넘기기 실패 (1분 정리가 다시 함): {}", e.getClass().getSimpleName());
+        }
     }
 
     @Override
