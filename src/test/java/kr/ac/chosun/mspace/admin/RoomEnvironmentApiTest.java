@@ -194,6 +194,35 @@ class RoomEnvironmentApiTest {
         json.extractingPath("$.rooms[1].series[4].ppm").isNull();
     }
 
+    MvcTestResult occupancy(int room, boolean occupied, String sources, String observed) {
+        return sensor("""
+                {"eventId":"o-%d","roomId":%d,"deviceId":"sensor-%d","kind":"OCCUPANCY","occupied":%s,
+                 "sources":%s,"observedAt":"%s"}""".formatted(++seq, room, room, occupied, sources, at(observed)));
+    }
+
+    @Test
+    @DisplayName("조도(원시값 0–1023)·PIR은 재실이 그대로여도 매번 받은 최신 값, 이상한 값·옛 이벤트·창 밖 값은 건너뛴다")
+    void lightAndPir() {
+        assertThat(occupancy(3, true, "{\"pir\":true,\"light\":512}", "11:05:00")).hasStatusOk();
+        assertThat(occupancy(3, true, "{\"camera\":true,\"people\":2,\"light\":640}", "11:08:00")).hasStatusOk();
+        assertThat(occupancy(3, true, "{\"pir\":false,\"light\":\"dark\"}", "11:09:00")).hasStatusOk();
+        assertThat(occupancy(3, true, "{\"pir\":\"yes\",\"light\":5000}", "11:10:00")).hasStatusOk();
+        assertThat(occupancy(3, true, "{\"pir\":true,\"light\":10}", "11:07:00")).hasStatusOk();   // 늦게 온 옛 것
+        assertThat(occupancy(4, false, "{\"pir\":true,\"light\":100}", "10:55:00")).hasStatusOk(); // 창(11:01–) 밖
+
+        var json = assertThat(get(ADMIN, "?minutes=10")).bodyJson();
+
+        json.extractingPath("$.rooms[2].light.raw").isEqualTo(640);
+        json.extractingPath("$.rooms[2].light.at").asString().startsWith("2030-03-05T11:08:00+09:00");
+        json.extractingPath("$.rooms[2].pir.detected").isEqualTo(false);
+        json.extractingPath("$.rooms[2].pir.at").asString().startsWith("2030-03-05T11:09:00+09:00");
+        json.extractingPath("$.rooms[3].light").isNull();
+        json.extractingPath("$.rooms[3].pir").isNull();
+        json.extractingPath("$.rooms[4].light").isNull();
+        assertThat(jdbc.sql("SELECT count(*) FROM sensor_event WHERE room_id = 3").query(Long.class).single())
+                .as("DB에는 재실이 바뀐 것만 (처음 1건)").isEqualTo(1);
+    }
+
     @Test
     @DisplayName("재실 신호가 끊긴 지 1분이 넘으면 UNKNOWN·offline (방 현황과 같은 기준)")
     void staleSignalIsUnknown() {
