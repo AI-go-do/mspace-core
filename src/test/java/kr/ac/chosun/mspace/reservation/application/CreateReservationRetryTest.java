@@ -2,6 +2,7 @@ package kr.ac.chosun.mspace.reservation.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -14,6 +15,7 @@ import kr.ac.chosun.mspace.common.config.ExtensionPolicy;
 import kr.ac.chosun.mspace.common.config.ReservationPolicy;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
+import kr.ac.chosun.mspace.notification.application.NotificationInbox;
 import kr.ac.chosun.mspace.reservation.application.CreateReservationUseCase.Command;
 import kr.ac.chosun.mspace.reservation.domain.ReservationStatus;
 import kr.ac.chosun.mspace.room.application.RoomAvailabilityPort;
@@ -111,7 +113,7 @@ class CreateReservationRetryTest {
         // 번호 발급은 인터페이스라 테스트에서 고정 번호를 끼운다
         return new CreateReservationService(port, new RoomQuery(rooms), () -> "123456",
                 new ReservationPolicy(7, 30, 120), clock, TransactionOperations.withoutTransaction(),
-                () -> new SweepReservationsUseCase.Swept(0, 0, 0), (o, t, g) -> 0, EXTENSION, NO_SUSPENSION, (o, ids) -> true);
+                () -> new SweepReservationsUseCase.Swept(0, 0, 0), (o, t, g) -> 0, EXTENSION, NO_SUSPENSION, (o, ids) -> true, mock(NotificationInbox.class));
     }
 
     @Test
@@ -138,7 +140,7 @@ class CreateReservationRetryTest {
                 new ReservationPolicy(7, 30, 120), clock, TransactionOperations.withoutTransaction(),
                 () -> {
                     throw new DataAccessResourceFailureException("DB 연결 끊김");
-                }, (o, t, g) -> 0, EXTENSION, NO_SUSPENSION, (o, ids) -> true);
+                }, (o, t, g) -> 0, EXTENSION, NO_SUSPENSION, (o, ids) -> true, mock(NotificationInbox.class));
 
         // when
         CreateReservationUseCase.Created created = service.create(1, command);
@@ -196,7 +198,7 @@ class CreateReservationRetryTest {
         int[] issued = {0};
         CreateReservationService service = new CreateReservationService(port, new RoomQuery(rooms),
                 () -> "00000" + (++issued[0]), new ReservationPolicy(7, 30, 120), clock,
-                TransactionOperations.withoutTransaction(), () -> new SweepReservationsUseCase.Swept(0, 0, 0), (o, t, g) -> 0, EXTENSION, NO_SUSPENSION, (o, ids) -> true);
+                TransactionOperations.withoutTransaction(), () -> new SweepReservationsUseCase.Swept(0, 0, 0), (o, t, g) -> 0, EXTENSION, NO_SUSPENSION, (o, ids) -> true, mock(NotificationInbox.class));
 
         // when
         CreateReservationUseCase.Created created = service.create(1, command);

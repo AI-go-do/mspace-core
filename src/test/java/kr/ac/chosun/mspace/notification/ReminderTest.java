@@ -133,7 +133,14 @@ class ReminderTest {
                          "participantStudentIds":[%s]}""".formatted(start, end, others))
                 .exchange();
         assertThat(r).hasStatus(201);
+        forgetParticipantNotices();
         return idOf(r);
+    }
+
+    /** 예약을 만들 때 생기는 참여자 알림(결정.md 27)은 ParticipantNoticeApiTest가 본다. 여기서는 지우고 이 기능의 알림만 센다 */
+    void forgetParticipantNotices() {
+        jdbc.sql("DELETE FROM notification WHERE kind = 'PARTICIPANT_ADDED'").update();
+        channel.sent.clear();
     }
 
     static long idOf(MvcTestResult r) {
@@ -308,6 +315,7 @@ class ReminderTest {
                         {"roomId":1,"endAt":"2030-03-05T11:30:00+09:00","participantStudentIds":["20230002","20230003"]}""")
                 .exchange();
         assertThat(r).hasStatus(201);
+        forgetParticipantNotices();
 
         assertThat(sendAt("10:18")).isZero();
         assertThat(sendAt("10:22")).isEqualTo(1);   // 마감 10:27의 5분 전
