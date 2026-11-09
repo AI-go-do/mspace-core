@@ -17,6 +17,9 @@ public interface ReservationCommandPort {
     /** 학생 인증(verified_at)을 마친 회원의 학번 */
     Optional<String> findVerifiedStudentId(long userId);
 
+    /** 회원 이름 (참여자 알림에 가려서 쓴다). 없으면 빈 값 */
+    Optional<String> findName(long userId);
+
     /** 학번 → 회원 id. 학생 인증을 마친 회원만 */
     Map<String, Long> findVerifiedUserIds(Collection<String> studentIds);
 

@@ -67,6 +67,11 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
                 .optional();
     }
 
+    @Override
+    public Optional<String> findName(long userId) {
+        return jdbc.sql("SELECT name FROM users WHERE id = :id").param("id", userId).query(String.class).optional();
+    }
+
     /**
      * 학번 목록을 회원 id로 바꾼다. 인증을 마친 회원만 담기므로, 결과 크기가 입력보다 작으면 못 찾은 학번이 있다는 뜻이다.
      *
