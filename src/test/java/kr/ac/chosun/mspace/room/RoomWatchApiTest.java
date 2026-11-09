@@ -79,7 +79,7 @@ class RoomWatchApiTest {
 
     @BeforeEach
     void members() {
-        jdbc.sql("TRUNCATE room_watch, relay_offer, relay_wait, notification, reservation, reservation_participant, "
+        jdbc.sql("TRUNCATE room_watch, room_block, relay_offer, relay_wait, notification, reservation, reservation_participant, "
                 + "users RESTART IDENTITY CASCADE").update();
         for (int i = 1; i <= 4; i++) {
             jdbc.sql("INSERT INTO users (email, student_id, name, verified_at) VALUES (:e, :s, '홍길동', now())")
@@ -138,6 +138,29 @@ class RoomWatchApiTest {
         // when: 다시 정리해도 두 번 알리지 않는다
         now("05", "14:17");
         sweeps.sweep();
+        assertThat(freeNotices(4)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("관리자가 막아 둔 방은 비어 있지 않은 것으로 본다: 켤 수 있고, 막기가 끝나야 알린다")
+    void blockedRoomIsNotFree() {
+        // given: 2번 방은 예약이 없지만 10:00–12:00 점검으로 막혀 있다 (막은 사람은 회원 1)
+        jdbc.sql("""
+                        INSERT INTO room_block (room_id, start_at, end_at, reason, created_by)
+                        VALUES (2, '2030-03-05T10:00:00+09:00', '2030-03-05T12:00:00+09:00', 'INSPECTION', 1)
+                        """).update();
+        now("05", "10:30");
+
+        // when: 켜면 409가 아니라 켜진다
+        assertThat(watch(4, 2)).hasStatusOk();
+        sweeps.sweep();
+        // then: 막혀 있는 동안은 알리지 않는다
+        assertThat(freeNotices(4)).isZero();
+
+        // when: 막기가 끝난 뒤 정리
+        now("05", "12:00");
+        sweeps.sweep();
+        // then
         assertThat(freeNotices(4)).isEqualTo(1);
     }
 

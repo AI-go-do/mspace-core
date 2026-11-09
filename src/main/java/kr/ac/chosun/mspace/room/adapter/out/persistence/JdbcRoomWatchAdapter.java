@@ -13,11 +13,17 @@ import org.springframework.stereotype.Component;
 @Component
 class JdbcRoomWatchAdapter implements RoomWatchPort {
 
-    /** 지금 시각을 덮는 끝나지 않은 예약. 화면 빈방 표시(occupiedNow)와 같은 반열린 구간 [시작, 끝) */
+    /**
+     * 지금 시각을 덮는 끝나지 않은 예약이나 풀리지 않은 관리자 막기(V22). 화면 빈방 표시(occupiedNow)와 같은 기준,
+     * 반열린 구간 [시작, 끝). 막힌 방은 예약할 수 없으니 막기가 끝나기 전에는 "비었다"고 하지 않는다
+     */
     private static final String OCCUPIED = """
-            EXISTS (SELECT 1 FROM reservation r
-                    WHERE r.room_id = %s AND r.status IN ('BOOKED', 'IN_USE')
-                      AND r.start_at <= :now AND r.end_at > :now)""";
+            (EXISTS (SELECT 1 FROM reservation r
+                     WHERE r.room_id = %1$s AND r.status IN ('BOOKED', 'IN_USE')
+                       AND r.start_at <= :now AND r.end_at > :now)
+             OR EXISTS (SELECT 1 FROM room_block b
+                        WHERE b.room_id = %1$s AND b.released_at IS NULL
+                          AND b.start_at <= :now AND b.end_at > :now))""";
 
     private final JdbcClient jdbc;
 
