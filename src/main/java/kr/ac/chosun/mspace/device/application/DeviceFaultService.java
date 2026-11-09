@@ -7,6 +7,8 @@ import kr.ac.chosun.mspace.common.config.AccessPolicy;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.reservation.application.ExcuseNoShowsUseCase;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionOperations;
 
@@ -16,6 +18,8 @@ import org.springframework.transaction.support.TransactionOperations;
  */
 @Service
 class DeviceFaultService implements DeviceFaultUseCase {
+
+    private static final Logger log = LoggerFactory.getLogger(DeviceFaultService.class);
 
     /** 한 번에 받는 오류 구간 상한. 젯슨이 하루 넘게 꺼져 있었으면 나눠 보낸다 */
     static final Duration MAX_PERIOD = Duration.ofHours(24);
@@ -71,6 +75,14 @@ class DeviceFaultService implements DeviceFaultUseCase {
             return new Recorded(true, 0, 0);
         }
         // 맞은 게 없어도 무르기를 돌린다. 맞을 때만 돌리면 응답 시간 차이로 번호가 맞았는지 알 수 있다
-        return new Recorded(false, matched, excuses.excuse(now));
+        // 무르기가 잠금 대기 상한 등으로 실패해도 기록은 이미 저장됐으니 성공으로 답하고, 1분 정리가 다시 무름
+        int excused;
+        try {
+            excused = excuses.excuse(now);
+        } catch (RuntimeException e) {
+            log.warn("장치 오류 무르기 실패({}), 1분 정리가 다시 함", e.getClass().getSimpleName());
+            excused = 0;
+        }
+        return new Recorded(false, matched, excused);
     }
 }

@@ -12,6 +12,9 @@ public interface ExcuseNoShowsPort {
      */
     List<Excused> excuseMatched(Instant now);
 
+    /** 이 트랜잭션의 잠금 대기 상한. 넘으면 이번 무르기는 롤백되고 1분 정리가 다시 함 */
+    void limitLockWait();
+
     /**
      * 이 노쇼 뒤에 걸린 노쇼 정지(지금 진행 중이거나 지금 시작)를 푼다. 진행 중이면 끝을 지금으로, 지금 시작이면 지운다
      *

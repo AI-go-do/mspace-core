@@ -59,4 +59,10 @@ class JdbcExcuseNoShowsAdapter implements ExcuseNoShowsPort {
                         """)
                 .param("id", reservationId).query((rs, n) -> rs.getLong(1)).list();
     }
+
+    /** SET LOCAL이라 이 트랜잭션에만. 무르기는 예약 몇 줄이라 보통 바로 끝남 */
+    @Override
+    public void limitLockWait() {
+        jdbc.sql("SET LOCAL lock_timeout = '3s'").update();
+    }
 }

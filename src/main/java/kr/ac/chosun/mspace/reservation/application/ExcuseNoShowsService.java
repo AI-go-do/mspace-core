@@ -42,6 +42,7 @@ class ExcuseNoShowsService implements ExcuseNoShowsUseCase {
     public int excuse(Instant now) {
         List<Notification> stored = new ArrayList<>();
         int count = tx.execute(s -> {
+            port.limitLockWait();
             List<Excused> excused = port.excuseMatched(now);
             List<NewNotification> items = new ArrayList<>();
             for (Excused e : excused) {
