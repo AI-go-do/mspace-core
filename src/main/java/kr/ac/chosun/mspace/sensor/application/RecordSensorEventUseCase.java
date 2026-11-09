@@ -12,10 +12,11 @@ public interface RecordSensorEventUseCase {
 
     /**
      * 재실이면 occupied(필수)·sources(선택, JSON 글자), CO2면 ppm(필수)·source(선택)·temperatureC·humidityPct(선택,
-     * SCD40이 같이 재는 값, 11/9 Q-21)
+     * SCD40이 같이 재는 값, 11/9 Q-21). light·pir은 sources에서 꺼낸 조도 원시값(0–1023)·PIR, 형식이 맞을 때만(보여 주기용)
      */
     record SensorEvent(String eventId, int roomId, String deviceId, Kind kind, Boolean occupied, String sources,
-                       Integer ppm, String source, Double temperatureC, Double humidityPct, Instant observedAt) {
+                       Integer ppm, String source, Double temperatureC, Double humidityPct, Instant observedAt,
+                       Integer light, Boolean pir) {
     }
 
     enum Kind { OCCUPANCY, CO2 }

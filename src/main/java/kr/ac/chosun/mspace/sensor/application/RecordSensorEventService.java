@@ -41,14 +41,16 @@ class RecordSensorEventService implements RecordSensorEventUseCase {
     private final SensorPolicy policy;
     private final TransactionOperations tx;
     private final Clock clock;
+    private final LatestRoomSignals signals;
 
     RecordSensorEventService(SensorEventPort port, NotificationInbox inbox, SensorPolicy policy,
-                             TransactionOperations tx, Clock clock) {
+                             TransactionOperations tx, Clock clock, LatestRoomSignals signals) {
         this.port = port;
         this.inbox = inbox;
         this.policy = policy;
         this.tx = tx;
         this.clock = clock;
+        this.signals = signals;
     }
 
     private record Outcome(Result result, List<Notification> notifications) {
@@ -63,6 +65,9 @@ class RecordSensorEventService implements RecordSensorEventUseCase {
         Outcome outcome = tx.execute(status -> port.exists(e.eventId()) ? Outcome.DUPLICATE
                 : e.kind() == Kind.OCCUPANCY ? occupancy(e, now) : co2(e, now));
         inbox.publish(outcome.notifications());
+        if (e.kind() == Kind.OCCUPANCY && outcome.result() == Result.STORED) {
+            signals.observe(e.roomId(), e.light(), e.pir(), e.observedAt());   // 조도·PIR 최신 값 (DB엔 안 남김)
+        }
         return outcome.result();
     }
 
