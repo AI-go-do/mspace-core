@@ -32,20 +32,29 @@ class JdbcExcuseNoShowsAdapter implements ExcuseNoShowsPort {
                 .list();
     }
 
+    /**
+     * 이 노쇼를 센 정지 하나만 푼다. 정지 셈은 "지난 노쇼 정지가 끝난 뒤의 기록"만 세므로(suspendRepeatedNoShows),
+     * 이 노쇼를 센 정지 = 노쇼 시각 뒤에 처음 시작한 노쇼 정지. 단, 노쇼가 다른 정지 기간 안에 생겼으면 어느 정지도 세지 않았다.
+     * 그보다 뒤에 걸린 정지(이 노쇼가 끝난 정지 뒤 새 노쇼들로 걸린 것)는 건드리지 않는다
+     */
+    private static final String COUNTED_IN = """
+            SELECT s.id FROM user_suspension s
+            WHERE s.user_id = :owner AND s.reason = 'NO_SHOW' AND s.starts_at >= :noShowAt
+              AND :noShowAt >= coalesce((SELECT max(p.ends_at) FROM user_suspension p
+                                         WHERE p.user_id = :owner AND p.reason = 'NO_SHOW' AND p.starts_at < :noShowAt),
+                                        '-infinity'::timestamptz)
+            ORDER BY s.starts_at
+            LIMIT 1
+            """;
+
     @Override
     public boolean liftSuspension(long ownerId, Instant noShowAt, Instant now) {
         // 끝을 지금으로 당기면 정지 기간 CHECK(시작 < 끝)에 걸리는 "지금 막 시작한" 정지는 지운다
-        int deleted = jdbc.sql("""
-                        DELETE FROM user_suspension
-                        WHERE user_id = :owner AND reason = 'NO_SHOW' AND starts_at >= :noShowAt AND starts_at >= :now
-                        """)
+        int deleted = jdbc.sql("DELETE FROM user_suspension WHERE id IN (" + COUNTED_IN + ") AND starts_at >= :now")
                 .param("owner", ownerId).param("noShowAt", Timestamp.from(noShowAt)).param("now", Timestamp.from(now))
                 .update();
-        int shortened = jdbc.sql("""
-                        UPDATE user_suspension SET ends_at = :now
-                        WHERE user_id = :owner AND reason = 'NO_SHOW' AND starts_at >= :noShowAt
-                          AND starts_at < :now AND ends_at > :now
-                        """)
+        int shortened = jdbc.sql("UPDATE user_suspension SET ends_at = :now WHERE id IN (" + COUNTED_IN + ")"
+                        + " AND starts_at < :now AND ends_at > :now")
                 .param("owner", ownerId).param("noShowAt", Timestamp.from(noShowAt)).param("now", Timestamp.from(now))
                 .update();
         return deleted + shortened > 0;

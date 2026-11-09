@@ -202,6 +202,52 @@ class DeviceFaultApiTest {
                 .query(String.class).single()).contains("이용 정지도 풀었어요");
     }
 
+    void suspend(String from, String until) {
+        jdbc.sql("INSERT INTO user_suspension (user_id, reason, starts_at, ends_at) VALUES (1, 'NO_SHOW', :f, :u)")
+                .param("f", java.sql.Timestamp.from(at(from))).param("u", java.sql.Timestamp.from(at(until))).update();
+    }
+
+    long activeSuspensions() {
+        return jdbc.sql("SELECT count(*) FROM user_suspension WHERE user_id = 1 AND ends_at > :now")
+                .param("now", java.sql.Timestamp.from(clock.now)).query(Long.class).single();
+    }
+
+    @Test
+    @DisplayName("이 노쇼를 센 정지가 이미 끝났으면, 그 뒤 다른 노쇼로 걸린 새 정지는 풀지 않는다")
+    void keepsLaterSuspension() {
+        now("09:00");
+        long id = book("10:00", "11:00");
+        now("10:16");
+        sweeps.sweep();
+        suspend("10:16", "10:18"); // 이 노쇼를 센 정지(이미 끝남)
+        suspend("10:19", "23:00"); // 그 뒤 다른 노쇼들로 걸린 정지
+        now("10:25");
+
+        fault("qr-1-7", "10:00", "10:20", attempt("10:03", code(id)));
+        sweeps.sweep();
+
+        assertThat(excused(id)).isTrue();
+        assertThat(activeSuspensions()).as("상관없는 새 정지는 그대로").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("정지 기간 안에 생긴 노쇼는 어느 정지에도 세지 않았으므로, 무르더라도 다음 정지를 풀지 않는다")
+    void keepsSuspensionNotCountingIt() {
+        now("09:00");
+        long id = book("10:00", "11:00");
+        suspend("09:30", "10:30"); // 노쇼(10:15)가 이 정지 안에 생김
+        now("10:16");
+        sweeps.sweep();
+        suspend("10:31", "23:00");
+        now("10:40");
+
+        fault("qr-1-8", "10:00", "10:20", attempt("10:03", code(id)));
+        sweeps.sweep();
+
+        assertThat(excused(id)).isTrue();
+        assertThat(activeSuspensions()).isEqualTo(1);
+    }
+
     @Test
     @DisplayName("다른 번호이거나 입실 마감 뒤에 눌렀으면 예약을 찾지 않고 무르지 않는다. 번호는 저장하지 않는다")
     void ignoresWrongCodeOrLateAttempt() {
