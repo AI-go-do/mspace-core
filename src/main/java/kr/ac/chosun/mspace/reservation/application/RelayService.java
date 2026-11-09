@@ -113,7 +113,7 @@ class RelayService implements RelayUseCase {
                 throw new BusinessException(ErrorCode.RELAY_WAIT_LIMIT,
                         "기다리기는 한 사람당 동시에 %d개까지예요".formatted(relay.maxWaits()));
             }
-            return wait(port.insertWait(userId, roomId, startAt, now));
+            return wait(port.insertWait(userId, roomId, startAt, locked));
         });
     }
 
