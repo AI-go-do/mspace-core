@@ -166,6 +166,7 @@ class RelayService implements RelayUseCase {
     public int advance(Instant now) {
         List<Notification> stored = new ArrayList<>();
         Integer passed = tx.execute(s -> {
+            port.lockAdvance();  // advance끼리 한 줄로: 여러 방 잠금을 서로 다른 순서로 잡아 생기는 교착 방지
             // 받기(예약 저장)는 방 잠금 → 넘김 줄 순서라 여기도 방 잠금을 먼저 잡고 넘김을 바꾼다 (교착 방지)
             for (int roomId : port.roomsWithExpiredOffers(now)) {
                 port.lockRoom(roomId);

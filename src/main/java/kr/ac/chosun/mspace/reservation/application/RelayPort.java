@@ -10,6 +10,9 @@ public interface RelayPort {
     /** 방 잠금 (예약 저장과 같은 번호 -방 id). 넘김 만들기와 예약 저장이 한 줄로 서게 */
     void lockRoom(int roomId);
 
+    /** 넘기기 일(advance) 잠금. advance끼리 한 줄로 서게 해서 여러 방 잠금을 서로 다른 순서로 잡는 교착을 막는다 */
+    void lockAdvance();
+
     /** 회원 잠금 (예약 저장과 같은 번호 = 회원 id). 기다리기 3개 세기와 걸기가 한 줄로 서게 */
     void lockUser(long userId);
 

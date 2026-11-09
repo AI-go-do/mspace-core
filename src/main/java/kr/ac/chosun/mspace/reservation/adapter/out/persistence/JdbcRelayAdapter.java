@@ -35,6 +35,11 @@ class JdbcRelayAdapter implements RelayPort {
     }
 
     @Override
+    public void lockAdvance() {
+        lock(Long.MIN_VALUE);  // 방(-방 id)·회원(id)·신고 정지(4조+id) 번호와 겹치지 않음
+    }
+
+    @Override
     public void lockUser(long userId) {
         lock(userId);
     }
