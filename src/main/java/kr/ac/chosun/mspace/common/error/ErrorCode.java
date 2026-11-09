@@ -96,6 +96,7 @@ public enum ErrorCode {
 
     // 로그인 (FR-AUTH-001)
     SCHOOL_EMAIL_ONLY(HttpStatus.BAD_REQUEST, "학교 메일(@chosun.ac.kr)만 사용할 수 있습니다"),
+    DEVICE_FAULT_TOO_MANY(HttpStatus.TOO_MANY_REQUESTS, "이 방 장치 오류 번호를 하루에 너무 많이 보냈어요"),
     EMAIL_CODE_TOO_SOON(HttpStatus.TOO_MANY_REQUESTS, "인증번호는 1분에 한 번만 보낼 수 있습니다"),
     EMAIL_CODE_NOT_FOUND(HttpStatus.BAD_REQUEST, "인증번호를 먼저 받아 주세요"),
     EMAIL_CODE_EXPIRED(HttpStatus.BAD_REQUEST, "인증번호가 만료되었습니다. 다시 받아 주세요"),

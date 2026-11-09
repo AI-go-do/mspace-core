@@ -229,4 +229,17 @@ class DeviceFaultApiTest {
         assertThat(mvc.post().uri("/api/device-faults").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"eventId\":\"x\",\"roomId\":1}").exchange()).hasStatus(401);
     }
+
+    @Test
+    @DisplayName("방마다 하루에 받는 번호는 200개까지, 넘으면 429 (토큰이 새도 번호를 끝없이 넣어 보지 못하게)")
+    void limitsAttemptsPerRoomPerDay() {
+        now("10:30");
+        String hundred = String.join(",", java.util.Collections.nCopies(100, attempt("10:05", "123456")));
+
+        assertThat(fault("qr-1-l1", "10:00", "10:10", hundred)).hasStatus(200);
+        assertThat(fault("qr-1-l2", "10:00", "10:10", hundred)).hasStatus(200);
+        assertThat(fault("qr-1-l3", "10:00", "10:10", attempt("10:05", "123456"))).hasStatus(429)
+                .bodyJson().extractingPath("$.code").isEqualTo("DEVICE_FAULT_TOO_MANY");
+        assertThat(fault("qr-1-l4", "10:00", "10:10", "")).as("번호 없는 오류 기록은 받는다").hasStatus(200);
+    }
 }

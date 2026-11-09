@@ -23,6 +23,12 @@ class DeviceFaultService implements DeviceFaultUseCase {
     /** 장치 시계가 조금 빨라도 받는다 */
     static final Duration CLOCK_SKEW = Duration.ofMinutes(5);
 
+    /**
+     * 방마다 하루(24시간)에 받는 번호 수 상한. 장치 토큰이 새도 eventId를 바꿔 가며 번호를 끝없이 넣어 보지 못하게
+     * (키패드 5번 잠금을 거치지 않는 길이라서, CodeRabbit #99). 정상이면 하루 오류 구간 동안 눌린 수십 번 안팎
+     */
+    static final int MAX_ATTEMPTS_PER_ROOM_PER_DAY = 200;
+
     private final DeviceFaultPort port;
     private final ExcuseNoShowsUseCase excuses;
     private final AccessPolicy access;
@@ -48,14 +54,22 @@ class DeviceFaultService implements DeviceFaultUseCase {
             throw new BusinessException(ErrorCode.INVALID_REQUEST,
                     "오류 구간(시작 ≤ 끝, 24시간 이내, 끝이 지금 이전)과 번호 시각(구간 안)을 확인해 주세요");
         }
-        Integer matched = tx.execute(s -> port.insert(fault, now)
+        Integer matched = tx.execute(s -> {
+            // 동시에 두 요청이 오면 상한을 조금 넘을 수 있다 (잠금 없이 센다). 끝없는 시도를 막는 게 목적이라 충분하다
+            if (port.attemptsSince(fault.roomId(), now.minus(Duration.ofDays(1))) + fault.attempts().size()
+                    > MAX_ATTEMPTS_PER_ROOM_PER_DAY) {
+                throw new BusinessException(ErrorCode.DEVICE_FAULT_TOO_MANY);
+            }
+            return port.insert(fault, now)
                 .map(id -> (int) fault.attempts().stream()
                         .filter(a -> port.insertAttempt(id, fault.roomId(), a, access.openBeforeMinutes()))
                         .count())
-                .orElse(null));
+                .orElse(null);
+        });
         if (matched == null) {
             return new Recorded(true, 0, 0);
         }
-        return new Recorded(false, matched, matched > 0 ? excuses.excuse(now) : 0);
+        // 맞은 게 없어도 무르기를 돌린다. 맞을 때만 돌리면 응답 시간 차이로 번호가 맞았는지 알 수 있다
+        return new Recorded(false, matched, excuses.excuse(now));
     }
 }

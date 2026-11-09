@@ -15,6 +15,8 @@ CREATE TABLE device_fault (
     CONSTRAINT fault_period CHECK (started_at <= ended_at)
 );
 CREATE INDEX device_fault_room_time ON device_fault (room_id, started_at);
+-- 방별 하루 번호 수 상한을 셀 때
+CREATE INDEX device_fault_room_received ON device_fault (room_id, received_at);
 
 -- 오류 구간 동안 눌린 번호 한 번 = 한 줄. 맞는 예약을 못 찾으면 reservation_id는 비운다
 CREATE TABLE device_fault_attempt (

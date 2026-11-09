@@ -18,4 +18,7 @@ public interface DeviceFaultPort {
      * @return 예약을 찾았으면 true
      */
     boolean insertAttempt(long faultId, int roomId, Attempt attempt, int openBeforeMinutes);
+
+    /** 이 방 장치 오류로 since 뒤에 받은 번호 수 (방별 하루 상한) */
+    int attemptsSince(int roomId, Instant since);
 }

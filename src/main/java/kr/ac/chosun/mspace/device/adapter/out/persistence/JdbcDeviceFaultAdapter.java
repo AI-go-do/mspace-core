@@ -51,4 +51,14 @@ class JdbcDeviceFaultAdapter implements DeviceFaultPort {
                 .param("room", roomId).param("code", a.code()).param("open", openBeforeMinutes)
                 .query((rs, n) -> rs.getBoolean(1)).single();
     }
+
+    @Override
+    public int attemptsSince(int roomId, Instant since) {
+        return jdbc.sql("""
+                        SELECT count(*) FROM device_fault_attempt a JOIN device_fault f ON f.id = a.fault_id
+                        WHERE f.room_id = :room AND f.received_at > :since
+                        """)
+                .param("room", roomId).param("since", Timestamp.from(since))
+                .query((rs, n) -> rs.getInt(1)).single();
+    }
 }
