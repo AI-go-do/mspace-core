@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionOperations;
 
 /**
- * 장치 오류 받기 (Q-19). 오류·번호 저장은 한 트랜잭션, 노쇼 무르기는 커밋 뒤 따로
+ * 장치 오류 받기 (Q-19). 오류·번호 저장은 한 트랜잭션, 노쇼 무르기는 커밋 뒤 응답과 따로({@link ExcuseKicker})
  * (무르기가 실패해도 오류 기록은 남고, 1분 정리가 다시 무른다).
  */
 @Service
@@ -32,13 +32,15 @@ class DeviceFaultService implements DeviceFaultUseCase {
     private final AccessPolicy access;
     private final TransactionOperations tx;
     private final Clock clock;
+    private final ExcuseKicker kicker;
 
     DeviceFaultService(DeviceFaultPort port, AccessPolicy access,
-                       TransactionOperations tx, Clock clock) {
+                       TransactionOperations tx, Clock clock, ExcuseKicker kicker) {
         this.port = port;
         this.access = access;
         this.tx = tx;
         this.clock = clock;
+        this.kicker = kicker;
     }
 
     @Override
@@ -64,11 +66,12 @@ class DeviceFaultService implements DeviceFaultUseCase {
                         .count())
                 .orElse(null);
         });
+        // 무르기는 응답과 따로 바로 돈다. 번호가 맞았을 때만 할 일이 늘면 응답 시간 차이로 번호가 맞았는지
+        // 짐작할 수 있어서, 이 요청은 맞든 안 맞든(같은 eventId를 다시 보내도) 저장 + 같은 신호 하나만 한다
+        kicker.kick();
         if (matched == null) {
             return new Recorded(true, 0);
         }
-        // 무르기는 여기서 하지 않고 1분 정리가 함(늦어도 1분). 번호가 맞았을 때만 할 일이 늘면
-        // 응답 시간 차이로 번호가 맞았는지 짐작할 수 있어서, 이 요청은 맞든 안 맞든 같은 일만 한다
         return new Recorded(false, matched);
     }
 }

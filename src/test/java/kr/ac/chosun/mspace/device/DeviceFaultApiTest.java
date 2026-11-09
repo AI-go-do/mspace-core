@@ -124,6 +124,22 @@ class DeviceFaultApiTest {
                 {"at":"2030-03-05T%s:00+09:00","code":"%s","via":"QR"}""".formatted(time, code);
     }
 
+    /** 응답과 따로 도는 무르기를 최대 5초 기다린다 */
+    static boolean eventually(java.util.function.BooleanSupplier check) {
+        for (int i = 0; i < 100; i++) {
+            if (check.getAsBoolean()) {
+                return true;
+            }
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return check.getAsBoolean();
+    }
+
     boolean excused(long reservationId) {
         return jdbc.sql("SELECT no_show_excused_at IS NOT NULL FROM reservation WHERE id = :id")
                 .param("id", reservationId).query((rs, n) -> rs.getBoolean(1)).single();
@@ -146,11 +162,8 @@ class DeviceFaultApiTest {
 
         assertThat(r).hasStatus(200).bodyJson().extractingPath("$.result").isEqualTo("STORED");
         assertThat(r).bodyJson().doesNotHavePath("$.matched").doesNotHavePath("$.excused");
-        // 요청 안에서는 무르지 않는다 (응답 시간으로 번호가 맞았는지 알 수 없게). 1분 정리가 무름
-        assertThat(excused(id)).as("요청 직후에는 아직").isFalse();
-        now("10:21");
-        sweeps.sweep();
-        assertThat(excused(id)).isTrue();
+        // 요청은 저장만 하고, 무르기는 응답과 따로 바로 돈다 (1분 정리를 기다리지 않음)
+        assertThat(eventually(() -> excused(id))).as("몇 초 안에 무름").isTrue();
         assertThat(jdbc.sql("SELECT status FROM reservation WHERE id = :id").param("id", id).query(String.class)
                 .single()).as("상태는 노쇼 그대로 (기록)").isEqualTo("NO_SHOW");
         assertThat(apologies()).isEqualTo(3);
