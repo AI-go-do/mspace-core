@@ -14,6 +14,17 @@ public interface MemberSearchUseCase {
     FoundMember findByStudentId(String studentId, long requesterId);
 
     /**
+     * 로그인한 본인 정보 (마이 화면 "내 정보"). 본인 것이라 이름을 가리지 않는다. 이메일은 화면에 안 써서 담지 않는다
+     *
+     * @throws kr.ac.chosun.mspace.common.error.BusinessException 회원이 없으면 404
+     */
+    MyProfile myProfile(long memberId);
+
+    /** 내 정보. 학생 인증 전이면 학번이 null일 수 있다 */
+    record MyProfile(String studentId, String name) {
+    }
+
+    /**
      * 검색 결과. 실명·이메일·회원 id는 담지 않는다.
      *
      * @param me 찾은 사람이 나(대표자)면 true. 화면이 "추가" 대신 "추가됨"을 보여 준다 (대표자는 이미 들어 있음)
