@@ -71,13 +71,14 @@ class RoomBlockService implements RoomBlockUseCase {
     @Override
     public Block release(long adminId, long blockId) {
         checkAdmin(adminId);
-        Instant now = clock.instant();
         return tx.execute(s -> {
+            // 겹친 예약 취소(cancelConflicts)와 같은 방 잠금으로 줄 세움: 푸는 중에 취소가 끼어들지 않게
+            port.lockRoom(find(blockId).roomId());
             Block b = find(blockId);
             if (b.releasedAt() != null) {
                 return b;
             }
-            port.release(blockId, adminId, now);
+            port.release(blockId, adminId, clock.instant());
             return find(blockId);
         });
     }
@@ -96,14 +97,15 @@ class RoomBlockService implements RoomBlockUseCase {
     @Override
     public Canceled cancelConflicts(long adminId, long blockId) {
         checkAdmin(adminId);
-        Instant now = clock.instant();
         List<Notification> stored = new ArrayList<>();
         List<Long> canceled = tx.execute(s -> {
+            // 잠금을 먼저 잡고 막기 상태와 지금 시각을 다시 읽음: 기다리는 사이 풀렸거나 예약이 시작됐을 수 있음
+            port.lockRoom(find(blockId).roomId());
             Block b = find(blockId);
+            Instant now = clock.instant();
             if (!active(b, now)) {
                 return List.<Long>of();
             }
-            port.lockRoom(b.roomId());
             List<Long> ids = port.cancelBooked(b.roomId(), b.startAt().toInstant(), b.endAt().toInstant(), now);
             String body = "관리자가 %s–%s %s을 막아서 예약이 취소됐어요 (사유: %s%s)".formatted(
                     WHEN.format(b.startAt()), WHEN.format(b.endAt()), port.roomName(b.roomId()), b.reason().label(),
