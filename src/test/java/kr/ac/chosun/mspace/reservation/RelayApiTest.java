@@ -221,6 +221,52 @@ class RelayApiTest {
     }
 
     @Test
+    @DisplayName("다른 방 넘김이 5분 지나는 순간 받기와 넘기기 정리가 동시에 돌아도 둘 다 끝난다 (교착 없음)")
+    void takeAndAdvanceConcurrently() throws Exception {
+        for (int round = 0; round < 10; round++) {
+            // given: B가 1번 방·2번 방 14:00 칸을 기다리고, 두 방 예약이 취소돼 B에게 둘 다 넘어옴. 2번 방 넘김은 방금 5분 지남
+            members();
+            long teamRoom2 = id(mvc.post().uri("/api/reservations").header("X-User-Id", "7")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""
+                            {"roomId":2,"startAt":"2030-03-05T14:00:00+09:00","endAt":"2030-03-05T15:00:00+09:00",
+                             "participantStudentIds":["20230008","20230009"]}""")
+                    .exchange());
+            waitFor(4, 1, "14:00");
+            waitFor(4, 2, "14:00");
+            now("10:10");
+            cancel(1, teamA);
+            cancel(7, teamRoom2);
+            jdbc.sql("UPDATE relay_offer SET expires_at = :t WHERE room_id = 2")
+                    .param("t", java.sql.Timestamp.from(at("10:09"))).update();
+            long offerRoom1 = jdbc.sql("SELECT id FROM relay_offer WHERE user_id = 4 AND room_id = 1 AND status = 'OPEN'")
+                    .query(Long.class).single();
+
+            // when: 받기(1번 방 잠금 → B의 2번 방 넘김 행)와 1분 정리(2번 방 넘김 행 → 방 잠금)를 같이 시작
+            java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+            try {
+                var take = pool.submit(() -> {
+                    go.await();
+                    return book(4, "14:00", "15:00", offerRoom1);
+                });
+                var sweep = pool.submit(() -> {
+                    go.await();
+                    sweeps.sweep();
+                    return null;
+                });
+                go.countDown();
+
+                // then: 둘 다 끝나고 받기는 성공
+                assertThat(take.get(30, java.util.concurrent.TimeUnit.SECONDS)).hasStatus(201);
+                sweep.get(30, java.util.concurrent.TimeUnit.SECONDS);
+            } finally {
+                pool.shutdownNow();
+            }
+        }
+    }
+
+    @Test
     @DisplayName("넘길게요를 누르면 다음 사람에게 넘어가고, 5분이 지나면 1분 정리가 그다음 사람에게 넘긴다")
     void declineThenExpire() {
         // given: B → C → D 순서로 14:00 칸을 기다린다
