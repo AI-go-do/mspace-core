@@ -19,10 +19,12 @@ class SweepReservationsService implements SweepReservationsUseCase {
     private static final Logger log = LoggerFactory.getLogger(SweepReservationsService.class);
 
     private final ReservationSweepPort sweeps;
+    private final RelayUseCase relay;
     private final Clock clock;
 
-    SweepReservationsService(ReservationSweepPort sweeps, Clock clock) {
+    SweepReservationsService(ReservationSweepPort sweeps, RelayUseCase relay, Clock clock) {
         this.sweeps = sweeps;
+        this.relay = relay;
         this.clock = clock;
     }
 
@@ -35,6 +37,12 @@ class SweepReservationsService implements SweepReservationsUseCase {
         int noShows = step("노쇼", sweeps::markNoShows, now);
         int autoCheckedOut = step("자동 퇴실", sweeps::autoCheckout, now);
         var swept = new Swept(noShows, autoCheckedOut, step("자리 비움", sweeps::releaseAway, now));
+        // 빈방 릴레이: 받을 시간(5분)이 지난 넘김을 다음 사람에게 (Q-18). 알림함 저장 등 다른 오류가 나도 정리 결과는 돌려준다
+        try {
+            step("릴레이 넘기기", relay::advance, now);
+        } catch (RuntimeException e) {
+            log.error("예약 정리(릴레이 넘기기) 실패, 다음 번에 다시", e);
+        }
         if (swept.noShows() > 0 || swept.autoCheckedOut() > 0 || swept.awayReleased() > 0) {
             log.info("예약 정리: 노쇼 {}건, 자동 퇴실 {}건, 자리 비움 퇴실 {}건",
                     swept.noShows(), swept.autoCheckedOut(), swept.awayReleased());

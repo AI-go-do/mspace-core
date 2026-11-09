@@ -8,6 +8,13 @@ public enum ErrorCode {
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다"),
     ROOM_DATE_OUT_OF_RANGE(HttpStatus.BAD_REQUEST, "오늘부터 예약 가능한 기간 안의 날짜만 조회할 수 있습니다"),
     ROOM_NOT_FOUND(HttpStatus.NOT_FOUND, "없거나 지금 사용할 수 없는 방입니다"),
+    RELAY_WAIT_LIMIT(HttpStatus.CONFLICT, "기다리기는 한 사람당 동시에 3개까지예요"),
+    RELAY_TOO_LATE(HttpStatus.CONFLICT, "시작 30분 전부터는 기다리기를 걸 수 없어요"),
+    RELAY_SLOT_FREE(HttpStatus.CONFLICT, "그 시간은 비어 있어요. 바로 예약해 주세요"),
+    RELAY_WAIT_NOT_FOUND(HttpStatus.NOT_FOUND, "없는 기다리기예요"),
+    RELAY_OFFER_NOT_FOUND(HttpStatus.NOT_FOUND, "받을 수 있는 자리가 아니에요"),
+    RELAY_OFFER_INVALID(HttpStatus.CONFLICT, "넘겨받은 자리의 받을 시간이 지났거나 구간이 달라요"),
+    RELAY_HELD(HttpStatus.CONFLICT, "기다리던 학생에게 먼저 넘겨진 자리예요"),
 
     // 참여자 학번 검색 (FR-RSV-004). 가입 안 한 학번과 학생 인증 전 회원은 같은 404 (어느 쪽인지 알려 주지 않으려고)
     MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "학생 인증을 마친 회원 중 그 학번이 없습니다"),

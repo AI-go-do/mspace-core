@@ -106,7 +106,7 @@ class CreateReservationRetryTest {
         // 번호 발급은 인터페이스라 테스트에서 고정 번호를 끼운다
         return new CreateReservationService(port, new RoomQuery(rooms), () -> "123456",
                 new ReservationPolicy(7, 30, 120), clock, TransactionOperations.withoutTransaction(),
-                () -> new SweepReservationsUseCase.Swept(0, 0, 0), (o, t, g) -> 0, EXTENSION, NO_SUSPENSION, (o, ids) -> true);
+                () -> new SweepReservationsUseCase.Swept(0, 0, 0), (o, t, g) -> 0, EXTENSION, NO_SUSPENSION, (o, ids) -> true, null, null);
     }
 
     @Test
@@ -133,7 +133,7 @@ class CreateReservationRetryTest {
                 new ReservationPolicy(7, 30, 120), clock, TransactionOperations.withoutTransaction(),
                 () -> {
                     throw new DataAccessResourceFailureException("DB 연결 끊김");
-                }, (o, t, g) -> 0, EXTENSION, NO_SUSPENSION, (o, ids) -> true);
+                }, (o, t, g) -> 0, EXTENSION, NO_SUSPENSION, (o, ids) -> true, null, null);
 
         // when
         CreateReservationUseCase.Created created = service.create(1, command);
@@ -191,7 +191,7 @@ class CreateReservationRetryTest {
         int[] issued = {0};
         CreateReservationService service = new CreateReservationService(port, new RoomQuery(rooms),
                 () -> "00000" + (++issued[0]), new ReservationPolicy(7, 30, 120), clock,
-                TransactionOperations.withoutTransaction(), () -> new SweepReservationsUseCase.Swept(0, 0, 0), (o, t, g) -> 0, EXTENSION, NO_SUSPENSION, (o, ids) -> true);
+                TransactionOperations.withoutTransaction(), () -> new SweepReservationsUseCase.Swept(0, 0, 0), (o, t, g) -> 0, EXTENSION, NO_SUSPENSION, (o, ids) -> true, null, null);
 
         // when
         CreateReservationUseCase.Created created = service.create(1, command);

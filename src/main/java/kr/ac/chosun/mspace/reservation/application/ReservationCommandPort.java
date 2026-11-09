@@ -37,10 +37,21 @@ public interface ReservationCommandPort {
      * @param createdVia      어디서 만들었나 (created_via)
      * @param inUse           true면 처음부터 IN_USE(입실 시각 = 지금)로 넣는다. 연장하기만 쓴다
      * @param continuedFromId 연장이면 원래 예약 id, 아니면 null
+     * @param relayOfferId    빈방 릴레이로 넘겨받은 자리를 받는 예약이면 그 넘김 id, 아니면 null
+     * @param at              지금 (앱 Clock). 다른 사람에게 넘겨 둔 자리(릴레이)인지 볼 때 쓴다. null이면 DB 시각
      */
     record NewReservation(int roomId, long ownerId, Instant startAt, Instant endAt,
                           String accessCode, List<Long> participantIds, String idempotencyKey, boolean instant,
-                          CreatedVia createdVia, boolean inUse, Long continuedFromId) {
+                          CreatedVia createdVia, boolean inUse, Long continuedFromId, Long relayOfferId,
+                          Instant at) {
+
+        /** 연장하기 */
+        public NewReservation(int roomId, long ownerId, Instant startAt, Instant endAt,
+                              String accessCode, List<Long> participantIds, String idempotencyKey, boolean instant,
+                              CreatedVia createdVia, boolean inUse, Long continuedFromId) {
+            this(roomId, ownerId, startAt, endAt, accessCode, participantIds, idempotencyKey, instant, createdVia,
+                    inUse, continuedFromId, null, null);
+        }
 
         /** 미리 예약·즉시 시작 */
         public NewReservation(int roomId, long ownerId, Instant startAt, Instant endAt,
