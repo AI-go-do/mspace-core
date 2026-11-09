@@ -7,7 +7,6 @@ import kr.ac.chosun.mspace.reservation.application.ReservationQueryPort.Access;
 import kr.ac.chosun.mspace.reservation.domain.ReservationStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 /**
@@ -45,7 +44,7 @@ public class CancelReservationService implements CancelReservationUseCase {
         if (commands.cancelIfBookedBeforeStart(reservationId, userId, instantCancel.minutes())) {
             try {
                 relay.released(reservationId);
-            } catch (DataAccessException e) {
+            } catch (RuntimeException e) {
                 log.warn("릴레이 넘기기 실패({}), 취소는 그대로", e.getClass().getSimpleName());
             }
             return new Canceled(reservationId, ReservationStatus.CANCELED);

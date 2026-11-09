@@ -126,7 +126,7 @@ public class CreateReservationService implements CreateReservationUseCase {
     private void advanceQuietly() {
         try {
             relay.advance(clock.instant());
-        } catch (DataAccessException e) {
+        } catch (RuntimeException e) {
             log.warn("릴레이 넘기기 실패({}), 1분 정리가 다시 함", e.getClass().getSimpleName());
         }
     }

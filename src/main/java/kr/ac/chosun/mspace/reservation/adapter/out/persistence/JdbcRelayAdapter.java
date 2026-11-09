@@ -198,6 +198,10 @@ class JdbcRelayAdapter implements RelayPort {
                         WITH next AS (
                             SELECT w.id, w.user_id FROM relay_wait w
                             WHERE w.room_id = :room AND w.status = 'WAITING' AND w.start_at >= :start AND w.start_at < :end
+                              -- 취소 커밋과 방 잠금 사이, 또는 5분 지난 넘김이 아직 정리 전일 때 다른 사람이 먼저 잡았으면 넘기지 않는다
+                              AND NOT EXISTS (SELECT 1 FROM reservation r
+                                              WHERE r.room_id = :room AND r.status IN ('BOOKED', 'IN_USE')
+                                                AND tstzrange(r.start_at, r.end_at) && tstzrange(:start, :end))
                               AND NOT EXISTS (SELECT 1 FROM relay_offer o
                                               WHERE o.room_id = :room AND o.status = 'OPEN'
                                                 AND tstzrange(o.start_at, o.end_at) && tstzrange(:start, :end))
