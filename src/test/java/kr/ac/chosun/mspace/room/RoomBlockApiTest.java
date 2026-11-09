@@ -267,6 +267,31 @@ class RoomBlockApiTest {
                 .exchange()).hasStatus(404).bodyJson().extractingPath("$.code").isEqualTo("ROOM_BLOCK_NOT_FOUND");
     }
 
+    @Test
+    @DisplayName("막힌 칸은 빈방 조회에서 available false와 사유가 붙고, 방 현황은 BLOCKED라 빈 방 수에서 빠진다")
+    void blocksShowInAvailabilityAndStatus() {
+        assertThat(block("10:00", "14:00", "INSPECTION")).hasStatus(201);
+
+        MvcTestResult day = mvc.get().uri("/api/rooms/availability?date=2030-03-05").exchange();
+        // 1번 방 칸: 0번 = 00:00, 26번 = 13:00(막힘), 28번 = 14:00(풀림)
+        assertThat(day).hasStatus(200).bodyJson().extractingPath("$.rooms[0].slots[26].available").isEqualTo(false);
+        assertThat(day).bodyJson().extractingPath("$.rooms[0].slots[26].block.reason").isEqualTo("INSPECTION");
+        assertThat(day).bodyJson().extractingPath("$.rooms[0].slots[26].block.memo").isEqualTo("에어컨 점검");
+        assertThat(day).bodyJson().extractingPath("$.rooms[0].slots[26].block.endAt")
+                .isEqualTo("2030-03-05T14:00:00+09:00");
+        assertThat(day).bodyJson().extractingPath("$.rooms[0].slots[28].available").isEqualTo(true);
+        assertThat(day).bodyJson().extractingPath("$.rooms[0].slots[28].block").isNull();
+        assertThat(day).bodyJson().extractingPath("$.rooms[0].occupiedNow").isEqualTo(true);
+        assertThat(day).bodyJson().extractingPath("$.rooms[0].blockedNow.reason").isEqualTo("INSPECTION");
+        assertThat(day).bodyJson().extractingPath("$.rooms[1].blockedNow").isNull();
+
+        MvcTestResult status = mvc.get().uri("/api/rooms/status").exchange();
+        assertThat(status).hasStatus(200).bodyJson().extractingPath("$.rooms[0].status").isEqualTo("BLOCKED");
+        assertThat(status).bodyJson().extractingPath("$.rooms[0].block.reason").isEqualTo("INSPECTION");
+        assertThat(status).bodyJson().extractingPath("$.rooms[1].status").isEqualTo("AVAILABLE");
+        assertThat(status).bodyJson().extractingPath("$.availableCount").isEqualTo(4);
+    }
+
     long id(MvcTestResult r, String path) {
         return ((Number) com.jayway.jsonpath.JsonPath.read(responseBody(r), path)).longValue();
     }
