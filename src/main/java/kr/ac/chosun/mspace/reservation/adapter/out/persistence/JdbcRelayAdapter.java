@@ -21,7 +21,7 @@ class JdbcRelayAdapter implements RelayPort {
     private static final String WAIT_ORDER = """
             (SELECT count(*) FROM relay_wait q
              WHERE q.room_id = w.room_id AND q.start_at = w.start_at AND q.status = 'WAITING'
-               AND (q.created_at, q.id) <= (w.created_at, w.id))""";
+               AND q.id <= w.id)""";
 
     private final JdbcClient jdbc;
 
@@ -229,7 +229,7 @@ class JdbcRelayAdapter implements RelayPort {
                               AND NOT EXISTS (SELECT 1 FROM relay_offer o
                                               WHERE o.room_id = :room AND o.status = 'OPEN'
                                                 AND tstzrange(o.start_at, o.end_at) && tstzrange(:start, :end))
-                            ORDER BY w.created_at, w.id
+                            ORDER BY w.id  -- 줄 순서는 번호: 방 잠금 안에서 넣으니 번호가 곧 줄 선 순서 (서버 시계와 무관)
                             LIMIT 1 FOR UPDATE SKIP LOCKED
                         ), w AS (
                             UPDATE relay_wait SET status = 'OFFERED' WHERE id IN (SELECT id FROM next)
