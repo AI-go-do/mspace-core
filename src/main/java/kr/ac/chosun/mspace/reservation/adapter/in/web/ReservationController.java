@@ -190,7 +190,13 @@ class ReservationController {
 
     /** 예약 만들기 요청 본문. 시각은 +09:00 같은 오프셋이 붙은 ISO-8601 */
     record CreateReservationRequest(Integer roomId, OffsetDateTime startAt, OffsetDateTime endAt,
-                                    List<String> participantStudentIds) {
+                                    List<String> participantStudentIds, Long relayOfferId) {
+
+        /** 빈방 릴레이 없이 (테스트·예전 호출) */
+        CreateReservationRequest(Integer roomId, OffsetDateTime startAt, OffsetDateTime endAt,
+                                 List<String> participantStudentIds) {
+            this(roomId, startAt, endAt, participantStudentIds, null);
+        }
 
         /**
          * 서비스가 쓰는 명령으로 바꾼다. 학번 앞뒤 공백은 지운다.
@@ -203,7 +209,7 @@ class ReservationController {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST);
             }
             return new Command(roomId, startAt.toInstant(), endAt.toInstant(),
-                    participantStudentIds.stream().map(String::trim).toList(), idempotencyKey, via);
+                    participantStudentIds.stream().map(String::trim).toList(), idempotencyKey, via, relayOfferId);
         }
     }
 }

@@ -78,14 +78,19 @@ public class CreateReservationService implements CreateReservationUseCase {
     private final ExtensionPolicy extension;
     private final SuspensionPort suspensions;
     private final FriendCheck friends;
+    private final RelayPort relays;
+    private final RelayUseCase relay;
     private final NotificationInbox inbox;
 
     public CreateReservationService(ReservationCommandPort port, RoomQuery rooms, AccessCodeIssuer codes,
                                     ReservationPolicy policy, Clock clock, TransactionOperations tx,
                                     SweepReservationsUseCase sweeps, UsageChainPort chains,
                                     ExtensionPolicy extension, SuspensionPort suspensions,
-                                    FriendCheck friends, NotificationInbox inbox) {
+                                    FriendCheck friends, RelayPort relays, RelayUseCase relay,
+                                    NotificationInbox inbox) {
         this.friends = friends;
+        this.relays = relays;
+        this.relay = relay;
         this.inbox = inbox;
         this.suspensions = suspensions;
         this.sweeps = sweeps;
@@ -133,16 +138,32 @@ public class CreateReservationService implements CreateReservationUseCase {
         }
     }
 
+    /** 릴레이 다음 사람 찾기. 부가 작업이라 실패해도 예약은 그대로 (1분 정리가 다시 한다) */
+    private void advanceQuietly() {
+        try {
+            relay.advance(clock.instant());
+        } catch (RuntimeException e) {
+            log.warn("릴레이 넘기기 실패({}), 1분 정리가 다시 함", e.getClass().getSimpleName());
+        }
+    }
+
     private Created make(long ownerId, Command command, boolean instant) {
         Optional<Created> earlier = replay(ownerId, command, instant);
         if (earlier.isPresent()) {
             return earlier.get();
+        }
+        if (instant && command.relayOfferId() != null) {
+            // 넘겨받은 자리는 시작 30분 전보다 이른 미리 예약 구간이라 즉시 시작으로 받을 일이 없다
+            throw new BusinessException(ErrorCode.RELAY_OFFER_INVALID);
         }
         sweepQuietly();
         for (int attempt = 1; ; attempt++) {
             try {
                 Made made = tx.execute(status -> createOnce(ownerId, command, instant));
                 inbox.publish(made.notified());
+                if (command.relayOfferId() != null) {
+                    advanceQuietly();  // 받으면서 풀린 내 다른 넘김을 다음 사람에게
+                }
                 return made.created();
             } catch (PessimisticLockingFailureException e) {
                 // 40P01(교착)은 Spring이 이 예외로 바꿔 준다. 트랜잭션은 이미 되돌려졌다
@@ -265,9 +286,27 @@ public class CreateReservationService implements CreateReservationUseCase {
         participantIds.add(ownerId);
         others.forEach(s -> participantIds.add(ids.get(s)));
 
+        // 빈방 릴레이로 넘겨받은 자리 (Q-18): 내 것이고, 받을 시간이 남았고, 같은 방, 넘어온 구간 안이어야 한다
+        Long offerId = command.relayOfferId();
+        if (offerId != null) {
+            boolean ok = relays.findOffer(offerId)
+                    .filter(o -> o.userId() == ownerId && "OPEN".equals(o.status()) && o.expiresAt().isAfter(now)
+                            && o.roomId() == room.id()
+                            && !time.start().isBefore(o.startAt()) && !time.end().isAfter(o.endAt()))
+                    .isPresent();
+            if (!ok) {
+                throw new BusinessException(ErrorCode.RELAY_OFFER_INVALID);
+            }
+        }
+
         String accessCode = codes.issue();
         long id = port.insert(new NewReservation(room.id(), ownerId, time.start(), time.end(), accessCode,
-                participantIds, command.idempotencyKey(), instant, command.createdVia()));
+                participantIds, command.idempotencyKey(), instant, command.createdVia(), false, null, offerId, now));
+        // 받은 넘김 표시. 같은 트랜잭션이라 저장이 실패하면 넘김도 그대로 남는다
+        // 방 잠금을 기다리는 사이 5분이 지났을 수 있어 지금 시각으로 다시 본다
+        if (offerId != null && !relays.take(offerId, ownerId, id, clock.instant())) {
+            throw new BusinessException(ErrorCode.RELAY_OFFER_INVALID);
+        }
 
         // 참여자 알림. 문구에 이름·학번은 넣지 않는다(알림함 규칙). 입실 번호도 대표자만 받으니 넣지 않는다
         String body = "%s %s–%s 예약에 함께 쓰는 사람으로 들어갔어요. 입실 번호는 대표자에게 있어요.".formatted(
