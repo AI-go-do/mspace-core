@@ -61,4 +61,10 @@ class JdbcDeviceFaultAdapter implements DeviceFaultPort {
                 .param("room", roomId).param("since", Timestamp.from(since))
                 .query((rs, n) -> rs.getInt(1)).single();
     }
+
+    /** 두 정수 키 (23, 방): 한 정수 키를 쓰는 예약·회원 잠금과 겹치지 않음. 23은 V23(이 기능) 번호 */
+    @Override
+    public void lockRoomCount(int roomId) {
+        jdbc.sql("SELECT pg_advisory_xact_lock(23, :room)").param("room", roomId).query((rs, n) -> 1).list();
+    }
 }

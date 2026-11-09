@@ -21,4 +21,7 @@ public interface DeviceFaultPort {
 
     /** 이 방 장치 오류로 since 뒤에 받은 번호 수 (방별 하루 상한) */
     int attemptsSince(int roomId, Instant since);
+
+    /** 방별 하루 상한을 세는 동안 잡는 트랜잭션 잠금. 예약 잠금(-방·회원 번호)과 다른 키 공간 */
+    void lockRoomCount(int roomId);
 }

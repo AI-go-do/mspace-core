@@ -55,7 +55,8 @@ class DeviceFaultService implements DeviceFaultUseCase {
                     "오류 구간(시작 ≤ 끝, 24시간 이내, 끝이 지금 이전)과 번호 시각(구간 안)을 확인해 주세요");
         }
         Integer matched = tx.execute(s -> {
-            // 동시에 두 요청이 오면 상한을 조금 넘을 수 있다 (잠금 없이 센다). 끝없는 시도를 막는 게 목적이라 충분하다
+            // 같은 방 요청끼리 줄 세워 세고 넣음: 동시에 여러 요청이 와도 상한을 넘지 않게
+            port.lockRoomCount(fault.roomId());
             if (port.attemptsSince(fault.roomId(), now.minus(Duration.ofDays(1))) + fault.attempts().size()
                     > MAX_ATTEMPTS_PER_ROOM_PER_DAY) {
                 throw new BusinessException(ErrorCode.DEVICE_FAULT_TOO_MANY);
