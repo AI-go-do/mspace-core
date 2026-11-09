@@ -39,14 +39,16 @@ class JdbcSensorEventAdapter implements SensorEventPort {
         // 같은 eventId가 동시에 오면 나중 쪽은 먼저 쪽 커밋을 기다렸다가 DO NOTHING → 0줄
         return jdbc.sql("""
                 INSERT INTO sensor_event (event_id, room_id, device_id, kind, occupied, sources, ppm, source,
-                                          observed_at, received_at)
+                                          temperature_c, humidity_pct, observed_at, received_at)
                 VALUES (:eventId, :room, :device, :kind, :occupied, CAST(:sources AS jsonb), :ppm, :source,
-                        :observed, :received)
+                        :temperature, :humidity, :observed, :received)
                 ON CONFLICT (event_id) DO NOTHING
                 """)
                 .param("eventId", e.eventId()).param("room", e.roomId()).param("device", e.deviceId())
                 .param("kind", e.kind().name()).param("occupied", e.occupied()).param("sources", e.sources())
                 .param("ppm", e.ppm()).param("source", e.source())
+                .param("temperature", e.temperatureC(), java.sql.Types.NUMERIC)
+                .param("humidity", e.humidityPct(), java.sql.Types.NUMERIC)
                 .param("observed", Timestamp.from(e.observedAt())).param("received", Timestamp.from(receivedAt))
                 .update() == 1;
     }
