@@ -38,6 +38,7 @@ import org.springframework.transaction.support.TransactionOperations;
 class TidyCheckService implements TidyCheckUseCase {
 
     static final String LEFT_ITEM_KIND = "LEFT_ITEM";
+    static final int NOTIFICATION_BODY_MAX = 300;
     private static final Set<String> ENDED = Set.of("CHECKED_OUT", "AUTO_CHECKED_OUT", "AWAY_RELEASED");
 
     private final TidyCheckPort port;
@@ -66,12 +67,13 @@ class TidyCheckService implements TidyCheckUseCase {
         Instant now = clock.instant();
         CurrentReservation current = port.current(roomId, now).orElse(null);
         LastEnded last = port.lastEnded(roomId).orElse(null);
-        return new RoomNow(roomId, current, last, recheck(current, last));
+        return new RoomNow(roomId, current, last, recheck(roomId, last));
     }
 
-    /** 마지막 퇴실 예약을 다시 볼 차례인지. 누가 방에 들어와 있으면(IN_USE) 섞이니 주지 않는다 */
-    private Recheck recheck(CurrentReservation current, LastEnded last) {
-        if (last == null || (current != null && "IN_USE".equals(current.status())) || !needsRecheck(last.reservationId())) {
+    /** 마지막 퇴실 예약을 다시 볼 차례인지. 그 뒤 누가 입실했으면 다음 팀 물건과 섞이니 주지 않는다 */
+    private Recheck recheck(int roomId, LastEnded last) {
+        if (last == null || port.enteredSince(roomId, last.reservationId(), last.endedAt())
+                || !needsRecheck(last.reservationId())) {
             return null;
         }
         return new Recheck(last.reservationId(), last.endedAt().plus(recheckAfter));
@@ -134,11 +136,14 @@ class TidyCheckService implements TidyCheckUseCase {
     }
 
     private void requireRecheckDue(TidyCheck check, LastEnded last, Instant now) {
-        boolean inUse = port.current(check.roomId(), now).filter(c -> "IN_USE".equals(c.status())).isPresent();
-        if (inUse || !needsRecheck(check.reservationId())) {
+        // "지금 사용 중"이 아니라 "퇴실 뒤 누가 입실했나"로 본다. 한 번이라도 들어왔으면(이미 나갔어도) 섞였다
+        if (port.enteredSince(check.roomId(), check.reservationId(), last.endedAt())
+                || !needsRecheck(check.reservationId())) {
             throw new BusinessException(ErrorCode.TIDY_RECHECK_NOT_NEEDED);
         }
-        if (now.isBefore(last.endedAt().plus(recheckAfter))) {
+        Instant due = last.endedAt().plus(recheckAfter);
+        // 기한 전에 본 화면을 늦게 보내도 받지 않는다 (그 사이 가져갔을 수 있다)
+        if (now.isBefore(due) || check.observedAt().isBefore(due)) {
             throw new BusinessException(ErrorCode.TIDY_RECHECK_TOO_EARLY);
         }
     }
@@ -147,14 +152,27 @@ class TidyCheckService implements TidyCheckUseCase {
         if (check.result() != Result.LEFT_ITEMS) {
             return List.of();
         }
-        String what = String.join("·", check.items().stream().map(Item::name).distinct().toList());
-        String body = "%s에 %s을(를) 두고 가신 것 같아요. %s 안에 챙겨 가 주세요."
-                .formatted(port.roomName(check.roomId()), what, within());
+        String body = leftItemBody(port.roomName(check.roomId()),
+                check.items().stream().map(Item::name).distinct().toList(), within());
         List<NewNotification> out = new ArrayList<>();
         for (long user : port.members(check.reservationId())) {
             out.add(new NewNotification(user, check.reservationId(), LEFT_ITEM_KIND, "두고 간 물건이 있어요", body));
         }
         return out;
+    }
+
+    /** 알림 본문은 300자(V10 notification.body). 물건이 많으면 앞에서부터 넣고 "외 N개"로 줄인다. 기한 문장은 늘 남긴다 */
+    static String leftItemBody(String room, List<String> names, String within) {
+        String tail = "을(를) 두고 가신 것 같아요. " + within + " 안에 챙겨 가 주세요.";
+        for (int shown = names.size(); shown >= 1; shown--) {
+            String what = String.join("·", names.subList(0, shown))
+                    + (shown < names.size() ? " 외 " + (names.size() - shown) + "개" : "");
+            String body = room + "에 " + what + tail;
+            if (body.length() <= NOTIFICATION_BODY_MAX) {
+                return body;
+            }
+        }
+        return room + "에 물건 " + names.size() + "개" + tail;
     }
 
     /** 2시간처럼 사람이 읽는 기한 */

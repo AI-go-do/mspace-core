@@ -19,6 +19,9 @@ public interface TidyCheckPort {
 
     Optional<LastEnded> lastEnded(int roomId);
 
+    /** 이 방에서 그 예약 말고 since 뒤에 입실한 예약이 있는지 (지금 사용 중이든 이미 나갔든) */
+    boolean enteredSince(int roomId, long reservationId, Instant since);
+
     /** 이 방 예약의 상태. 같은 예약의 결과가 동시에 두 번 와도 한 줄로 서게 예약 줄을 잠근다 */
     Optional<String> lockReservation(int roomId, long reservationId);
 

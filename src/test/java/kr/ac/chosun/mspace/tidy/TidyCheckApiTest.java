@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.jayway.jsonpath.JsonPath;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
@@ -93,11 +95,15 @@ class TidyCheckApiTest {
     }
 
     /** items 예: [{"name":"umbrella","confidence":0.93}] */
+    /** FIRST는 고정 시각, RECHECK는 지금 본 것으로 (기한 뒤에 본 화면만 받으므로) */
     String check(String eventId, long reservationId, String phase, String result, String items) {
+        String observed = "RECHECK".equals(phase)
+                ? OffsetDateTime.now(ZoneOffset.ofHours(9)).withNano(0).toString()
+                : "2026-11-06T15:01:00+09:00";
         return """
                 {"eventId":"%s","reservationId":%d,"deviceId":"jetson-b","phase":"%s","result":"%s",
-                 "items":%s,"observedAt":"2026-11-06T15:01:00+09:00"}"""
-                .formatted(eventId, reservationId, phase, result, items);
+                 "items":%s,"observedAt":"%s"}"""
+                .formatted(eventId, reservationId, phase, result, items, observed);
     }
 
     String first(String eventId, long reservationId, String result, String items) {
@@ -299,6 +305,45 @@ class TidyCheckApiTest {
         assertThat(post(1, check("e6-r3", ended, "RECHECK", "CLEAN", "[]"))).hasStatus(409)
                 .bodyJson().extractingPath("$.code").isEqualTo("TIDY_RECHECK_NOT_NEEDED");
         assertThat(count("tidy_check")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("기한 전에 본 화면을 기한 뒤에 보내면 TIDY_RECHECK_TOO_EARLY (그 사이 가져갔을 수 있다)")
+    void recheckObservedBeforeDue() {
+        assertThat(post(1, first("e18", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        recheckDue();
+        String early = OffsetDateTime.now(ZoneOffset.ofHours(9)).minusHours(2).withNano(0).toString();
+
+        assertThat(post(1, check("e18-r", ended, "RECHECK", "LEFT_ITEMS", UMBRELLA)
+                .replaceFirst("\"observedAt\":\"[^\"]+\"", "\"observedAt\":\"" + early + "\"")))
+                .hasStatus(409).bodyJson().extractingPath("$.code").isEqualTo("TIDY_RECHECK_TOO_EARLY");
+        assertThat(count("user_warning")).isZero();
+    }
+
+    @Test
+    @DisplayName("다음 팀이 입실해 있으면 지금 예약(current)이 다른 예약이어도 다시 보지 않는다")
+    void nextTeamInUseWhileBookedShown() {
+        // given: 앞 예약 3시간 전 퇴실, 다음 팀(now) 입실 중, 그 뒤 예약이 시간이 돼 BOOKED로 걸림
+        assertThat(post(1, first("e19", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        jdbc.sql("UPDATE reservation SET checked_out_at = now() - interval '3 hours' WHERE id = :id")
+                .param("id", ended).update();
+
+        assertThat(current(1)).bodyJson().extractingPath("$.recheck").isNull();
+        assertThat(post(1, check("e19-r", ended, "RECHECK", "LEFT_ITEMS", UMBRELLA))).hasStatus(409)
+                .bodyJson().extractingPath("$.code").isEqualTo("TIDY_RECHECK_NOT_NEEDED");
+    }
+
+    @Test
+    @DisplayName("물건 이름이 길고 많아도 알림 본문은 300자 안, 기한 문장은 남는다")
+    void longItemNamesFitNotification() {
+        String items = java.util.stream.IntStream.range(0, 8)
+                .mapToObj(i -> "{\"name\":\"" + String.valueOf((char) ('a' + i)).repeat(50) + "\",\"confidence\":0.9}")
+                .collect(java.util.stream.Collectors.joining(",", "[", "]"));
+
+        assertThat(post(1, first("e20", ended, "LEFT_ITEMS", items))).hasStatusOk();
+
+        assertThat(inbox("LEFT_ITEM")).hasSize(3).allSatisfy(m -> assertThat((String) m.get("body"))
+                .hasSizeLessThanOrEqualTo(300).contains(" 외 ").endsWith("2시간 안에 챙겨 가 주세요."));
     }
 
     @Test
