@@ -22,7 +22,7 @@ class TidyCheckListController {
         this.service = service;
     }
 
-    /** 예: GET /api/tidy-checks?days=7 → {"items":[{"reservationId":40,…,"result":"NEEDS_CLEANING","reportId":12}]} */
+    /** 예: GET /api/tidy-checks?days=7 → {"items":[{"reservationId":40,…,"phase":"FIRST","result":"LEFT_ITEMS","items":[{"name":"우산","confidence":0.93}]}]} */
     @GetMapping("/api/tidy-checks")
     ListResponse list(LoginUser user, @RequestParam(required = false) Integer days) {
         return new ListResponse(service.list(user.id(), days).stream().map(ItemResponse::from).toList());
@@ -31,12 +31,18 @@ class TidyCheckListController {
     record ListResponse(List<ItemResponse> items) {
     }
 
-    record ItemResponse(long reservationId, int roomId, String roomName, ZonedDateTime endedAt, String result,
-                        List<String> items, List<String> leftItems, Long reportId, ZonedDateTime observedAt) {
+    /** confidence는 11/10 전 기록이면 null */
+    record SeenItem(String name, Float confidence) {
+    }
+
+    record ItemResponse(long reservationId, int roomId, String roomName, ZonedDateTime endedAt, String phase,
+                        String result, List<SeenItem> items, List<String> leftItems, Long reportId,
+                        ZonedDateTime observedAt) {
 
         static ItemResponse from(Listed l) {
-            return new ItemResponse(l.reservationId(), l.roomId(), l.roomName(), seoul(l.endedAt()), l.result().name(),
-                    l.items(), l.leftItems().stream().map(Enum::name).toList(), l.reportId(), seoul(l.observedAt()));
+            return new ItemResponse(l.reservationId(), l.roomId(), l.roomName(), seoul(l.endedAt()), l.phase().name(),
+                    l.result().name(), l.items().stream().map(i -> new SeenItem(i.name(), i.confidence())).toList(),
+                    l.leftItems().stream().map(Enum::name).toList(), l.reportId(), seoul(l.observedAt()));
         }
 
         private static ZonedDateTime seoul(Instant t) {

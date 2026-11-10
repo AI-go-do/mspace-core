@@ -16,6 +16,6 @@ public interface ReportEvidencePort {
     record Times(Instant checkedInAt, Instant checkedOutAt) {
     }
 
-    /** 그 예약의 정리 확인 결과 (tidy_check는 예약당 1줄) */
+    /** 그 예약의 퇴실 직후(FIRST) 정리 확인 결과 */
     Optional<Tidy> tidyCheck(long reservationId);
 }

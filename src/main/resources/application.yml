@@ -137,8 +137,8 @@ mspace:
         penalty: 무단 사용이 확인되면 그 예약 대표자에게 경고
       - key: BELONGINGS
         title: 소지품
-        rule: 퇴실 전에 챙겨요. 잠깐 나갈 때도 귀중품은 들고 나가요
-        penalty: 예약이 끝나 문이 잠기면 다시 예약해야 들어갈 수 있어요
+        rule: 퇴실 전에 챙겨요. 쓰레기도 두고 간 물건이에요. 잠깐 나갈 때도 귀중품은 들고 나가요
+        penalty: 퇴실 뒤 방 카메라가 두고 간 물건을 보면 알림이 가요. 2시간 뒤에도 남아 있으면 대표자에게 경고 1번
   report:
     penalty:                 # 신고 판정 뒤 벌칙 (FR-RPT-103·104, 11/6 지영 "docs 제안대로")
       count: 3               # 30일 안에 경고 3번이면 (사실 판정 → 이용 정지, 허위 신고 → 신고 정지. 따로 센다)
@@ -146,6 +146,9 @@ mspace:
       suspend-days: 14
     messy:                   # 어질러짐 신고 (FR-RPT-101, 11/8 지영). 자기 방만, 입실 사진이 있어야, 연장한 예약은 안 됨
       window-minutes: 5      # 입실 뒤 5분 안에만
+  tidy:                      # 두고 간 물건 (FR-DEV-105, 11/10 10차 회의)
+    recheck-after-minutes: 120   # 퇴실 뒤 2시간에 방 카메라가 다시 본다. 그 전에 다음 예약이 입실하면 다시 보지 않는다
+    warn-min-confidence: 0.8     # 다시 볼 때 확신도 0.8 이상인 물건이 남아 있으면 대표자 경고 (모델 비교 뒤 조정)
   photo:                     # 사진 체크인·아웃 (FR-RPT-102, 11/5 지영). 저장은 core DB
     max-bytes: 2097152       # 1장 최대 2MB (JPEG·PNG만)
     checkout-grace-minutes: 30   # 퇴실 사진은 퇴실 뒤 30분 안까지

@@ -108,7 +108,7 @@ class JdbcReportAdapter implements ReportPort, ReportJudgePort {
     }
 
     @Override
-    public Optional<ReportItem> judgeIfOpen(long reportId, long adminId, ReportVerdict verdict) {
+    public Optional<ReportItem> judgeIfOpen(long reportId, Long adminId, ReportVerdict verdict) {
         return jdbc.sql("UPDATE report SET verdict = :verdict, judged_by = :admin, judged_at = now()"
                         + " WHERE id = :id AND verdict = 'OPEN' AND category <> 'NOISE' RETURNING " + COLUMNS)
                 .param("verdict", verdict.name())
