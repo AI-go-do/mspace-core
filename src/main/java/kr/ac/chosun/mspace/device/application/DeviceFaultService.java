@@ -3,6 +3,8 @@ package kr.ac.chosun.mspace.device.application;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Objects;
+import java.util.Optional;
 import kr.ac.chosun.mspace.common.config.AccessPolicy;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
@@ -53,7 +55,9 @@ class DeviceFaultService implements DeviceFaultUseCase {
             throw new BusinessException(ErrorCode.INVALID_REQUEST,
                     "오류 구간(시작 ≤ 끝, 24시간 이내, 끝이 지금 이전)과 번호 시각(구간 안)을 확인해 주세요");
         }
-        Integer matched = tx.execute(s -> {
+        // 처음 받은 오류면 맞은 번호 수, 같은 eventId를 다시 보냈으면 비어 있음.
+        // null 대신 Optional로 받는다: tx.execute의 null 결과를 Sonar가 "늘 null 아님"으로 읽어 main 게이트가 막혔다(S2583)
+        Optional<Integer> matched = tx.execute(s -> {
             // 같은 방 요청끼리 줄 세워 세고 넣음: 동시에 여러 요청이 와도 상한을 넘지 않게
             port.lockRoomCount(fault.roomId());
             // 중복 확인을 먼저: 상한 근처에서 같은 eventId를 다시 보내도 429가 아니라 DUPLICATE (이미 센 번호를 또 세지 않게)
@@ -66,15 +70,11 @@ class DeviceFaultService implements DeviceFaultUseCase {
                     return (int) fault.attempts().stream()
                             .filter(a -> port.insertAttempt(id, fault.roomId(), a, access.openBeforeMinutes()))
                             .count();
-                })
-                .orElse(null);
+                });
         });
         // 무르기는 응답과 따로 바로 돈다. 번호가 맞았을 때만 할 일이 늘면 응답 시간 차이로 번호가 맞았는지
         // 짐작할 수 있어서, 이 요청은 맞든 안 맞든(같은 eventId를 다시 보내도) 저장 + 같은 신호 하나만 한다
         kicker.kick();
-        if (matched == null) {
-            return new Recorded(true, 0);
-        }
-        return new Recorded(false, matched);
+        return Objects.requireNonNull(matched).map(n -> new Recorded(false, n)).orElseGet(() -> new Recorded(true, 0));
     }
 }
