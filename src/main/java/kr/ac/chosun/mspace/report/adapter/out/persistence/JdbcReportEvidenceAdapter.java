@@ -40,7 +40,7 @@ class JdbcReportEvidenceAdapter implements ReportEvidencePort {
 
     @Override
     public Optional<Tidy> tidyCheck(long reservationId) {
-        // 다음 팀 신고의 근거는 퇴실 직후(FIRST) 모습. RECHECK(2시간 뒤)는 두고 간 물건 경고용
+        // 다음 팀 신고의 근거는 퇴실 직후(FIRST) 모습. RECHECK(3시간 뒤)는 두고 간 물건 경고용
         return jdbc.sql("""
                         SELECT result, items, left_items, observed_at FROM tidy_check
                         WHERE reservation_id = :id AND phase = 'FIRST'

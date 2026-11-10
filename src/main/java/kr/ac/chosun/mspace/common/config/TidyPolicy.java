@@ -3,7 +3,7 @@ package kr.ac.chosun.mspace.common.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * 두고 간 물건 다시 확인 (FR-DEV-105, 11/10 10차 회의 "2시간 안에 안 가져가면 경고"). application.yml에서 읽는다.
+ * 두고 간 물건 다시 확인 (FR-DEV-105, 11/10 10차 회의 "2시간 안에 안 가져가면 경고" → 같은 날 지영이 3시간으로). application.yml에서 읽는다.
  *
  * @param recheckAfterMinutes  퇴실 뒤 이 시간이 지나면 방 카메라가 한 번 더 본다(분)
  * @param warnMinConfidence    다시 볼 때 확신도가 이 값 이상인 물건이 하나라도 남아 있으면 경고 (0~1).
@@ -21,5 +21,15 @@ public record TidyPolicy(int recheckAfterMinutes, double warnMinConfidence) {
             throw new IllegalArgumentException("mspace.tidy.recheck-after-minutes는 1 이상이어야 합니다 (%d)"
                     .formatted(recheckAfterMinutes));
         }
+    }
+
+    /** 사람이 읽는 기한: 180 → "3시간", 150 → "2시간 30분", 90 → "1시간 30분", 45 → "45분". 알림·이용 수칙 문구가 같이 쓴다 */
+    public String recheckAfterText() {
+        int hours = recheckAfterMinutes / 60;
+        int minutes = recheckAfterMinutes % 60;
+        if (hours == 0) {
+            return minutes + "분";
+        }
+        return minutes == 0 ? hours + "시간" : hours + "시간 " + minutes + "분";
     }
 }

@@ -7,6 +7,7 @@ import kr.ac.chosun.mspace.common.config.ExtensionPolicy;
 import kr.ac.chosun.mspace.common.config.NoShowPenaltyPolicy;
 import kr.ac.chosun.mspace.common.config.ReservationPolicy;
 import kr.ac.chosun.mspace.common.config.RulesProperties;
+import kr.ac.chosun.mspace.common.config.TidyPolicy;
 import org.springframework.stereotype.Service;
 
 /**
@@ -20,13 +21,14 @@ public class RulesService {
     private final Rules rules;
 
     public RulesService(ReservationPolicy reservation, ExtensionPolicy extension, AccessPolicy access,
-                        NoShowPenaltyPolicy penalty, RulesProperties props) {
-        Map<String, Integer> numbers = Map.of(
-                "noShowMinutes", props.noShowMinutes(),
-                "instantNoShowMinutes", props.instantNoShowMinutes(),
-                "penaltyCount", penalty.count(),
-                "penaltyWindowDays", penalty.windowDays(),
-                "suspendDays", penalty.suspendDays());
+                        NoShowPenaltyPolicy penalty, RulesProperties props, TidyPolicy tidy) {
+        Map<String, String> numbers = Map.of(
+                "noShowMinutes", String.valueOf(props.noShowMinutes()),
+                "instantNoShowMinutes", String.valueOf(props.instantNoShowMinutes()),
+                "penaltyCount", String.valueOf(penalty.count()),
+                "penaltyWindowDays", String.valueOf(penalty.windowDays()),
+                "suspendDays", String.valueOf(penalty.suspendDays()),
+                "leftItemsWithin", tidy.recheckAfterText());
         List<RulesProperties.Conduct> conduct = props.conduct().stream()
                 .map(c -> new RulesProperties.Conduct(c.key(), c.title(), fill(c.rule(), numbers),
                         fill(c.penalty(), numbers)))
@@ -41,10 +43,10 @@ public class RulesService {
     }
 
     /** {이름} 자리를 설정값으로 채운다. 모르는 이름이 남으면 문구 오타라 시작할 때 멈춘다 */
-    static String fill(String text, Map<String, Integer> numbers) {
+    static String fill(String text, Map<String, String> numbers) {
         String out = text;
-        for (Map.Entry<String, Integer> e : numbers.entrySet()) {
-            out = out.replace("{" + e.getKey() + "}", String.valueOf(e.getValue()));
+        for (Map.Entry<String, String> e : numbers.entrySet()) {
+            out = out.replace("{" + e.getKey() + "}", e.getValue());
         }
         // 닫히지 않은 자리({noShowMinutes 처럼)도 잡는다: 채운 뒤 중괄호가 하나라도 남으면 설정 오류
         if (out.indexOf('{') >= 0 || out.indexOf('}') >= 0) {

@@ -26,7 +26,7 @@ import org.springframework.transaction.support.TransactionOperations;
 
 /**
  * 퇴실 뒤 정리 확인 (FR-DEV-105). 11/10 10차 회의·지영: 종류 구분 없이 "두고 감"(LEFT_ITEMS),
- * 퇴실 직후(FIRST)는 알림만, 2시간 뒤 다시 봐도(RECHECK) 확신도 0.8 이상 물건이 남으면 core가 바로 대표자 경고.
+ * 퇴실 직후(FIRST)는 알림만, 3시간 뒤 다시 봐도(RECHECK) 확신도 0.8 이상 물건이 남으면 core가 바로 대표자 경고.
  * 1번 방: 회원 1(대표자)·2·3이 2~1시간 전에 쓰고 퇴실(ended), 지금은 회원 4가 사용 중(now). 회원 5는 관리자.
  */
 @SpringBootTest(properties = {"mspace.auth.dev-header=true", "mspace.access.device-token=test-device-token"})
@@ -140,9 +140,9 @@ class TidyCheckApiTest {
         return mvc.get().uri("/api/rooms/{id}/current", roomId).header("Authorization", TOKEN).exchange();
     }
 
-    /** 다시 볼 시각이 지난 상태: ended는 3시간 전에 퇴실, now는 3번 방으로 옮겨 1번 방이 빔 */
+    /** 다시 볼 시각이 지난 상태: ended는 4시간 전에 퇴실, now는 3번 방으로 옮겨 1번 방이 빔 */
     void recheckDue() {
-        jdbc.sql("UPDATE reservation SET checked_out_at = now() - interval '3 hours' WHERE id = :id")
+        jdbc.sql("UPDATE reservation SET checked_out_at = now() - interval '4 hours' WHERE id = :id")
                 .param("id", ended).update();
         roomFree();
     }
@@ -214,7 +214,7 @@ class TidyCheckApiTest {
 
         assertThat(inbox("LEFT_ITEM")).extracting(m -> ((Number) m.get("user_id")).longValue())
                 .containsExactly(1L, 2L, 3L);
-        assertThat(inbox("LEFT_ITEM").getFirst().get("body")).asString().contains("umbrella·cup").contains("2시간 안에");
+        assertThat(inbox("LEFT_ITEM").getFirst().get("body")).asString().contains("umbrella·cup").contains("3시간 안에");
         assertThat(reports()).isEmpty();
         assertThat(count("user_warning")).isZero();
         assertThat(jdbc.sql("SELECT confidences FROM tidy_check").query((rs, n) -> List.of((Float[]) rs.getArray(1).getArray()))
@@ -222,7 +222,7 @@ class TidyCheckApiTest {
     }
 
     @Test
-    @DisplayName("다시 확인 요청: 두고 간 물건이 있고 방이 비어 있으면 recheck에 예약 번호와 퇴실 + 2시간을 준다")
+    @DisplayName("다시 확인 요청: 두고 간 물건이 있고 방이 비어 있으면 recheck에 예약 번호와 퇴실 + 3시간을 준다")
     void currentShowsRecheck() {
         assertThat(post(1, first("e3", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
         assertThat(current(1)).bodyJson().extractingPath("$.recheck").as("다음 팀이 사용 중이면 주지 않는다").isNull();
@@ -233,12 +233,12 @@ class TidyCheckApiTest {
         assertThat(((Number) JsonPath.read(json, "$.recheck.reservationId")).longValue()).isEqualTo(ended);
         ZonedDateTime endedAt = ZonedDateTime.parse(JsonPath.read(json, "$.lastEnded.endedAt"));
         assertThat(ZonedDateTime.parse(JsonPath.<String>read(json, "$.recheck.at")))
-                .isEqualTo(endedAt.plusHours(2));
+                .isEqualTo(endedAt.plusHours(3));
         assertThat(JsonPath.<String>read(json, "$.recheck.at")).endsWith("+09:00");
     }
 
     @Test
-    @DisplayName("수용 기준: 2시간 뒤 다시 봐도 확신도 0.8 이상 물건이 남으면 core가 바로 대표자에게만 경고한다")
+    @DisplayName("수용 기준: 3시간 뒤 다시 봐도 확신도 0.8 이상 물건이 남으면 core가 바로 대표자에게만 경고한다")
     void recheckLeftWarnsOwner() {
         assertThat(post(1, first("e4", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
         recheckDue();
@@ -266,7 +266,7 @@ class TidyCheckApiTest {
                 });
         assertThat(inbox("WARNING")).singleElement().satisfies(m -> {
             assertThat(((Number) m.get("user_id")).longValue()).isEqualTo(OWNER);
-            assertThat((String) m.get("body")).startsWith("두고 간 물건을 2시간 안에 챙겨 가지 않았어요.");
+            assertThat((String) m.get("body")).startsWith("두고 간 물건을 3시간 안에 챙겨 가지 않았어요.");
         });
         assertThat(jdbc.sql("SELECT report_id FROM tidy_check WHERE phase = 'RECHECK'")
                 .query((rs, n) -> rs.getLong(1)).single()).isEqualTo(reportId);
@@ -291,12 +291,17 @@ class TidyCheckApiTest {
     @Test
     @DisplayName("다시 확인 거절: 시각 전이면 TIDY_RECHECK_TOO_EARLY, 첫 확인이 깨끗했거나 누가 방에 있으면 NOT_NEEDED")
     void recheckGuards() {
-        // 퇴실 1시간 뒤 (2시간 전)
+        // 퇴실 1시간 뒤 (3시간 전)
         assertThat(post(1, first("e6", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
         assertThat(post(1, check("e6-r1", ended, "RECHECK", "CLEAN", "[]"))).hasStatus(409)
                 .bodyJson().extractingPath("$.code").isEqualTo("TIDY_RECHECK_NOT_NEEDED");   // 다음 팀 사용 중
         roomFree();
         assertThat(post(1, check("e6-r2", ended, "RECHECK", "CLEAN", "[]"))).hasStatus(409)
+                .bodyJson().extractingPath("$.code").isEqualTo("TIDY_RECHECK_TOO_EARLY");
+        // 예전 기한(2시간)은 지났지만 3시간 전이면 아직 이르다
+        jdbc.sql("UPDATE reservation SET checked_out_at = now() - interval '150 minutes' WHERE id = :id")
+                .param("id", ended).update();
+        assertThat(post(1, check("e6-r2b", ended, "RECHECK", "CLEAN", "[]"))).hasStatus(409)
                 .bodyJson().extractingPath("$.code").isEqualTo("TIDY_RECHECK_TOO_EARLY");
 
         // 첫 확인이 깨끗했으면 다시 볼 것이 없다
@@ -323,9 +328,9 @@ class TidyCheckApiTest {
     @Test
     @DisplayName("다음 팀이 입실해 있으면 지금 예약(current)이 다른 예약이어도 다시 보지 않는다")
     void nextTeamInUseWhileBookedShown() {
-        // given: 앞 예약 3시간 전 퇴실, 다음 팀(now) 입실 중, 그 뒤 예약이 시간이 돼 BOOKED로 걸림
+        // given: 앞 예약 4시간 전 퇴실, 다음 팀(now) 입실 중, 그 뒤 예약이 시간이 돼 BOOKED로 걸림
         assertThat(post(1, first("e19", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
-        jdbc.sql("UPDATE reservation SET checked_out_at = now() - interval '3 hours' WHERE id = :id")
+        jdbc.sql("UPDATE reservation SET checked_out_at = now() - interval '4 hours' WHERE id = :id")
                 .param("id", ended).update();
 
         assertThat(current(1)).bodyJson().extractingPath("$.recheck").isNull();
@@ -343,14 +348,14 @@ class TidyCheckApiTest {
         assertThat(post(1, first("e20", ended, "LEFT_ITEMS", items))).hasStatusOk();
 
         assertThat(inbox("LEFT_ITEM")).hasSize(3).allSatisfy(m -> assertThat((String) m.get("body"))
-                .hasSizeLessThanOrEqualTo(300).contains(" 외 ").endsWith("2시간 안에 챙겨 가 주세요."));
+                .hasSizeLessThanOrEqualTo(300).contains(" 외 ").endsWith("3시간 안에 챙겨 가 주세요."));
     }
 
     @Test
-    @DisplayName("2시간 안에 다음 예약이 입실했다 나가면 앞 예약은 다시 보지 않는다(경고 없음, 409 NOT_LATEST)")
+    @DisplayName("3시간 안에 다음 예약이 입실했다 나가면 앞 예약은 다시 보지 않는다(경고 없음, 409 NOT_LATEST)")
     void nextTeamUsedRoom() {
         assertThat(post(1, first("e7", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
-        jdbc.sql("UPDATE reservation SET checked_out_at = now() - interval '3 hours' WHERE id = :id")
+        jdbc.sql("UPDATE reservation SET checked_out_at = now() - interval '4 hours' WHERE id = :id")
                 .param("id", ended).update();
         jdbc.sql("UPDATE reservation SET status = 'CHECKED_OUT', checked_out_at = now() WHERE id = :id")
                 .param("id", now).update();
@@ -492,7 +497,7 @@ class TidyCheckApiTest {
     @Test
     @DisplayName("관리자 정리 확인 목록: 받은 결과를 최근 순으로, 단계·물건별 확신도·경고 신고 번호와 함께 준다")
     void adminList() {
-        // given: 퇴실 직후 우산을 두고 갔고, 2시간 뒤에도 남아 경고
+        // given: 퇴실 직후 우산을 두고 갔고, 3시간 뒤에도 남아 경고
         assertThat(post(1, first("e-a", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
         recheckDue();
         long reportId = ((Number) JsonPath.read(body(post(1, check("e-b", ended, "RECHECK", "LEFT_ITEMS",

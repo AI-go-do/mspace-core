@@ -26,7 +26,7 @@ import org.springframework.transaction.support.TransactionOperations;
  *   <li>같은 eventId면 처음 결과를 그대로 (DUPLICATE). 다른 eventId로 같은 단계가 이미 있으면 409</li>
  *   <li>입실했다 나간 예약(CHECKED_OUT·AUTO_CHECKED_OUT·AWAY_RELEASED) 중 이 방의 마지막 것만 받는다</li>
  *   <li>FIRST가 LEFT_ITEMS면 대표자·참여자에게 LEFT_ITEM 알림. 신고는 만들지 않는다
- *       (11/10: 쓰레기도 "두고 감"으로 합쳐, 바로 신고 + 2시간 뒤 경고로 두 번 걸리지 않게)</li>
+ *       (11/10: 쓰레기도 "두고 감"으로 합쳐, 바로 신고 + 3시간 뒤 경고로 두 번 걸리지 않게)</li>
  *   <li>RECHECK는 FIRST가 LEFT_ITEMS이고, 퇴실 + mspace.tidy.recheck-after-minutes가 지났고,
  *       그 사이 다음 예약이 입실하지 않았을 때만 받는다</li>
  *   <li>RECHECK에 확신도 mspace.tidy.warn-min-confidence 이상인 물건이 남아 있으면 카메라 신고를 만들어
@@ -47,6 +47,8 @@ class TidyCheckService implements TidyCheckUseCase {
     private final TransactionOperations tx;
     private final Clock clock;
     private final Duration recheckAfter;
+    /** "3시간"처럼 사람이 읽는 기한. 이용 수칙(GET /api/rules)과 같은 문구 */
+    private final String recheckAfterText;
     /** 장치 확신도가 float라 기준도 float로 맞춘다. double로 비교하면 0.9f(0.8999…)가 0.9 기준에서 빠진다 */
     private final float warnMinConfidence;
 
@@ -58,6 +60,7 @@ class TidyCheckService implements TidyCheckUseCase {
         this.tx = tx;
         this.clock = clock;
         this.recheckAfter = Duration.ofMinutes(policy.recheckAfterMinutes());
+        this.recheckAfterText = policy.recheckAfterText();
         this.warnMinConfidence = (float) policy.warnMinConfidence();
     }
 
@@ -127,7 +130,7 @@ class TidyCheckService implements TidyCheckUseCase {
                 return new Done(new Recorded(false, null), List.of());
             }
             Warned warned = reports.warnLeftItems(check.roomId(), check.reservationId(), content(sure),
-                    "두고 간 물건을 " + within() + " 안에 챙겨 가지 않았어요.", now);
+                    "두고 간 물건을 " + recheckAfterText + " 안에 챙겨 가지 않았어요.", now);
             port.insert(check, warned.reportId(), now);
             return new Done(new Recorded(false, warned.reportId()), inbox.store(warned.notifications(), now));
         });
@@ -153,7 +156,7 @@ class TidyCheckService implements TidyCheckUseCase {
             return List.of();
         }
         String body = leftItemBody(port.roomName(check.roomId()),
-                check.items().stream().map(Item::name).distinct().toList(), within());
+                check.items().stream().map(Item::name).distinct().toList(), recheckAfterText);
         List<NewNotification> out = new ArrayList<>();
         for (long user : port.members(check.reservationId())) {
             out.add(new NewNotification(user, check.reservationId(), LEFT_ITEM_KIND, "두고 간 물건이 있어요", body));
@@ -175,11 +178,6 @@ class TidyCheckService implements TidyCheckUseCase {
         return room + "에 물건 " + names.size() + "개" + tail;
     }
 
-    /** 2시간처럼 사람이 읽는 기한 */
-    private String within() {
-        long minutes = recheckAfter.toMinutes();
-        return minutes % 60 == 0 ? (minutes / 60) + "시간" : minutes + "분";
-    }
 
     /** 신고 내용: 다시 볼 때 남아 있던 물건과 확신도. 신고 메모 최대 500자 안에서 자른다 */
     static String content(List<Item> items) {
