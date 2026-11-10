@@ -298,6 +298,11 @@ class TidyCheckApiTest {
         roomFree();
         assertThat(post(1, check("e6-r2", ended, "RECHECK", "CLEAN", "[]"))).hasStatus(409)
                 .bodyJson().extractingPath("$.code").isEqualTo("TIDY_RECHECK_TOO_EARLY");
+        // 예전 기한(2시간)은 지났지만 3시간 전이면 아직 이르다
+        jdbc.sql("UPDATE reservation SET checked_out_at = now() - interval '150 minutes' WHERE id = :id")
+                .param("id", ended).update();
+        assertThat(post(1, check("e6-r2b", ended, "RECHECK", "CLEAN", "[]"))).hasStatus(409)
+                .bodyJson().extractingPath("$.code").isEqualTo("TIDY_RECHECK_TOO_EARLY");
 
         // 첫 확인이 깨끗했으면 다시 볼 것이 없다
         jdbc.sql("UPDATE tidy_check SET result = 'CLEAN', items = '{}', confidences = '{}'").update();

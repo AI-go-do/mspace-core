@@ -22,4 +22,14 @@ public record TidyPolicy(int recheckAfterMinutes, double warnMinConfidence) {
                     .formatted(recheckAfterMinutes));
         }
     }
+
+    /** 사람이 읽는 기한: 180 → "3시간", 150 → "2시간 30분", 90 → "1시간 30분", 45 → "45분". 알림·이용 수칙 문구가 같이 쓴다 */
+    public String recheckAfterText() {
+        int hours = recheckAfterMinutes / 60;
+        int minutes = recheckAfterMinutes % 60;
+        if (hours == 0) {
+            return minutes + "분";
+        }
+        return minutes == 0 ? hours + "시간" : hours + "시간 " + minutes + "분";
+    }
 }

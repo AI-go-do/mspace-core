@@ -138,7 +138,7 @@ mspace:
       - key: BELONGINGS
         title: 소지품
         rule: 퇴실 전에 챙겨요. 쓰레기도 두고 간 물건이에요. 잠깐 나갈 때도 귀중품은 들고 나가요
-        penalty: 퇴실 뒤 방 카메라가 두고 간 물건을 보면 알림이 가요. 3시간 뒤에도 남아 있으면 대표자에게 경고 1번
+        penalty: 퇴실 뒤 방 카메라가 두고 간 물건을 보면 알림이 가요. {leftItemsWithin} 뒤에도 남아 있으면 대표자에게 경고 1번 (시간은 mspace.tidy.recheck-after-minutes)
   report:
     penalty:                 # 신고 판정 뒤 벌칙 (FR-RPT-103·104, 11/6 지영 "docs 제안대로")
       count: 3               # 30일 안에 경고 3번이면 (사실 판정 → 이용 정지, 허위 신고 → 신고 정지. 따로 센다)
