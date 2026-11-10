@@ -24,7 +24,7 @@ public interface PhotoPort {
 
     Optional<StoredPhoto> find(long reservationId, PhotoKind kind);
 
-    /** 이 시각보다 먼저 올린 사진을 지운다 */
+    /** 이 시각보다 먼저 올린 사진을 지운다 (학생 사진 + 방 카메라 사진) */
     int deleteUploadedBefore(Instant cutoff);
 
     /** @param checkedOutAt 퇴실·자동 퇴실·자리 비움 퇴실 시각. 아직이면 null */
