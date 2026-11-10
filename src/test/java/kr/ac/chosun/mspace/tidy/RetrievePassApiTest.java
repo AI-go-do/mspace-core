@@ -171,6 +171,25 @@ class RetrievePassApiTest {
     }
 
     @Test
+    @DisplayName("찾으러 온 QR로 열려도 틀린 횟수는 그대로라, 사이사이 틀린 번호가 5번 쌓이면 잠긴다")
+    void retrieveDoesNotResetFailures() {
+        // given
+        first("LEFT_ITEMS", UMBRELLA);
+        String code = code(pass(1, ended));
+        String wrong = code.equals("000000") ? "000001" : "000000";
+        for (int i = 0; i < 4; i++) {
+            assertThat(door(wrong)).bodyJson().extractingPath("$.reason").isEqualTo("WRONG_CODE");
+        }
+        assertThat(door(code)).bodyJson().extractingPath("$.purpose").isEqualTo("RETRIEVE");
+
+        // when
+        door(wrong);
+
+        // then
+        assertThat(door(code)).bodyJson().extractingPath("$.reason").isEqualTo("LOCKED");
+    }
+
+    @Test
     @DisplayName("참여자도 받을 수 있고, 살아 있는 동안 다시 누르면 같은 QR이다")
     void participantGetsSamePass() {
         // given

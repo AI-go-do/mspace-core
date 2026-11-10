@@ -60,7 +60,7 @@ public class VerifyAccessService {
         if (entry.result() == KeypadEntryUseCase.Result.WRONG_CODE) {
             var retrieve = retrieves.open(roomId, code);
             if (retrieve.isPresent()) {
-                port.saveLock(roomId, 0, null);
+                // 틀린 횟수는 그대로 둔다. 0으로 되돌리면 찾으러 온 QR 사이사이 4번씩 다음 팀 번호를 끝없이 맞혀 볼 수 있다
                 port.saveEvent(eventId, roomId, deviceId, Verdict.RETRIEVE_OPENED, retrieve.get());
                 return Verdict.RETRIEVE_OPENED;
             }
