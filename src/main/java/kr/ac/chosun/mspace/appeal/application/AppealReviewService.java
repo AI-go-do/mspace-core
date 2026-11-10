@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import kr.ac.chosun.mspace.appeal.application.WarningReviewer.Decision;
 import kr.ac.chosun.mspace.appeal.application.WarningReviewer.Review;
@@ -82,19 +83,20 @@ public class AppealReviewService implements AppealReviewUseCase {
         if (review == null || review.decision() == null || !(review.confidence() >= 0 && review.confidence() <= 1)) {
             throw new IllegalStateException("판단기 결과가 올바르지 않다 (결정 없음 또는 확신도 0~1 밖)");
         }
-        List<Notification> stored = tx.execute(st -> apply(id, review));
-        if (stored == null) {
+        // apply가 Optional을 돌려줘 tx.execute 결과가 null일 일이 없다 (Sonar S2583, #116 영준 제안)
+        Optional<List<Notification>> stored = Objects.requireNonNull(tx.execute(st -> apply(id, review)));
+        if (stored.isEmpty()) {
             return false;
         }
-        inbox.publish(stored);
+        inbox.publish(stored.get());
         return true;
     }
 
-    /** @return 알림함에 넣은 알림. 다른 판단이 먼저 끝냈으면 null */
-    private List<Notification> apply(long appealId, Review review) {
+    /** @return 알림함에 넣은 알림. 다른 판단이 먼저 끝냈으면 빈 Optional */
+    private Optional<List<Notification>> apply(long appealId, Review review) {
         Optional<WarningAppealPort.Pending> locked = port.lockPending(appealId);
         if (locked.isEmpty()) {
-            return null;
+            return Optional.empty();
         }
         WarningAppealPort.Pending p = locked.get();
         Instant now = clock.instant();
@@ -119,7 +121,7 @@ public class AppealReviewService implements AppealReviewUseCase {
             out.add(new NewNotification(p.userId(), p.reservationId(), KIND, "경고가 유지됐어요",
                     clip("다시 확인했지만 경고는 그대로예요. " + answer)));
         }
-        return inbox.store(out, now);
+        return Optional.of(inbox.store(out, now));
     }
 
     /** 알림 본문은 300자까지 (V10). 자세한 이유는 내 경고 목록의 answer에 다 있다 */

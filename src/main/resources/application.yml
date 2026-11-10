@@ -151,6 +151,10 @@ mspace:
     min-confidence: 0.8      # 판단기가 "유지"라도 확신도가 0.8보다 낮으면 철회 (확인 불가 = 철회)
     batch-size: 10           # 한 번에 판단할 요청 수
     review-interval: PT1M    # 대기 중인 요청을 1분마다 판단한다
+    gemini:                  # Gemini 판단기 (11/10 지영). 키가 비어 있으면 규칙 판단기(rules)만 쓴다. Gemini가 실패해도 rules로 본다
+      api-key: ${GEMINI_API_KEY:}             # 비밀값: 서버 .env에만 (AI Studio 무료 키, 결제 연결 안 함)
+      model: ${GEMINI_MODEL:gemini-3.5-flash-lite}   # 비서(assistant)와 같은 모델
+      timeout: 20s
   tidy:                      # 두고 간 물건 (FR-DEV-105, 11/10 10차 회의)
     recheck-after-minutes: 180   # 퇴실 뒤 3시간에 방 카메라가 다시 본다. 그 전에 다음 예약이 입실하면 다시 보지 않는다
     warn-min-confidence: 0.8     # 다시 볼 때 확신도 0.8 이상인 물건이 남아 있으면 대표자 경고 (모델 비교 뒤 조정)
