@@ -146,6 +146,11 @@ mspace:
       suspend-days: 14
     messy:                   # 어질러짐 신고 (FR-RPT-101, 11/8 지영). 자기 방만, 입실 사진이 있어야, 연장한 예약은 안 됨
       window-minutes: 5      # 입실 뒤 5분 안에만
+  appeal:                    # 경고 철회 요청 (FR-RPT-105, Q-24 11/10 지영 "추천대로")
+    days: 7                  # 경고를 받은 뒤 7일 안, 경고마다 1번
+    min-confidence: 0.8      # 판단기가 "유지"라도 확신도가 0.8보다 낮으면 철회 (확인 불가 = 철회)
+    batch-size: 10           # 한 번에 판단할 요청 수
+    review-interval: PT1M    # 대기 중인 요청을 1분마다 판단한다
   tidy:                      # 두고 간 물건 (FR-DEV-105, 11/10 10차 회의)
     recheck-after-minutes: 180   # 퇴실 뒤 3시간에 방 카메라가 다시 본다. 그 전에 다음 예약이 입실하면 다시 보지 않는다
     warn-min-confidence: 0.8     # 다시 볼 때 확신도 0.8 이상인 물건이 남아 있으면 대표자 경고 (모델 비교 뒤 조정)
