@@ -7,12 +7,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import kr.ac.chosun.mspace.common.config.TidyPolicy;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.notification.application.Notification;
 import kr.ac.chosun.mspace.notification.application.NotificationInbox;
 import kr.ac.chosun.mspace.notification.application.NotificationInbox.NewNotification;
 import kr.ac.chosun.mspace.report.application.CameraReportUseCase;
+import kr.ac.chosun.mspace.report.application.CameraReportUseCase.Warned;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckPort.Existing;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionOperations;
@@ -21,10 +23,14 @@ import org.springframework.transaction.support.TransactionOperations;
  * 정리 확인 한 건 처리 (FR-DEV-105). 한 트랜잭션에서:
  * <ol>
  *   <li>예약 줄을 잠근다. 같은 예약 결과가 동시에 와도 한 줄로 선다</li>
- *   <li>같은 eventId면 처음 결과를 그대로 (DUPLICATE). 다른 eventId로 이미 있으면 409</li>
+ *   <li>같은 eventId면 처음 결과를 그대로 (DUPLICATE). 다른 eventId로 같은 단계가 이미 있으면 409</li>
  *   <li>입실했다 나간 예약(CHECKED_OUT·AUTO_CHECKED_OUT·AWAY_RELEASED) 중 이 방의 마지막 것만 받는다</li>
- *   <li>치울 것이 있으면 어질러짐 신고를 자동으로 만든다. 판정은 관리자 (11/6 지영 "자동신고+관리자 판정")</li>
- *   <li>귀중품을 두고 갔으면 대표자·참여자 알림 LEFT_ITEM. 벌칙 없음</li>
+ *   <li>FIRST가 LEFT_ITEMS면 대표자·참여자에게 LEFT_ITEM 알림. 신고는 만들지 않는다
+ *       (11/10: 쓰레기도 "두고 감"으로 합쳐, 바로 신고 + 2시간 뒤 경고로 두 번 걸리지 않게)</li>
+ *   <li>RECHECK는 FIRST가 LEFT_ITEMS이고, 퇴실 + mspace.tidy.recheck-after-minutes가 지났고,
+ *       그 사이 다음 예약이 입실하지 않았을 때만 받는다</li>
+ *   <li>RECHECK에 확신도 mspace.tidy.warn-min-confidence 이상인 물건이 남아 있으면 카메라 신고를 만들어
+ *       사람 없이 사실로 정하고 그 예약 대표자에게 경고 (11/10 지영 "core가 바로 경고")</li>
  * </ol>
  * 알림은 커밋 뒤에 바깥 채널로 낸다.
  */
@@ -39,21 +45,40 @@ class TidyCheckService implements TidyCheckUseCase {
     private final NotificationInbox inbox;
     private final TransactionOperations tx;
     private final Clock clock;
+    private final Duration recheckAfter;
+    private final double warnMinConfidence;
 
     TidyCheckService(TidyCheckPort port, CameraReportUseCase reports, NotificationInbox inbox,
-                     TransactionOperations tx, Clock clock) {
+                     TransactionOperations tx, Clock clock, TidyPolicy policy) {
         this.port = port;
         this.reports = reports;
         this.inbox = inbox;
         this.tx = tx;
         this.clock = clock;
+        this.recheckAfter = Duration.ofMinutes(policy.recheckAfterMinutes());
+        this.warnMinConfidence = policy.warnMinConfidence();
     }
 
     @Override
     public RoomNow current(int roomId) {
         requireRoom(roomId);
         Instant now = clock.instant();
-        return new RoomNow(roomId, port.current(roomId, now).orElse(null), port.lastEnded(roomId).orElse(null));
+        CurrentReservation current = port.current(roomId, now).orElse(null);
+        LastEnded last = port.lastEnded(roomId).orElse(null);
+        return new RoomNow(roomId, current, last, recheck(current, last));
+    }
+
+    /** 마지막 퇴실 예약을 다시 볼 차례인지. 누가 방에 들어와 있으면(IN_USE) 섞이니 주지 않는다 */
+    private Recheck recheck(CurrentReservation current, LastEnded last) {
+        if (last == null || (current != null && "IN_USE".equals(current.status())) || !needsRecheck(last.reservationId())) {
+            return null;
+        }
+        return new Recheck(last.reservationId(), last.endedAt().plus(recheckAfter));
+    }
+
+    private boolean needsRecheck(long reservationId) {
+        return port.result(reservationId, Phase.FIRST).filter(r -> r == Result.LEFT_ITEMS).isPresent()
+                && port.result(reservationId, Phase.RECHECK).isEmpty();
     }
 
     private record Done(Recorded recorded, List<Notification> notifications) {
@@ -67,8 +92,8 @@ class TidyCheckService implements TidyCheckUseCase {
                     .orElseThrow(() -> new BusinessException(ErrorCode.RESERVATION_NOT_FOUND));
             Optional<Existing> same = port.findByEvent(check.eventId());
             if (same.isPresent()) {
-                // 같은 eventId를 다른 예약에 또 쓰면 장치 쪽 실수. 처음 결과로 덮지 않고 409
-                if (same.get().reservationId() != check.reservationId()) {
+                // 같은 eventId를 다른 예약·단계에 또 쓰면 장치 쪽 실수. 처음 결과로 덮지 않고 409
+                if (same.get().reservationId() != check.reservationId() || same.get().phase() != check.phase()) {
                     throw new BusinessException(ErrorCode.TIDY_CHECK_EXISTS);
                 }
                 return new Done(new Recorded(true, same.get().reportId()), List.of());
@@ -76,38 +101,54 @@ class TidyCheckService implements TidyCheckUseCase {
             if (!ENDED.contains(state)) {
                 throw new BusinessException(ErrorCode.RESERVATION_NOT_ENDED);
             }
-            // 장치 토큰은 공용이라, 지난 예약에 신고를 만들지 못하게 이 방의 마지막 퇴실 예약만 받는다
-            boolean latest = port.lastEnded(check.roomId())
-                    .map(e -> e.reservationId() == check.reservationId()).orElse(false);
-            if (!latest) {
+            // 장치 토큰은 방마다 공용이라, 지난 예약에 결과를 붙이지 못하게 이 방의 마지막 퇴실 예약만 받는다
+            Optional<LastEnded> last = port.lastEnded(check.roomId())
+                    .filter(e -> e.reservationId() == check.reservationId());
+            if (last.isEmpty()) {
                 throw new BusinessException(ErrorCode.TIDY_CHECK_NOT_LATEST);
             }
-            if (port.existsForReservation(check.reservationId())) {
+            if (port.result(check.reservationId(), check.phase()).isPresent()) {
                 throw new BusinessException(ErrorCode.TIDY_CHECK_EXISTS);
             }
             Instant now = clock.instant();
-            Long reportId = check.result() == Result.NEEDS_CLEANING
-                    ? reports.fileMessy(check.roomId(), check.reservationId(), content(check.items()))
-                    : null;
-            port.insert(check, reportId, now);
-            return new Done(new Recorded(false, reportId), inbox.store(leftItemAlerts(check), now));
+            if (check.phase() == Phase.RECHECK) {
+                requireRecheckDue(check, last.get(), now);
+            }
+            if (check.phase() == Phase.FIRST) {
+                port.insert(check, null, now);
+                return new Done(new Recorded(false, null), inbox.store(leftItemAlerts(check), now));
+            }
+            List<Item> sure = check.items().stream().filter(i -> i.confidence() >= warnMinConfidence).toList();
+            if (sure.isEmpty()) {
+                port.insert(check, null, now);
+                return new Done(new Recorded(false, null), List.of());
+            }
+            Warned warned = reports.warnLeftItems(check.roomId(), check.reservationId(), content(sure),
+                    "두고 간 물건을 " + within() + " 안에 챙겨 가지 않았어요.", now);
+            port.insert(check, warned.reportId(), now);
+            return new Done(new Recorded(false, warned.reportId()), inbox.store(warned.notifications(), now));
         });
         inbox.publish(done.notifications());
         return done.recorded();
     }
 
-    /** 신고 내용: 카메라가 본 물건 이름 (관리자 판정 근거). 신고 메모 최대 500자 안에서 자른다 */
-    static String content(List<String> items) {
-        String text = "방 카메라 자동 신고. 본 물건: " + (items.isEmpty() ? "없음" : String.join(", ", items));
-        return text.length() <= 500 ? text : text.substring(0, 500);
+    private void requireRecheckDue(TidyCheck check, LastEnded last, Instant now) {
+        boolean inUse = port.current(check.roomId(), now).filter(c -> "IN_USE".equals(c.status())).isPresent();
+        if (inUse || !needsRecheck(check.reservationId())) {
+            throw new BusinessException(ErrorCode.TIDY_RECHECK_NOT_NEEDED);
+        }
+        if (now.isBefore(last.endedAt().plus(recheckAfter))) {
+            throw new BusinessException(ErrorCode.TIDY_RECHECK_TOO_EARLY);
+        }
     }
 
     private List<NewNotification> leftItemAlerts(TidyCheck check) {
-        if (check.leftItems().isEmpty()) {
+        if (check.result() != Result.LEFT_ITEMS) {
             return List.of();
         }
-        String what = String.join("·", check.leftItems().stream().distinct().map(TidyCheckService::label).toList());
-        String body = port.roomName(check.roomId()) + "에 " + what + "을(를) 두고 가신 것 같아요. 다시 들러 확인해 주세요.";
+        String what = String.join("·", check.items().stream().map(Item::name).distinct().toList());
+        String body = "%s에 %s을(를) 두고 가신 것 같아요. %s 안에 챙겨 가 주세요."
+                .formatted(port.roomName(check.roomId()), what, within());
         List<NewNotification> out = new ArrayList<>();
         for (long user : port.members(check.reservationId())) {
             out.add(new NewNotification(user, check.reservationId(), LEFT_ITEM_KIND, "두고 간 물건이 있어요", body));
@@ -115,13 +156,17 @@ class TidyCheckService implements TidyCheckUseCase {
         return out;
     }
 
-    private static String label(LeftItem item) {
-        return switch (item) {
-            case BAG -> "가방";
-            case PHONE -> "휴대폰";
-            case EARBUDS -> "무선 이어폰";
-            case LAPTOP -> "노트북";
-        };
+    /** 2시간처럼 사람이 읽는 기한 */
+    private String within() {
+        long minutes = recheckAfter.toMinutes();
+        return minutes % 60 == 0 ? (minutes / 60) + "시간" : minutes + "분";
+    }
+
+    /** 신고 내용: 다시 볼 때 남아 있던 물건과 확신도. 신고 메모 최대 500자 안에서 자른다 */
+    static String content(List<Item> items) {
+        String text = "방 카메라 자동 확인: 퇴실 뒤 다시 봐도 남은 물건 " + String.join(", ",
+                items.stream().map(i -> "%s(%.2f)".formatted(i.name(), i.confidence())).toList());
+        return text.length() <= 500 ? text : text.substring(0, 500);
     }
 
     private void requireRoom(int roomId) {

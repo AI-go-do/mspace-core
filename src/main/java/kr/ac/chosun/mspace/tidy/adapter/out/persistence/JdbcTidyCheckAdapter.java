@@ -1,7 +1,10 @@
 package kr.ac.chosun.mspace.tidy.adapter.out.persistence;
 
+import java.sql.Array;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -9,16 +12,18 @@ import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckPort;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.CurrentReservation;
+import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Item;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.LastEnded;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.LeftItem;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Listed;
+import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Phase;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Result;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.TidyCheck;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
-/** 표는 V19__tidy_check.sql. 트랜잭션은 서비스가 연다. 조회는 모두 RowMapper (query(X.class)는 SonarQube S2259) */
+/** 표는 V19__tidy_check.sql, V26__tidy_recheck.sql. 트랜잭션은 서비스가 연다. 조회는 모두 RowMapper (query(X.class)는 SonarQube S2259) */
 @Component
 class JdbcTidyCheckAdapter implements TidyCheckPort {
 
@@ -75,14 +80,16 @@ class JdbcTidyCheckAdapter implements TidyCheckPort {
 
     @Override
     public Optional<Existing> findByEvent(String eventId) {
-        return jdbc.sql("SELECT reservation_id, report_id FROM tidy_check WHERE event_id = :id").param("id", eventId)
-                .query((rs, n) -> new Existing(rs.getLong(1), rs.getObject(2, Long.class))).optional();
+        return jdbc.sql("SELECT reservation_id, phase, report_id FROM tidy_check WHERE event_id = :id").param("id", eventId)
+                .query((rs, n) -> new Existing(rs.getLong(1), Phase.valueOf(rs.getString(2)), rs.getObject(3, Long.class)))
+                .optional();
     }
 
     @Override
-    public boolean existsForReservation(long reservationId) {
-        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM tidy_check WHERE reservation_id = :id)")
-                .param("id", reservationId).query((rs, n) -> rs.getBoolean(1)).single();
+    public Optional<Result> result(long reservationId, Phase phase) {
+        return jdbc.sql("SELECT result FROM tidy_check WHERE reservation_id = :id AND phase = :phase")
+                .param("id", reservationId).param("phase", phase.name())
+                .query((rs, n) -> Result.valueOf(rs.getString(1))).optional();
     }
 
     @Override
@@ -97,14 +104,15 @@ class JdbcTidyCheckAdapter implements TidyCheckPort {
 
     private void insertRow(TidyCheck c, Long reportId, Instant receivedAt) {
         jdbc.sql("""
-                        INSERT INTO tidy_check (event_id, reservation_id, room_id, device_id, result, items, left_items,
-                                                report_id, observed_at, received_at)
-                        VALUES (:event, :reservation, :room, :device, :result, :items, :left, :report, :observed, :received)
+                        INSERT INTO tidy_check (event_id, reservation_id, room_id, device_id, phase, result, items,
+                                                confidences, left_items, report_id, observed_at, received_at)
+                        VALUES (:event, :reservation, :room, :device, :phase, :result, :items, :confidences, '{}',
+                                :report, :observed, :received)
                         """)
                 .param("event", c.eventId()).param("reservation", c.reservationId()).param("room", c.roomId())
-                .param("device", c.deviceId()).param("result", c.result().name())
-                .param("items", c.items().toArray(String[]::new))
-                .param("left", c.leftItems().stream().map(Enum::name).distinct().toArray(String[]::new))
+                .param("device", c.deviceId()).param("phase", c.phase().name()).param("result", c.result().name())
+                .param("items", c.items().stream().map(Item::name).toArray(String[]::new))
+                .param("confidences", c.items().stream().map(Item::confidence).toArray(Float[]::new))
                 .param("report", reportId)
                 .param("observed", Timestamp.from(c.observedAt())).param("received", Timestamp.from(receivedAt))
                 .update();
@@ -134,8 +142,8 @@ class JdbcTidyCheckAdapter implements TidyCheckPort {
     @Override
     public List<Listed> receivedSince(Instant since) {
         return jdbc.sql("""
-                        SELECT t.reservation_id, t.room_id, ro.name, r.checked_out_at, t.result, t.items, t.left_items,
-                               t.report_id, t.observed_at
+                        SELECT t.reservation_id, t.room_id, ro.name, r.checked_out_at, t.phase, t.result, t.items,
+                               t.confidences, t.left_items, t.report_id, t.observed_at
                         FROM tidy_check t
                         JOIN reservation r ON r.id = t.reservation_id
                         JOIN rooms ro ON ro.id = t.room_id
@@ -146,11 +154,22 @@ class JdbcTidyCheckAdapter implements TidyCheckPort {
                 .query((rs, n) -> {
                     Timestamp ended = rs.getTimestamp(4);
                     return new Listed(rs.getLong(1), rs.getInt(2), rs.getString(3),
-                            ended == null ? null : ended.toInstant(), Result.valueOf(rs.getString(5)),
-                            List.of((String[]) rs.getArray(6).getArray()),
-                            Arrays.stream((String[]) rs.getArray(7).getArray()).map(LeftItem::valueOf).toList(),
-                            rs.getObject(8, Long.class), rs.getTimestamp(9).toInstant());
+                            ended == null ? null : ended.toInstant(), Phase.valueOf(rs.getString(5)),
+                            Result.valueOf(rs.getString(6)), items(rs.getArray(7), rs.getArray(8)),
+                            Arrays.stream((String[]) rs.getArray(9).getArray()).map(LeftItem::valueOf).toList(),
+                            rs.getObject(10, Long.class), rs.getTimestamp(11).toInstant());
                 })
                 .list();
+    }
+
+    /** 이름과 확신도를 짝지어 되돌린다. 11/10 전 기록은 확신도가 없어(NULL) 모두 null */
+    static List<Item> items(Array names, Array confidences) throws SQLException {
+        String[] n = (String[]) names.getArray();
+        Float[] c = confidences == null ? new Float[n.length] : (Float[]) confidences.getArray();
+        List<Item> out = new ArrayList<>(n.length);
+        for (int i = 0; i < n.length; i++) {
+            out.add(new Item(n[i], c[i]));
+        }
+        return out;
     }
 }

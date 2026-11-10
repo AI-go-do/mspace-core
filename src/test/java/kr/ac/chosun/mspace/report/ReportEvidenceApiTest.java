@@ -124,9 +124,9 @@ class ReportEvidenceApiTest {
     void previousTidyCheck() {
         // given: 앞 팀이 나간 뒤 카메라가 "깨끗함, 가방 두고 감"이라고 남김
         jdbc.sql("""
-                INSERT INTO tidy_check (event_id, reservation_id, room_id, device_id, result, items, left_items,
+                INSERT INTO tidy_check (event_id, reservation_id, room_id, device_id, phase, result, items, left_items,
                                         observed_at, received_at)
-                VALUES ('e-prev', :rid, 1, 'jetson-b', 'CLEAN', ARRAY['chair', 'backpack'], ARRAY['BAG'],
+                VALUES ('e-prev', :rid, 1, 'jetson-b', 'FIRST', 'CLEAN', ARRAY['chair', 'backpack'], ARRAY['BAG'],
                         '2026-11-09T14:53:00+09:00', now())
                 """).param("rid", previous).update();
         long id = report();

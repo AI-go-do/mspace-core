@@ -6,9 +6,11 @@ import java.util.Optional;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.CurrentReservation;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.LastEnded;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Listed;
+import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Phase;
+import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Result;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.TidyCheck;
 
-/** 표는 V19__tidy_check.sql. 구현: JdbcTidyCheckAdapter */
+/** 표는 V19__tidy_check.sql, V26__tidy_recheck.sql. 구현: JdbcTidyCheckAdapter */
 public interface TidyCheckPort {
 
     boolean roomExists(int roomId);
@@ -20,14 +22,16 @@ public interface TidyCheckPort {
     /** 이 방 예약의 상태. 같은 예약의 결과가 동시에 두 번 와도 한 줄로 서게 예약 줄을 잠근다 */
     Optional<String> lockReservation(int roomId, long reservationId);
 
-    /** 이미 받은 결과. reportId는 깨끗했으면 null */
-    record Existing(long reservationId, Long reportId) {
+    /** 이미 받은 결과. reportId는 11/10 전 NEEDS_CLEANING 기록만 */
+    record Existing(long reservationId, Phase phase, Long reportId) {
     }
 
     Optional<Existing> findByEvent(String eventId);
 
-    boolean existsForReservation(long reservationId);
+    /** 그 예약의 그 단계 결과. 없으면 empty */
+    Optional<Result> result(long reservationId, Phase phase);
 
+    /** @param reportId RECHECK에서 경고 근거로 만든 카메라 신고. 그 밖에는 null */
     void insert(TidyCheck check, Long reportId, Instant receivedAt);
 
     /** 대표자 먼저 */

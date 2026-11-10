@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.jayway.jsonpath.JsonPath;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import kr.ac.chosun.mspace.TestcontainersConfiguration;
@@ -22,7 +23,8 @@ import org.springframework.test.web.servlet.assertj.MvcTestResult;
 import org.springframework.transaction.support.TransactionOperations;
 
 /**
- * 퇴실 뒤 정리 확인 (FR-DEV-105, 11/6 지영 "자동신고+관리자 판정", 두고 간 물건은 가방·휴대폰·무선 이어폰만).
+ * 퇴실 뒤 정리 확인 (FR-DEV-105). 11/10 10차 회의·지영: 종류 구분 없이 "두고 감"(LEFT_ITEMS),
+ * 퇴실 직후(FIRST)는 알림만, 2시간 뒤 다시 봐도(RECHECK) 확신도 0.8 이상 물건이 남으면 core가 바로 대표자 경고.
  * 1번 방: 회원 1(대표자)·2·3이 2~1시간 전에 쓰고 퇴실(ended), 지금은 회원 4가 사용 중(now). 회원 5는 관리자.
  */
 @SpringBootTest(properties = {"mspace.auth.dev-header=true", "mspace.access.device-token=test-device-token"})
@@ -90,12 +92,19 @@ class TidyCheckApiTest {
                 .contentType(MediaType.APPLICATION_JSON).content(json).exchange();
     }
 
-    String check(String eventId, long reservationId, String result, String items, String leftItems) {
+    /** items 예: [{"name":"umbrella","confidence":0.93}] */
+    String check(String eventId, long reservationId, String phase, String result, String items) {
         return """
-                {"eventId":"%s","reservationId":%d,"deviceId":"jetson-b","result":"%s",
-                 "items":%s,"leftItems":%s,"observedAt":"2026-11-06T15:01:00+09:00"}"""
-                .formatted(eventId, reservationId, result, items, leftItems);
+                {"eventId":"%s","reservationId":%d,"deviceId":"jetson-b","phase":"%s","result":"%s",
+                 "items":%s,"observedAt":"2026-11-06T15:01:00+09:00"}"""
+                .formatted(eventId, reservationId, phase, result, items);
     }
+
+    String first(String eventId, long reservationId, String result, String items) {
+        return check(eventId, reservationId, "FIRST", result, items);
+    }
+
+    static final String UMBRELLA = "[{\"name\":\"umbrella\",\"confidence\":0.93}]";
 
     static String body(MvcTestResult r) {
         try {
@@ -107,7 +116,7 @@ class TidyCheckApiTest {
 
     List<Map<String, Object>> reports() {
         return jdbc.sql("""
-                SELECT id, source, category, reporter_id, reporter_reservation_id, target_reservation_id, content
+                SELECT id, source, category, verdict, judged_by, judged_at, reporter_id, target_reservation_id, content
                 FROM report ORDER BY id
                 """).query().listOfRows();
     }
@@ -117,15 +126,30 @@ class TidyCheckApiTest {
                 .param("k", kind).query().listOfRows();
     }
 
-    MvcTestResult judge(long reportId, String verdict) {
-        return mvc.post().uri("/api/reports/{id}/judge", reportId).header("X-User-Id", String.valueOf(ADMIN))
-                .contentType(MediaType.APPLICATION_JSON).content("{\"verdict\":\"" + verdict + "\"}").exchange();
+    long count(String table) {
+        return jdbc.sql("SELECT count(*) FROM " + table).query((rs, n) -> rs.getLong(1)).single();
+    }
+
+    MvcTestResult current(int roomId) {
+        return mvc.get().uri("/api/rooms/{id}/current", roomId).header("Authorization", TOKEN).exchange();
+    }
+
+    /** 다시 볼 시각이 지난 상태: ended는 3시간 전에 퇴실, now는 3번 방으로 옮겨 1번 방이 빔 */
+    void recheckDue() {
+        jdbc.sql("UPDATE reservation SET checked_out_at = now() - interval '3 hours' WHERE id = :id")
+                .param("id", ended).update();
+        roomFree();
+    }
+
+    void roomFree() {
+        // 상태는 IN_USE → BOOKED로 되돌릴 수 없어(트리거) 방을 옮긴다
+        jdbc.sql("UPDATE reservation SET room_id = 3 WHERE id = :id").param("id", now).update();
     }
 
     @Test
-    @DisplayName("방 지금 예약: 사용 중인 예약과 방금 끝난 예약 번호를 준다")
+    @DisplayName("방 지금 예약: 사용 중인 예약과 방금 끝난 예약 번호를 준다. 다시 볼 것이 없으면 recheck null")
     void currentShowsInUseAndLastEnded() {
-        MvcTestResult r = mvc.get().uri("/api/rooms/1/current").header("Authorization", TOKEN).exchange();
+        MvcTestResult r = current(1);
 
         assertThat(r).hasStatusOk().bodyJson().satisfies(j -> {
             j.assertThat().extractingPath("$.roomId").isEqualTo(1);
@@ -133,18 +157,19 @@ class TidyCheckApiTest {
             j.assertThat().extractingPath("$.current.status").isEqualTo("IN_USE");
             j.assertThat().extractingPath("$.lastEnded.reservationId").isEqualTo((int) ended);
             j.assertThat().extractingPath("$.lastEnded.status").isEqualTo("CHECKED_OUT");
+            j.assertThat().extractingPath("$.recheck").isNull();
         });
         assertThat(body(r)).contains("+09:00");
     }
 
     @Test
-    @DisplayName("방 지금 예약: 빈 방이면 current·lastEnded 둘 다 null")
+    @DisplayName("방 지금 예약: 빈 방이면 current·lastEnded·recheck 모두 null")
     void currentEmptyRoom() {
-        assertThat(mvc.get().uri("/api/rooms/2/current").header("Authorization", TOKEN)).hasStatusOk()
-                .bodyJson().satisfies(j -> {
-                    j.assertThat().extractingPath("$.current").isNull();
-                    j.assertThat().extractingPath("$.lastEnded").isNull();
-                });
+        assertThat(current(2)).hasStatusOk().bodyJson().satisfies(j -> {
+            j.assertThat().extractingPath("$.current").isNull();
+            j.assertThat().extractingPath("$.lastEnded").isNull();
+            j.assertThat().extractingPath("$.recheck").isNull();
+        });
     }
 
     @Test
@@ -153,128 +178,196 @@ class TidyCheckApiTest {
         assertThat(mvc.get().uri("/api/rooms/1/current")).hasStatus(401);
         assertThat(mvc.get().uri("/api/rooms/1/current").header("Authorization", "Bearer wrong")).hasStatus(401);
         assertThat(mvc.post().uri("/api/rooms/1/tidy-checks").contentType(MediaType.APPLICATION_JSON)
-                .content(check("e0", ended, "CLEAN", "[]", "[]"))).hasStatus(401);
-        assertThat(mvc.get().uri("/api/rooms/99/current").header("Authorization", TOKEN)).hasStatus(404)
-                .bodyJson().extractingPath("$.code").isEqualTo("ROOM_NOT_FOUND");
+                .content(first("e0", ended, "CLEAN", "[]"))).hasStatus(401);
+        assertThat(current(99)).hasStatus(404).bodyJson().extractingPath("$.code").isEqualTo("ROOM_NOT_FOUND");
     }
 
     @Test
-    @DisplayName("수용 기준: 깨끗하면 결과만 남고 신고·알림은 없다")
+    @DisplayName("수용 기준: 깨끗하면 결과만 남고 신고·알림·다시 확인은 없다")
     void cleanStoresOnly() {
-        assertThat(post(1, check("e1", ended, "CLEAN", "[]", "[]"))).hasStatusOk().bodyJson().satisfies(j -> {
+        assertThat(post(1, first("e1", ended, "CLEAN", "[]"))).hasStatusOk().bodyJson().satisfies(j -> {
             j.assertThat().extractingPath("$.result").isEqualTo("STORED");
             j.assertThat().extractingPath("$.reportId").isNull();
         });
+        roomFree();
 
         assertThat(reports()).isEmpty();
         assertThat(inbox("LEFT_ITEM")).isEmpty();
-        assertThat(jdbc.sql("SELECT result FROM tidy_check").query((rs, n) -> rs.getString(1)).list())
-                .containsExactly("CLEAN");
+        assertThat(current(1)).bodyJson().extractingPath("$.recheck").isNull();
+        assertThat(jdbc.sql("SELECT phase || ':' || result FROM tidy_check").query((rs, n) -> rs.getString(1)).list())
+                .containsExactly("FIRST:CLEAN");
     }
 
     @Test
-    @DisplayName("수용 기준: 치울 것이 있으면 신고자 없는 카메라 어질러짐 신고가 자동으로 생긴다")
-    void needsCleaningFilesCameraReport() {
-        MvcTestResult r = post(1, check("e2", ended, "NEEDS_CLEANING", "[\"cup\",\"bottle\"]", "[]"));
+    @DisplayName("수용 기준: 퇴실 직후 두고 간 물건(종류 상관없이)이 있으면 대표자·참여자에게 알림만, 신고·경고는 없다")
+    void firstLeftItemsNotifiesOnly() {
+        String items = "[{\"name\":\"umbrella\",\"confidence\":0.93},{\"name\":\"cup\",\"confidence\":0.71}]";
 
-        assertThat(r).hasStatusOk().bodyJson().extractingPath("$.result").isEqualTo("STORED");
+        assertThat(post(1, first("e2", ended, "LEFT_ITEMS", items))).hasStatusOk().bodyJson()
+                .extractingPath("$.reportId").isNull();
+
+        assertThat(inbox("LEFT_ITEM")).extracting(m -> ((Number) m.get("user_id")).longValue())
+                .containsExactly(1L, 2L, 3L);
+        assertThat(inbox("LEFT_ITEM").getFirst().get("body")).asString().contains("umbrella·cup").contains("2시간 안에");
+        assertThat(reports()).isEmpty();
+        assertThat(count("user_warning")).isZero();
+        assertThat(jdbc.sql("SELECT confidences FROM tidy_check").query((rs, n) -> List.of((Float[]) rs.getArray(1).getArray()))
+                .single()).containsExactly(0.93f, 0.71f);
+    }
+
+    @Test
+    @DisplayName("다시 확인 요청: 두고 간 물건이 있고 방이 비어 있으면 recheck에 예약 번호와 퇴실 + 2시간을 준다")
+    void currentShowsRecheck() {
+        assertThat(post(1, first("e3", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        assertThat(current(1)).bodyJson().extractingPath("$.recheck").as("다음 팀이 사용 중이면 주지 않는다").isNull();
+
+        roomFree();
+
+        String json = body(current(1));
+        assertThat(((Number) JsonPath.read(json, "$.recheck.reservationId")).longValue()).isEqualTo(ended);
+        ZonedDateTime endedAt = ZonedDateTime.parse(JsonPath.read(json, "$.lastEnded.endedAt"));
+        assertThat(ZonedDateTime.parse(JsonPath.<String>read(json, "$.recheck.at")))
+                .isEqualTo(endedAt.plusHours(2));
+        assertThat(JsonPath.<String>read(json, "$.recheck.at")).endsWith("+09:00");
+    }
+
+    @Test
+    @DisplayName("수용 기준: 2시간 뒤 다시 봐도 확신도 0.8 이상 물건이 남으면 core가 바로 대표자에게만 경고한다")
+    void recheckLeftWarnsOwner() {
+        assertThat(post(1, first("e4", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        recheckDue();
+
+        MvcTestResult r = post(1, check("e4-r", ended, "RECHECK", "LEFT_ITEMS",
+                "[{\"name\":\"umbrella\",\"confidence\":0.91},{\"name\":\"pen\",\"confidence\":0.42}]"));
+
+        assertThat(r).hasStatusOk();
         long reportId = ((Number) JsonPath.read(body(r), "$.reportId")).longValue();
         assertThat(reports()).singleElement().satisfies(p -> {
             assertThat(((Number) p.get("id")).longValue()).isEqualTo(reportId);
-            assertThat(p).containsEntry("source", "CAMERA").containsEntry("category", "MESSY");
+            assertThat(p).containsEntry("source", "CAMERA").containsEntry("category", "MESSY")
+                    .containsEntry("verdict", "CONFIRMED");
+            assertThat(p.get("judged_by")).as("사람이 판정하지 않음").isNull();
+            assertThat(p.get("judged_at")).isNotNull();
             assertThat(p.get("reporter_id")).isNull();
-            assertThat(p.get("reporter_reservation_id")).isNull();
             assertThat(((Number) p.get("target_reservation_id")).longValue()).isEqualTo(ended);
-            assertThat((String) p.get("content")).contains("cup, bottle");
+            assertThat((String) p.get("content")).contains("umbrella(0.91)").doesNotContain("pen");
         });
-        assertThat(mvc.get().uri("/api/reports").header("X-User-Id", String.valueOf(ADMIN)))
-                .hasStatusOk().bodyJson().satisfies(j -> {
-                    j.assertThat().extractingPath("$[0].source").isEqualTo("CAMERA");
-                    j.assertThat().extractingPath("$[0].reporterReservationId").isNull();
-                });
-    }
-
-    @Test
-    @DisplayName("수용 기준: 카메라 신고를 사실로 판정하면 그 예약 대표자만 경고, 신고자 알림은 없다")
-    void confirmedCameraReportWarnsThatOwner() {
-        long reportId = ((Number) JsonPath.read(body(post(1, check("e3", ended, "NEEDS_CLEANING", "[\"cup\"]", "[]"))),
-                "$.reportId")).longValue();
-
-        assertThat(judge(reportId, "CONFIRMED")).hasStatusOk();
-
         assertThat(jdbc.sql("SELECT user_id, reason, reservation_id FROM user_warning").query().listOfRows())
                 .singleElement().satisfies(w -> {
                     assertThat(((Number) w.get("user_id")).longValue()).isEqualTo(OWNER);
                     assertThat(w).containsEntry("reason", "VIOLATION");
                     assertThat(((Number) w.get("reservation_id")).longValue()).isEqualTo(ended);
                 });
-        assertThat(inbox("REPORT_RESULT")).isEmpty();
-    }
-
-    @Test
-    @DisplayName("카메라 신고를 허위로 판정해도 경고할 신고자가 없으니 아무도 경고받지 않는다")
-    void falseCameraReportWarnsNobody() {
-        long reportId = ((Number) JsonPath.read(body(post(1, check("e4", ended, "NEEDS_CLEANING", "[\"cup\"]", "[]"))),
-                "$.reportId")).longValue();
-
-        assertThat(judge(reportId, "FALSE")).hasStatusOk();
-        assertThat(judge(reportId, "UNVERIFIED")).hasStatus(409);
-
-        assertThat(jdbc.sql("SELECT count(*) FROM user_warning").query((rs, n) -> rs.getLong(1)).single()).isZero();
-    }
-
-    @Test
-    @DisplayName("수용 기준: 가방·휴대폰·노트북을 두고 가면 그 예약 대표자·참여자 모두에게 알림")
-    void leftItemsNotifyMembers() {
-        assertThat(post(1, check("e5", ended, "CLEAN", "[]", "[\"BAG\",\"PHONE\",\"LAPTOP\"]"))).hasStatusOk();
-
-        assertThat(inbox("LEFT_ITEM")).extracting(m -> ((Number) m.get("user_id")).longValue())
-                .containsExactly(1L, 2L, 3L);
-        assertThat(inbox("LEFT_ITEM").getFirst().get("body")).asString().contains("가방·휴대폰·노트북");
-        assertThat(reports()).isEmpty();
-    }
-
-    @Test
-    @DisplayName("같은 eventId를 두 번 보내면 한 번만 처리하고 처음 reportId를 돌려준다")
-    void duplicateEvent() {
-        String json = check("e6", ended, "NEEDS_CLEANING", "[\"cup\"]", "[\"PHONE\"]");
-        Object first = JsonPath.read(body(post(1, json)), "$.reportId");
-
-        assertThat(post(1, json)).hasStatusOk().bodyJson().satisfies(j -> {
-            j.assertThat().extractingPath("$.result").isEqualTo("DUPLICATE");
-            j.assertThat().extractingPath("$.reportId").isEqualTo(first);
+        assertThat(inbox("WARNING")).singleElement().satisfies(m -> {
+            assertThat(((Number) m.get("user_id")).longValue()).isEqualTo(OWNER);
+            assertThat((String) m.get("body")).startsWith("두고 간 물건을 2시간 안에 챙겨 가지 않았어요.");
         });
-        assertThat(reports()).hasSize(1);
-        assertThat(inbox("LEFT_ITEM")).hasSize(3);
+        assertThat(jdbc.sql("SELECT report_id FROM tidy_check WHERE phase = 'RECHECK'")
+                .query((rs, n) -> rs.getLong(1)).single()).isEqualTo(reportId);
+        assertThat(current(1)).bodyJson().extractingPath("$.recheck").as("다시 확인은 한 번").isNull();
     }
 
     @Test
-    @DisplayName("같은 eventId를 다른 예약에 쓰면 처음 결과를 돌려주지 않고 409")
-    void sameEventOtherReservation() {
-        assertThat(post(1, check("e11", ended, "CLEAN", "[]", "[]"))).hasStatusOk();
+    @DisplayName("다시 봤을 때 남은 물건의 확신도가 모두 0.8 미만이거나 깨끗하면 경고 없이 결과만 남는다")
+    void recheckUnsureOrCleanNoWarning() {
+        assertThat(post(1, first("e5", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        recheckDue();
+
+        assertThat(post(1, check("e5-r", ended, "RECHECK", "LEFT_ITEMS",
+                "[{\"name\":\"umbrella\",\"confidence\":0.79}]"))).hasStatusOk()
+                .bodyJson().extractingPath("$.reportId").isNull();
+
+        assertThat(reports()).isEmpty();
+        assertThat(count("user_warning")).isZero();
+        assertThat(inbox("WARNING")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("다시 확인 거절: 시각 전이면 TIDY_RECHECK_TOO_EARLY, 첫 확인이 깨끗했거나 누가 방에 있으면 NOT_NEEDED")
+    void recheckGuards() {
+        // 퇴실 1시간 뒤 (2시간 전)
+        assertThat(post(1, first("e6", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        assertThat(post(1, check("e6-r1", ended, "RECHECK", "CLEAN", "[]"))).hasStatus(409)
+                .bodyJson().extractingPath("$.code").isEqualTo("TIDY_RECHECK_NOT_NEEDED");   // 다음 팀 사용 중
+        roomFree();
+        assertThat(post(1, check("e6-r2", ended, "RECHECK", "CLEAN", "[]"))).hasStatus(409)
+                .bodyJson().extractingPath("$.code").isEqualTo("TIDY_RECHECK_TOO_EARLY");
+
+        // 첫 확인이 깨끗했으면 다시 볼 것이 없다
+        jdbc.sql("UPDATE tidy_check SET result = 'CLEAN', items = '{}', confidences = '{}'").update();
+        recheckDue();
+        assertThat(post(1, check("e6-r3", ended, "RECHECK", "CLEAN", "[]"))).hasStatus(409)
+                .bodyJson().extractingPath("$.code").isEqualTo("TIDY_RECHECK_NOT_NEEDED");
+        assertThat(count("tidy_check")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("2시간 안에 다음 예약이 입실했다 나가면 앞 예약은 다시 보지 않는다(경고 없음, 409 NOT_LATEST)")
+    void nextTeamUsedRoom() {
+        assertThat(post(1, first("e7", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        jdbc.sql("UPDATE reservation SET checked_out_at = now() - interval '3 hours' WHERE id = :id")
+                .param("id", ended).update();
         jdbc.sql("UPDATE reservation SET status = 'CHECKED_OUT', checked_out_at = now() WHERE id = :id")
                 .param("id", now).update();
 
-        assertThat(post(1, check("e11", now, "CLEAN", "[]", "[]"))).hasStatus(409)
+        assertThat(current(1)).bodyJson().extractingPath("$.recheck").isNull();
+        assertThat(post(1, check("e7-r", ended, "RECHECK", "LEFT_ITEMS", UMBRELLA))).hasStatus(409)
+                .bodyJson().extractingPath("$.code").isEqualTo("TIDY_CHECK_NOT_LATEST");
+        assertThat(count("user_warning")).isZero();
+    }
+
+    @Test
+    @DisplayName("같은 eventId를 두 번 보내면 한 번만 처리한다. 다시 확인도 같다")
+    void duplicateEvent() {
+        String json = first("e8", ended, "LEFT_ITEMS", UMBRELLA);
+        assertThat(post(1, json)).hasStatusOk();
+        assertThat(post(1, json)).hasStatusOk().bodyJson().extractingPath("$.result").isEqualTo("DUPLICATE");
+        assertThat(inbox("LEFT_ITEM")).hasSize(3);
+
+        recheckDue();
+        String again = check("e8-r", ended, "RECHECK", "LEFT_ITEMS", UMBRELLA);
+        Object reportId = JsonPath.read(body(post(1, again)), "$.reportId");
+        assertThat(post(1, again)).hasStatusOk().bodyJson().satisfies(j -> {
+            j.assertThat().extractingPath("$.result").isEqualTo("DUPLICATE");
+            j.assertThat().extractingPath("$.reportId").isEqualTo(reportId);
+        });
+        assertThat(count("user_warning")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("같은 eventId를 다른 예약·다른 단계에 쓰면 처음 결과를 돌려주지 않고 409")
+    void sameEventOtherReservationOrPhase() {
+        assertThat(post(1, first("e9", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        recheckDue();
+        assertThat(post(1, check("e9", ended, "RECHECK", "CLEAN", "[]"))).hasStatus(409)
+                .bodyJson().extractingPath("$.code").isEqualTo("TIDY_CHECK_EXISTS");
+
+        jdbc.sql("UPDATE reservation SET status = 'CHECKED_OUT', checked_in_at = now(), checked_out_at = now() "
+                + "WHERE id = :id").param("id", now).update();
+        assertThat(post(3, first("e9", now, "CLEAN", "[]"))).hasStatus(409)
                 .bodyJson().extractingPath("$.code").isEqualTo("TIDY_CHECK_EXISTS");
     }
 
     @Test
-    @DisplayName("한 예약에 결과는 하나: 다른 eventId로 또 보내면 409 TIDY_CHECK_EXISTS")
-    void onePerReservation() {
-        assertThat(post(1, check("e7", ended, "CLEAN", "[]", "[]"))).hasStatusOk();
-
-        assertThat(post(1, check("e8", ended, "NEEDS_CLEANING", "[\"cup\"]", "[]"))).hasStatus(409)
+    @DisplayName("단계마다 결과는 하나: 다른 eventId로 또 보내면 409 TIDY_CHECK_EXISTS")
+    void onePerPhase() {
+        assertThat(post(1, first("e10", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        assertThat(post(1, first("e11", ended, "CLEAN", "[]"))).hasStatus(409)
                 .bodyJson().extractingPath("$.code").isEqualTo("TIDY_CHECK_EXISTS");
-        assertThat(reports()).isEmpty();
+
+        recheckDue();
+        assertThat(post(1, check("e12", ended, "RECHECK", "CLEAN", "[]"))).hasStatusOk();
+        assertThat(post(1, check("e13", ended, "RECHECK", "LEFT_ITEMS", UMBRELLA))).hasStatus(409)
+                .bodyJson().extractingPath("$.code").isEqualTo("TIDY_CHECK_EXISTS");
+        assertThat(count("user_warning")).isZero();
     }
 
     @Test
     @DisplayName("아직 끝나지 않은 예약은 409, 다른 방 예약 번호는 404")
     void notEndedOrOtherRoom() {
-        assertThat(post(1, check("e9", now, "CLEAN", "[]", "[]"))).hasStatus(409)
+        assertThat(post(1, first("e14", now, "CLEAN", "[]"))).hasStatus(409)
                 .bodyJson().extractingPath("$.code").isEqualTo("RESERVATION_NOT_ENDED");
-        assertThat(post(2, check("e10", ended, "CLEAN", "[]", "[]"))).hasStatus(404)
+        assertThat(post(2, first("e15", ended, "CLEAN", "[]"))).hasStatus(404)
                 .bodyJson().extractingPath("$.code").isEqualTo("RESERVATION_NOT_FOUND");
     }
 
@@ -290,9 +383,9 @@ class TidyCheckApiTest {
                 RETURNING id
                 """, OWNER, 2, 3));
 
-        assertThat(post(1, check("e12", older, "NEEDS_CLEANING", "[\"cup\"]", "[]"))).hasStatus(409)
+        assertThat(post(1, first("e16", older, "LEFT_ITEMS", UMBRELLA))).hasStatus(409)
                 .bodyJson().extractingPath("$.code").isEqualTo("TIDY_CHECK_NOT_LATEST");
-        assertThat(reports()).isEmpty();
+        assertThat(inbox("LEFT_ITEM")).isEmpty();
     }
 
     @Test
@@ -305,30 +398,45 @@ class TidyCheckApiTest {
                 RETURNING id
                 """, OWNER, 2, 3));
 
-        assertThat(mvc.get().uri("/api/rooms/2/current").header("Authorization", TOKEN)).hasStatusOk()
-                .bodyJson().satisfies(j -> {
-                    j.assertThat().extractingPath("$.current.reservationId").isEqualTo((int) booked);
-                    j.assertThat().extractingPath("$.current.status").isEqualTo("BOOKED");
-                });
+        assertThat(current(2)).hasStatusOk().bodyJson().satisfies(j -> {
+            j.assertThat().extractingPath("$.current.reservationId").isEqualTo((int) booked);
+            j.assertThat().extractingPath("$.current.status").isEqualTo("BOOKED");
+        });
     }
 
     @Test
-    @DisplayName("형식이 틀리면 400: 결과·물건 종류 오타, 오프셋 없는 시각, items 없음, 너무 긴 이름")
+    @DisplayName("형식이 틀리면 400: 예전 NEEDS_CLEANING, 단계 오타, 확신도 없음·범위 밖, 물건 수와 결과가 안 맞음, 오프셋 없는 시각")
     void invalidInput() {
         List<String> bad = List.of(
-                check("b1", ended, "DIRTY", "[]", "[]"),
-                check("b2", ended, "CLEAN", "[]", "[\"WALLET\"]"),
-                check("b3", ended, "CLEAN", "null", "[]"),
-                check("b4", ended, "CLEAN", "[\"" + "x".repeat(51) + "\"]", "[]"),
-                check("b5", ended, "CLEAN", "[\"\"]", "[]"),
-                check("b6", ended, "CLEAN", "[]", "[]").replace("+09:00", ""),
-                check("", ended, "CLEAN", "[]", "[]"),
+                first("b1", ended, "DIRTY", "[]"),
+                first("b2", ended, "NEEDS_CLEANING", UMBRELLA),
+                check("b3", ended, "LATER", "CLEAN", "[]"),
+                first("b4", ended, "LEFT_ITEMS", "[]"),
+                first("b5", ended, "CLEAN", UMBRELLA),
+                first("b6", ended, "LEFT_ITEMS", "[{\"name\":\"umbrella\"}]"),
+                first("b7", ended, "LEFT_ITEMS", "[{\"name\":\"umbrella\",\"confidence\":1.2}]"),
+                first("b8", ended, "LEFT_ITEMS", "[{\"name\":\"umbrella\",\"confidence\":-0.1}]"),
+                first("b9", ended, "LEFT_ITEMS", "[{\"name\":\"\",\"confidence\":0.9}]"),
+                first("b10", ended, "LEFT_ITEMS", "[{\"name\":\"" + "x".repeat(51) + "\",\"confidence\":0.9}]"),
+                first("b11", ended, "LEFT_ITEMS", "[\"umbrella\"]"),
+                first("b12", ended, "CLEAN", "null"),
+                first("b13", ended, "CLEAN", "[]").replace("+09:00", ""),
+                first("", ended, "CLEAN", "[]"),
                 """
-                        {"eventId":"b7","deviceId":"jetson-b","result":"CLEAN","items":[],"observedAt":"2026-11-06T15:01:00+09:00"}""");
+                        {"eventId":"b14","deviceId":"jetson-b","result":"CLEAN","items":[],"observedAt":"2026-11-06T15:01:00+09:00"}""");
         for (String json : bad) {
             assertThat(post(1, json)).as(json).hasStatus(400);
         }
-        assertThat(jdbc.sql("SELECT count(*) FROM tidy_check").query((rs, n) -> rs.getLong(1)).single()).isZero();
+        assertThat(count("tidy_check")).isZero();
+    }
+
+    @Test
+    @DisplayName("phase를 빼면 FIRST로 받는다")
+    void phaseDefaultsToFirst() {
+        String json = first("e17", ended, "CLEAN", "[]").replace("\"phase\":\"FIRST\",", "");
+
+        assertThat(post(1, json)).hasStatusOk();
+        assertThat(jdbc.sql("SELECT phase FROM tidy_check").query((rs, n) -> rs.getString(1)).single()).isEqualTo("FIRST");
     }
 
     MvcTestResult list(long userId, String days) {
@@ -337,14 +445,13 @@ class TidyCheckApiTest {
     }
 
     @Test
-    @DisplayName("관리자 정리 확인 목록: 받은 결과를 최근 순으로, 방 이름·퇴실 시각·자동 신고 번호와 함께 준다")
+    @DisplayName("관리자 정리 확인 목록: 받은 결과를 최근 순으로, 단계·물건별 확신도·경고 신고 번호와 함께 준다")
     void adminList() {
-        // given: 앞 예약은 치울 것 있음, 그 뒤 퇴실한 예약은 깨끗함
-        long reportId = ((Number) JsonPath.read(body(post(1, check("e-a", ended, "NEEDS_CLEANING",
-                "[\"cup\",\"backpack\"]", "[\"BAG\"]"))), "$.reportId")).longValue();
-        jdbc.sql("UPDATE reservation SET status = 'CHECKED_OUT', checked_out_at = now() WHERE id = :id")
-                .param("id", now).update();
-        assertThat(post(1, check("e-b", now, "CLEAN", "[]", "[]"))).hasStatusOk();
+        // given: 퇴실 직후 우산을 두고 갔고, 2시간 뒤에도 남아 경고
+        assertThat(post(1, first("e-a", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        recheckDue();
+        long reportId = ((Number) JsonPath.read(body(post(1, check("e-b", ended, "RECHECK", "LEFT_ITEMS",
+                UMBRELLA))), "$.reportId")).longValue();
 
         // when
         MvcTestResult r = list(ADMIN, null);
@@ -352,25 +459,42 @@ class TidyCheckApiTest {
         // then
         assertThat(r).hasStatusOk().bodyJson().satisfies(j -> {
             j.assertThat().extractingPath("$.items.length()").isEqualTo(2);
-            j.assertThat().extractingPath("$.items[0].reservationId").isEqualTo((int) now);
-            j.assertThat().extractingPath("$.items[0].result").isEqualTo("CLEAN");
-            j.assertThat().extractingPath("$.items[0].reportId").isNull();
+            j.assertThat().extractingPath("$.items[0].phase").isEqualTo("RECHECK");
+            j.assertThat().extractingPath("$.items[0].reportId").isEqualTo((int) reportId);
             j.assertThat().extractingPath("$.items[1].reservationId").isEqualTo((int) ended);
             j.assertThat().extractingPath("$.items[1].roomId").isEqualTo(1);
             j.assertThat().extractingPath("$.items[1].roomName").isNotNull();
             j.assertThat().extractingPath("$.items[1].endedAt").asString().endsWith("+09:00");
-            j.assertThat().extractingPath("$.items[1].result").isEqualTo("NEEDS_CLEANING");
-            j.assertThat().extractingPath("$.items[1].items").isEqualTo(List.of("cup", "backpack"));
-            j.assertThat().extractingPath("$.items[1].leftItems").isEqualTo(List.of("BAG"));
-            j.assertThat().extractingPath("$.items[1].reportId").isEqualTo((int) reportId);
+            j.assertThat().extractingPath("$.items[1].phase").isEqualTo("FIRST");
+            j.assertThat().extractingPath("$.items[1].result").isEqualTo("LEFT_ITEMS");
+            j.assertThat().extractingPath("$.items[1].items[0].name").isEqualTo("umbrella");
+            j.assertThat().extractingPath("$.items[1].items[0].confidence").isEqualTo(0.93);
+            j.assertThat().extractingPath("$.items[1].leftItems").isEqualTo(List.of());
+            j.assertThat().extractingPath("$.items[1].reportId").isNull();
             j.assertThat().extractingPath("$.items[1].observedAt").isEqualTo("2026-11-06T15:01:00+09:00");
+        });
+    }
+
+    @Test
+    @DisplayName("관리자 정리 확인 목록: 11/10 전 기록(확신도 없음, 귀중품 칸)도 그대로 보인다")
+    void adminListLegacyRow() {
+        jdbc.sql("""
+                INSERT INTO tidy_check (event_id, reservation_id, room_id, device_id, phase, result, items, left_items,
+                                        observed_at, received_at)
+                VALUES ('old', :rid, 1, 'jetson-b', 'FIRST', 'CLEAN', ARRAY['backpack'], ARRAY['BAG'], now(), now())
+                """).param("rid", ended).update();
+
+        assertThat(list(ADMIN, null)).hasStatusOk().bodyJson().satisfies(j -> {
+            j.assertThat().extractingPath("$.items[0].items[0].name").isEqualTo("backpack");
+            j.assertThat().extractingPath("$.items[0].items[0].confidence").isNull();
+            j.assertThat().extractingPath("$.items[0].leftItems").isEqualTo(List.of("BAG"));
         });
     }
 
     @Test
     @DisplayName("관리자 정리 확인 목록: days일 전보다 먼저 받은 결과는 빠진다")
     void adminListDays() {
-        assertThat(post(1, check("e-old", ended, "CLEAN", "[]", "[]"))).hasStatusOk();
+        assertThat(post(1, first("e-old", ended, "CLEAN", "[]"))).hasStatusOk();
         jdbc.sql("UPDATE tidy_check SET received_at = now() - interval '8 days'").update();
 
         assertThat(list(ADMIN, null)).hasStatusOk().bodyJson().extractingPath("$.items.length()").isEqualTo(0);

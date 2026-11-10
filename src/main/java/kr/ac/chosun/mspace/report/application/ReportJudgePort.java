@@ -18,7 +18,8 @@ public interface ReportJudgePort {
     /**
      * 판정 대기(OPEN)이고 소음이 아닐 때만 판정을 바꾼다 (조건부 UPDATE 한 번).
      *
+     * @param adminId 판정한 관리자. 사람 없이 core가 정하면(두고 간 물건 경고) null
      * @return 바뀐 신고. 조건이 안 맞으면 빈 값
      */
-    Optional<ReportItem> judgeIfOpen(long reportId, long adminId, ReportVerdict verdict);
+    Optional<ReportItem> judgeIfOpen(long reportId, Long adminId, ReportVerdict verdict);
 }

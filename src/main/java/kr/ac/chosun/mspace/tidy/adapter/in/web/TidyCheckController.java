@@ -11,7 +11,8 @@ import kr.ac.chosun.mspace.common.auth.DeviceTokenVerifier;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase;
-import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.LeftItem;
+import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Item;
+import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Phase;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Recorded;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Result;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.RoomNow;
@@ -41,7 +42,7 @@ class TidyCheckController {
         this.devices = devices;
     }
 
-    /** 예: GET /api/rooms/2/current → {roomId, current|null, lastEnded|null} */
+    /** 예: GET /api/rooms/2/current → {roomId, current|null, lastEnded|null, recheck|null} */
     @GetMapping("/api/rooms/{roomId}/current")
     RoomNowResponse current(@RequestHeader(name = "Authorization", required = false) String authorization,
                             @PathVariable int roomId) {
@@ -49,7 +50,7 @@ class TidyCheckController {
         return RoomNowResponse.from(service.current(roomId));
     }
 
-    /** 예: POST /api/rooms/2/tidy-checks → 200 {"result":"STORED","reportId":12} 또는 DUPLICATE */
+    /** 예: POST /api/rooms/2/tidy-checks → 200 {"result":"STORED","reportId":null} 또는 DUPLICATE */
     @PostMapping("/api/rooms/{roomId}/tidy-checks")
     TidyCheckResponse submit(@RequestHeader(name = "Authorization", required = false) String authorization,
                              @PathVariable int roomId, @RequestBody TidyCheckRequest request) {
@@ -58,20 +59,36 @@ class TidyCheckController {
         return new TidyCheckResponse(r.duplicate() ? "DUPLICATE" : "STORED", r.reportId());
     }
 
-    record TidyCheckRequest(String eventId, Long reservationId, String deviceId, String result, List<String> items,
-                            List<String> leftItems, String observedAt) {
+    /** 물건 하나: {"name":"우산","confidence":0.93} */
+    record ItemRequest(String name, Float confidence) {
+
+        boolean valid() {
+            return name != null && !name.isBlank() && name.length() <= MAX_ITEM_LENGTH
+                    && confidence != null && confidence >= 0 && confidence <= 1;
+        }
+    }
+
+    /**
+     * phase는 없으면 FIRST. result는 CLEAN(남은 것 없음, items 빈 배열) 또는 LEFT_ITEMS(items 1개 이상).
+     * 11/10 전 형식의 NEEDS_CLEANING은 400, leftItems는 받지 않는다(보내도 무시).
+     */
+    record TidyCheckRequest(String eventId, Long reservationId, String deviceId, String phase, String result,
+                            List<ItemRequest> items, String observedAt) {
 
         TidyCheck toCheck(int roomId) {
             if (eventId == null || eventId.isBlank() || eventId.length() > 64 || reservationId == null
                     || deviceId == null || deviceId.isBlank() || deviceId.length() > 50
                     || items == null || items.size() > MAX_ITEMS
-                    || items.stream().anyMatch(i -> i == null || i.isBlank() || i.length() > MAX_ITEM_LENGTH)
-                    || (leftItems != null && leftItems.size() > LeftItem.values().length)) {
+                    || items.stream().anyMatch(i -> i == null || !i.valid())) {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST);
             }
-            List<LeftItem> left = leftItems == null ? List.of() : leftItems.stream().map(i -> parse(LeftItem.class, i)).toList();
-            return new TidyCheck(eventId, roomId, reservationId, deviceId, parse(Result.class, result), List.copyOf(items),
-                    left, observed());
+            Result r = parse(Result.class, result);
+            if (r == Result.NEEDS_CLEANING || (r == Result.LEFT_ITEMS) == items.isEmpty()) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            }
+            Phase p = phase == null ? Phase.FIRST : parse(Phase.class, phase);
+            return new TidyCheck(eventId, roomId, reservationId, deviceId, p, r,
+                    items.stream().map(i -> new Item(i.name(), i.confidence())).toList(), observed());
         }
 
         private static <E extends Enum<E>> E parse(Class<E> type, String value) {
@@ -101,14 +118,19 @@ class TidyCheckController {
     record Ended(long reservationId, String status, ZonedDateTime endedAt) {
     }
 
-    record RoomNowResponse(int roomId, Current current, Ended lastEnded) {
+    record RecheckResponse(long reservationId, ZonedDateTime at) {
+    }
+
+    record RoomNowResponse(int roomId, Current current, Ended lastEnded, RecheckResponse recheck) {
 
         static RoomNowResponse from(RoomNow r) {
             Current c = r.current() == null ? null : new Current(r.current().reservationId(), r.current().status(),
                     r.current().startAt().atZone(SEOUL), r.current().endAt().atZone(SEOUL));
             Ended e = r.lastEnded() == null ? null : new Ended(r.lastEnded().reservationId(), r.lastEnded().status(),
                     r.lastEnded().endedAt().atZone(SEOUL));
-            return new RoomNowResponse(r.roomId(), c, e);
+            RecheckResponse again = r.recheck() == null ? null
+                    : new RecheckResponse(r.recheck().reservationId(), r.recheck().at().atZone(SEOUL));
+            return new RoomNowResponse(r.roomId(), c, e, again);
         }
     }
 }
