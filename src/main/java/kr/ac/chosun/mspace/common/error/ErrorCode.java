@@ -93,6 +93,9 @@ public enum ErrorCode {
     RESERVATION_NOT_ENDED(HttpStatus.CONFLICT, "아직 끝나지 않았거나 입실하지 않은 예약입니다"),
     TIDY_CHECK_EXISTS(HttpStatus.CONFLICT, "이 예약의 정리 확인 결과가 이미 있습니다"),
     TIDY_CHECK_NOT_LATEST(HttpStatus.CONFLICT, "이 방에서 방금 끝난 예약이 아닙니다"),
+    WARNING_NOT_FOUND(HttpStatus.NOT_FOUND, "찾을 수 없는 경고입니다"),
+    WARNING_APPEAL_EXPIRED(HttpStatus.CONFLICT, "철회 요청 기간이 지났습니다"),
+    WARNING_APPEAL_DUPLICATE(HttpStatus.CONFLICT, "이 경고는 이미 철회를 요청했습니다"),
     TIDY_RECHECK_NOT_NEEDED(HttpStatus.CONFLICT, "이 예약은 다시 확인할 것이 없습니다"),
     TIDY_RECHECK_TOO_EARLY(HttpStatus.CONFLICT, "아직 다시 확인할 시각이 아닙니다"),
     // 찾으러 갈게요 10분 QR (11/10 지영)
