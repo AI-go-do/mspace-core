@@ -46,7 +46,8 @@ class TidyCheckService implements TidyCheckUseCase {
     private final TransactionOperations tx;
     private final Clock clock;
     private final Duration recheckAfter;
-    private final double warnMinConfidence;
+    /** 장치 확신도가 float라 기준도 float로 맞춘다. double로 비교하면 0.9f(0.8999…)가 0.9 기준에서 빠진다 */
+    private final float warnMinConfidence;
 
     TidyCheckService(TidyCheckPort port, CameraReportUseCase reports, NotificationInbox inbox,
                      TransactionOperations tx, Clock clock, TidyPolicy policy) {
@@ -56,7 +57,7 @@ class TidyCheckService implements TidyCheckUseCase {
         this.tx = tx;
         this.clock = clock;
         this.recheckAfter = Duration.ofMinutes(policy.recheckAfterMinutes());
-        this.warnMinConfidence = policy.warnMinConfidence();
+        this.warnMinConfidence = (float) policy.warnMinConfidence();
     }
 
     @Override
