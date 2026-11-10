@@ -8,9 +8,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param recheckAfterMinutes  퇴실 뒤 이 시간이 지나면 방 카메라가 한 번 더 본다(분)
  * @param warnMinConfidence    다시 볼 때 확신도가 이 값 이상인 물건이 하나라도 남아 있으면 경고 (0~1).
  *                             11/10 지영: 0.8로 시작하고 모델 비교 결과를 보고 조정
+ * @param retrievePassMinutes "찾으러 갈게요"를 누르면 주는 입실 QR이 살아 있는 시간(분). 11/10 지영: 10분
  */
 @ConfigurationProperties("mspace.tidy")
-public record TidyPolicy(int recheckAfterMinutes, double warnMinConfidence) {
+public record TidyPolicy(int recheckAfterMinutes, double warnMinConfidence, int retrievePassMinutes) {
 
     public TidyPolicy {
         if (warnMinConfidence <= 0 || warnMinConfidence > 1) {
@@ -20,6 +21,10 @@ public record TidyPolicy(int recheckAfterMinutes, double warnMinConfidence) {
         if (recheckAfterMinutes < 1) {
             throw new IllegalArgumentException("mspace.tidy.recheck-after-minutes는 1 이상이어야 합니다 (%d)"
                     .formatted(recheckAfterMinutes));
+        }
+        if (retrievePassMinutes < 1) {
+            throw new IllegalArgumentException("mspace.tidy.retrieve-pass-minutes는 1 이상이어야 합니다 (%d)"
+                    .formatted(retrievePassMinutes));
         }
     }
 
