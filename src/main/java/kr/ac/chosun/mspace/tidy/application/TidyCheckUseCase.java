@@ -5,8 +5,8 @@ import java.util.List;
 
 /**
  * 퇴실 뒤 정리 확인 (FR-DEV-105). 방 카메라(젯슨)가 부른다. 결과·물건 이름·확신도만 받는다.
- * 11/10 10차 회의: 종류 구분 없이 "두고 감" 하나로, 2시간 안에 안 가져가면 경고.
- * 예약마다 FIRST(퇴실 직후)와 RECHECK(2시간 뒤) 한 번씩 받는다. 형식: AI-go-do/docs api/README.md 6-3.
+ * 11/10 10차 회의: 종류 구분 없이 "두고 감" 하나로, 3시간 안에 안 가져가면 경고(회의는 2시간, 11/10 지영이 3시간으로).
+ * 예약마다 FIRST(퇴실 직후)와 RECHECK(3시간 뒤) 한 번씩 받는다. 형식: AI-go-do/docs api/README.md 6-3.
  */
 public interface TidyCheckUseCase {
 
