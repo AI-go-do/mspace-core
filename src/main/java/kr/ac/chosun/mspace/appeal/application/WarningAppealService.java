@@ -49,16 +49,18 @@ public class WarningAppealService implements WarningAppealUseCase {
     @Transactional
     public WarningItem appeal(long userId, long warningId, String text, List<String> evidence) {
         String reason = text == null ? "" : text.strip();
-        if (reason.length() < TEXT_MIN || reason.length() > TEXT_MAX) {
+        int length = reason.codePointCount(0, reason.length()); // DB char_length와 같게 글자(코드 포인트)로 센다
+        if (length < TEXT_MIN || length > TEXT_MAX) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST, "사유는 %d–%d자입니다".formatted(TEXT_MIN, TEXT_MAX));
         }
         if (LONG_NUMBER.matcher(reason).find()) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST, "사유에 학번·전화번호 같은 긴 숫자는 넣을 수 없습니다");
         }
-        List<String> picked = List.copyOf(new LinkedHashSet<>(evidence == null ? List.of() : evidence));
-        if (!EVIDENCE.containsAll(picked)) {
+        Set<String> asked = new LinkedHashSet<>(evidence == null ? List.of() : evidence);
+        if (asked.contains(null) || !EVIDENCE.containsAll(asked)) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST, "evidence는 CHECKIN_PHOTO, CHECKOUT_PHOTO, TIDY_CHECK 중에서 고릅니다");
         }
+        List<String> picked = List.copyOf(asked);
         Instant warnedAt = port.lockMine(userId, warningId).orElseThrow(() -> new BusinessException(ErrorCode.WARNING_NOT_FOUND));
         Instant now = clock.instant();
         if (!now.isBefore(warnedAt.plus(Duration.ofDays(policy.days())))) {

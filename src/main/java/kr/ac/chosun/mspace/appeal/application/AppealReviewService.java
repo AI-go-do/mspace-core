@@ -61,24 +61,33 @@ public class AppealReviewService implements AppealReviewUseCase {
     public int reviewPending() {
         int done = 0;
         for (long id : port.pending(policy.batchSize())) {
-            Optional<WarningReviewer.Case> c = port.loadCase(id);
-            if (c.isEmpty()) {
-                continue;
-            }
-            Review review;
+            // 한 요청이 실패해도(판단기 오류, 이상한 확신도, DB 오류) 다음 요청은 계속 본다. 실패한 요청은 대기로 남아 다음 번에 다시
             try {
-                review = reviewer.review(c.get());
+                if (reviewOne(id)) {
+                    done++;
+                }
             } catch (RuntimeException e) {
                 log.warn("철회 요청 판단 실패, 다음 번에 다시 봄: appeal={} error={}", id, e.getClass().getSimpleName());
-                continue;
-            }
-            List<Notification> stored = tx.execute(st -> apply(id, review));
-            if (stored != null) {
-                inbox.publish(stored);
-                done++;
             }
         }
         return done;
+    }
+
+    private boolean reviewOne(long id) {
+        Optional<WarningReviewer.Case> c = port.loadCase(id);
+        if (c.isEmpty()) {
+            return false;
+        }
+        Review review = reviewer.review(c.get());
+        if (review == null || review.decision() == null || !(review.confidence() >= 0 && review.confidence() <= 1)) {
+            throw new IllegalStateException("판단기 결과가 올바르지 않다 (결정 없음 또는 확신도 0~1 밖)");
+        }
+        List<Notification> stored = tx.execute(st -> apply(id, review));
+        if (stored == null) {
+            return false;
+        }
+        inbox.publish(stored);
+        return true;
     }
 
     /** @return 알림함에 넣은 알림. 다른 판단이 먼저 끝냈으면 null */

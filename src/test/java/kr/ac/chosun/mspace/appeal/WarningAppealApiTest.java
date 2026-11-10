@@ -186,7 +186,7 @@ class WarningAppealApiTest {
     }
 
     @Test
-    @DisplayName("사유가 10자 미만이거나, 학번·전화번호 같은 긴 숫자가 있거나, 모르는 기록 종류면 400")
+    @DisplayName("사유가 10자(글자 기준) 미만이거나, 학번·전화번호 같은 긴 숫자가 있거나, 모르는 기록 종류·빈 값이면 400")
     void invalidText() {
         long w = userReportWarning("1 hour");
 
@@ -194,6 +194,9 @@ class WarningAppealApiTest {
         assertThat(appeal(1, w, "{\"text\":\"제 학번은 20240071 이고 억울해요\"}")).hasStatus(400);
         assertThat(appeal(1, w, "{\"text\":\"연락은 010-1234-5678 로 주세요 억울해요\"}")).hasStatus(400);
         assertThat(appeal(1, w, "{\"text\":\"%s\",\"evidence\":[\"CCTV\"]}".formatted(TEXT))).hasStatus(400);
+        assertThat(appeal(1, w, "{\"text\":\"%s\",\"evidence\":[null]}".formatted(TEXT))).hasStatus(400);
+        // 이모지 5개는 Java 길이로는 10이지만 글자로는 5개라 10자 미만
+        assertThat(appeal(1, w, "{\"text\":\"😀😀😀😀😀\"}")).hasStatus(400);
         // 방 번호·시각 같은 짧은 숫자는 된다
         assertThat(appeal(1, w, "{\"text\":\"1번 방 14:00 예약인데 컵을 다 버렸어요\"}")).hasStatus(201);
     }
