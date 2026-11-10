@@ -4,7 +4,6 @@ import java.util.List;
 import java.util.Objects;
 import kr.ac.chosun.mspace.appeal.application.WarningReviewer;
 import kr.ac.chosun.mspace.common.config.TidyPolicy;
-import org.springframework.stereotype.Component;
 
 /**
  * 외부 AI 없이 정해진 규칙으로 보는 판단기. AI 어댑터(Gemini 등)가 생기기 전까지 쓰고, 생긴 뒤에는 비교 기준이 된다.
@@ -14,8 +13,8 @@ import org.springframework.stereotype.Component;
  *   <li>학생 신고로 받은 경고: 이 판단기는 신고 글·사진을 읽지 못해 확신도 0으로 철회 (Q-24 ③ 확인 불가 = 철회)</li>
  * </ul>
  * 학생 사유는 읽지 않는다 (규칙으로 판단할 수 있는 근거만 본다).
+ * Gemini 키가 없거나 Gemini가 답하지 못하면 이 판단기가 대신 본다 ({@link ReviewerConfig}).
  */
-@Component
 class RuleWarningReviewer implements WarningReviewer {
 
     static final String NAME = "rules";
