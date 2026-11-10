@@ -98,6 +98,9 @@ public enum ErrorCode {
     WARNING_APPEAL_DUPLICATE(HttpStatus.CONFLICT, "이 경고는 이미 철회를 요청했습니다"),
     TIDY_RECHECK_NOT_NEEDED(HttpStatus.CONFLICT, "이 예약은 다시 확인할 것이 없습니다"),
     TIDY_RECHECK_TOO_EARLY(HttpStatus.CONFLICT, "아직 다시 확인할 시각이 아닙니다"),
+    // 찾으러 갈게요 10분 QR (11/10 지영)
+    RETRIEVE_NOT_NEEDED(HttpStatus.CONFLICT, "방 카메라가 두고 간 물건을 찾지 않은 예약입니다"),
+    RETRIEVE_TOO_LATE(HttpStatus.CONFLICT, "찾으러 올 수 있는 시간이 지났습니다"),
     // 허위 신고 경고가 쌓이면 (FR-RPT-103 벌칙, 11/6)
     REPORT_SUSPENDED(HttpStatus.FORBIDDEN, "허위 신고 경고가 쌓여 신고가 정지되었습니다"),
 

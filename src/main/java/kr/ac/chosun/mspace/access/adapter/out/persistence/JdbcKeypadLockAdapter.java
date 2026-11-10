@@ -43,23 +43,24 @@ class JdbcKeypadLockAdapter implements KeypadLockPort {
 
     @Override
     public Optional<Verdict> findEvent(String eventId) {
-        return jdbc.sql("SELECT result, reason FROM access_event WHERE event_id = :id")
+        return jdbc.sql("SELECT result, reason, purpose FROM access_event WHERE event_id = :id")
                 .param("id", eventId)
-                .query((rs, n) -> new Verdict(rs.getString("result"), rs.getString("reason")))
+                .query((rs, n) -> new Verdict(rs.getString("result"), rs.getString("reason"), rs.getString("purpose")))
                 .optional();
     }
 
     @Override
     public void saveEvent(String eventId, int roomId, String deviceId, Verdict verdict, Long reservationId) {
         jdbc.sql("""
-                        INSERT INTO access_event (event_id, room_id, device_id, result, reason, reservation_id)
-                        VALUES (:id, :room, :device, :result, :reason, :rid)
+                        INSERT INTO access_event (event_id, room_id, device_id, result, reason, purpose, reservation_id)
+                        VALUES (:id, :room, :device, :result, :reason, :purpose, :rid)
                         """)
                 .param("id", eventId)
                 .param("room", roomId)
                 .param("device", deviceId, Types.VARCHAR)
                 .param("result", verdict.result())
                 .param("reason", verdict.reason(), Types.VARCHAR)
+                .param("purpose", verdict.purpose(), Types.VARCHAR)
                 .param("rid", reservationId, Types.BIGINT)
                 .update();
     }
