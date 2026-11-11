@@ -1,11 +1,13 @@
 package kr.ac.chosun.mspace.report.application;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import kr.ac.chosun.mspace.common.config.ReportJudgePolicy;
+import kr.ac.chosun.mspace.common.config.TidyPolicy;
 import kr.ac.chosun.mspace.notification.application.Notification;
 import kr.ac.chosun.mspace.notification.application.NotificationInbox;
 import kr.ac.chosun.mspace.notification.application.NotificationInbox.NewNotification;
@@ -35,9 +37,11 @@ class AutoJudgeService implements AutoJudgeUseCase {
     private final NotificationInbox inbox;
     private final TransactionOperations tx;
     private final Clock clock;
+    /** 앞 팀이 두고 간 물건을 찾으러 올 시간 (mspace.tidy.recheck-after-minutes, 3시간) */
+    private final Duration retrieveWindow;
 
     AutoJudgeService(AutoJudgePort port, ReportJudge judge, JudgeReportService reports, ReportJudgePolicy policy,
-                     NotificationInbox inbox, TransactionOperations tx, Clock clock) {
+                     NotificationInbox inbox, TransactionOperations tx, Clock clock, TidyPolicy tidy) {
         this.port = port;
         this.judge = judge;
         this.reports = reports;
@@ -45,12 +49,14 @@ class AutoJudgeService implements AutoJudgeUseCase {
         this.inbox = inbox;
         this.tx = tx;
         this.clock = clock;
+        this.retrieveWindow = Duration.ofMinutes(tidy.recheckAfterMinutes());
     }
 
     @Override
     public int judgeOpen() {
         int done = 0;
-        for (long id : port.openReports(clock.instant().minus(policy.waitAfter()), policy.batchSize())) {
+        Instant now = clock.instant();
+        for (long id : port.openReports(now.minus(policy.waitAfter()), now.minus(retrieveWindow), policy.batchSize())) {
             try {
                 if (judgeOne(id)) {
                     done++;

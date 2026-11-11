@@ -47,8 +47,8 @@ class AutoJudgeTest {
             jdbc.sql("INSERT INTO users (email, student_id, name, verified_at) VALUES (:e, :s, '홍길동', now())")
                     .param("e", "j" + i + "@chosun.ac.kr").param("s", "202400" + (60 + i)).update();
         }
-        // 앞 팀(대표자 1): 3시간 전 입실, 2시간 전 퇴실 / 신고한 팀(대표자 4): 1시간 전 입실, 사용 중
-        previous = reservation(1, "3 hours", "2 hours", "CHECKED_OUT", "'2 hours'");
+        // 앞 팀(대표자 1): 5시간 전 입실, 4시간 전 퇴실(찾으러 올 3시간 지남) / 신고한 팀(대표자 4): 1시간 전 입실, 사용 중
+        previous = reservation(1, "5 hours", "4 hours", "CHECKED_OUT", "'4 hours'");
         mine = reservation(4, "1 hour", "-1 hour", "IN_USE", null);
     }
 
@@ -248,6 +248,26 @@ class AutoJudgeTest {
 
         // then
         assertThat(verdict(id)).isEqualTo("UNVERIFIED");
+        assertThat(warnings(1)).isZero();
+    }
+
+    @Test
+    @DisplayName("어질러짐 신고는 앞 팀 퇴실 3시간(찾으러 올 시간)이 지나야 판정한다. 그 전에는 대기로 둔다 (11/11 지영)")
+    void messyWaitsForRetrieveWindow() {
+        // given: 앞 팀이 1시간 전에 퇴실
+        jdbc.sql("UPDATE reservation SET checked_out_at = now() - interval '1 hour' WHERE id = :id")
+                .param("id", previous).update();
+        cameraSaw("LEFT_ITEMS", "{cup}", "{0.95}");
+        long messy = report("MESSY", "10 minutes");
+        long broken = report("BROKEN", "10 minutes");
+
+        // when
+        int done = judge.judgeOpen();
+
+        // then: 비품 고장은 기다리지 않는다
+        assertThat(done).isEqualTo(1);
+        assertThat(verdict(messy)).isEqualTo("OPEN");
+        assertThat(verdict(broken)).isEqualTo("UNVERIFIED");
         assertThat(warnings(1)).isZero();
     }
 

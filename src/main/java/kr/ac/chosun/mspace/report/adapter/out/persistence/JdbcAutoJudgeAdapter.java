@@ -24,15 +24,26 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
     }
 
     @Override
-    public List<Long> openReports(Instant createdBefore, int limit) {
-        // 카메라 신고(source CAMERA)는 core가 만들면서 바로 정한다. 소음은 판정 대상이 아님
+    public List<Long> openReports(Instant createdBefore, Instant previousOutBefore, int limit) {
+        // 카메라 신고(source CAMERA)는 core가 만들면서 바로 정한다. 소음은 판정 대기 대상이 아님
+        // 어질러짐: 앞 팀(loadCase와 같은 규칙)이 찾으러 올 시간이 지나야 본다. 찾아갔으면 경고하지 않으려고
         return jdbc.sql("""
-                        SELECT id FROM report
-                        WHERE verdict = 'OPEN' AND source = 'USER' AND category <> 'NOISE' AND created_at <= :before
-                        ORDER BY created_at, id
+                        SELECT p.id FROM report p
+                        WHERE p.verdict = 'OPEN' AND p.source = 'USER' AND p.category <> 'NOISE' AND p.created_at <= :before
+                          AND (p.category <> 'MESSY' OR NOT EXISTS (
+                              SELECT 1 FROM (
+                                  SELECT r.checked_out_at FROM reservation r
+                                  WHERE r.room_id = p.room_id
+                                    AND r.id IS DISTINCT FROM p.reporter_reservation_id
+                                    AND r.checked_in_at IS NOT NULL AND r.checked_in_at <= p.created_at
+                                  ORDER BY r.checked_in_at DESC, r.id DESC
+                                  LIMIT 1) prev
+                              WHERE prev.checked_out_at > :outBefore))
+                        ORDER BY p.created_at, p.id
                         LIMIT :limit
                         """)
-                .param("before", Timestamp.from(createdBefore)).param("limit", limit)
+                .param("before", Timestamp.from(createdBefore)).param("outBefore", Timestamp.from(previousOutBefore))
+                .param("limit", limit)
                 .query(Long.class).list();
     }
 
