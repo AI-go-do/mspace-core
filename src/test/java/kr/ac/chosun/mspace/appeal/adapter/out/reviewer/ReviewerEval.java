@@ -59,9 +59,11 @@ class ReviewerEval {
     @DisplayName("규칙 판단기와 Gemini의 경고 철회 판단 정확도를 같은 사례로 잰다")
     void measure() throws IOException {
         // EVAL_SET: dev(고칠 때 쓰는 사례, 기본) | holdout(마지막 확인용, 손대지 않음) | fresh(11/11 지영 "새 가짜 데이터로 시험")
-        //   | team(11/11 지영이 쓴 학생 글) | team2(11/11 팀원 문제지 글, 정답은 지영) | all
+        //   | team(11/11 지영이 쓴 학생 글) | team2(11/11 팀원 문제지 글, 정답은 지영)
+        //   | excluded(실제로 안 생기거나 사진을 봐야 정할 수 있어 점수에서 뺀 것) | all. 쉼표로 여러 개 (예: team,team2)
         String set = System.getenv().getOrDefault("EVAL_SET", "dev");
-        List<Sample> samples = load().stream().filter(s -> "all".equals(set) || s.set().equals(set)).toList();
+        List<String> sets = List.of(set.split(","));
+        List<Sample> samples = load().stream().filter(s -> "all".equals(set) || sets.contains(s.set())).toList();
         Map<String, List<Row>> results = new LinkedHashMap<>();
         results.put(RuleWarningReviewer.NAME, run(new RuleWarningReviewer(TIDY), samples, 0));
 
