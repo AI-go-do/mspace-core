@@ -19,7 +19,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 class CameraPhotoService implements CameraPhotoUseCase {
 
-    private static final Set<String> PHASES = Set.of("FIRST", "RECHECK");
+    /** ENTRY = 입실 직전 빈 방(11/11 수연, Q-27). 젯슨이 퇴실 뒤 FIRST 결과를 보낸 다음 올려서 "마지막 퇴실 예약만" 규칙이 그대로 맞는다 */
+    private static final Set<String> PHASES = Set.of("ENTRY", "FIRST", "RECHECK");
 
     private final CameraPhotoPort port;
     private final PhotoPort photos;

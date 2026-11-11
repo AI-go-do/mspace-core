@@ -35,7 +35,7 @@ class CameraPhotoController {
     }
 
     /**
-     * Authorization: Bearer 장치토큰, multipart/form-data: reservationId, phase=FIRST|RECHECK, deviceId, file=JPEG·PNG(최대 2MB)
+     * Authorization: Bearer 장치토큰, multipart/form-data: reservationId, phase=ENTRY|FIRST|RECHECK, deviceId, file=JPEG·PNG(최대 2MB)
      * → 201 {"reservationId":12,"phase":"FIRST","uploadedAt":"…+09:00","sizeBytes":123456}
      * 400 PHOTO_INVALID·PHOTO_TOO_LARGE / 401 토큰 / 404 RESERVATION_NOT_FOUND
      * / 409 TIDY_CHECK_NOT_LATEST(이 방의 마지막 퇴실 예약 아님)·PHOTO_ALREADY_UPLOADED(같은 단계 두 번째)
