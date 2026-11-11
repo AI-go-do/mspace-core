@@ -19,9 +19,10 @@ public interface AutoJudgePort {
 
     /**
      * 앞 팀 예약 줄을 잠그고(정리 다시 확인·찾으러 갈게요 QR과 같은 잠금) 남은 물건 일이 이미 끝났나 다시 본다:
-     * 같은 예약에 어질러짐 경고가 있거나 QR로 문을 열었다. 판정기가 읽은 뒤 다른 길이 먼저 경고했을 때 두 번 경고하지 않게
+     * 같은 예약에 어질러짐 경고가 있거나 QR로 문을 열었다. 판정기가 읽은 뒤 다른 길이 먼저 경고했을 때 두 번 경고하지 않게.
+     * 판정기가 퇴실 직후(FIRST)만 봤는데 그 뒤 다시 확인(RECHECK)이 들어왔어도 끝난 것으로 본다(옛 결과로 경고하지 않게)
      */
-    boolean lockPreviousSettled(long previousReservationId);
+    boolean lockPreviousSettled(long previousReservationId, boolean sawRecheck);
 
     /** 판정 기록. applied = 확신도 기준을 적용한 뒤 실제로 정한 판정 */
     void record(long reportId, ReportJudge.Judgement judgement, ReportVerdict applied, Instant now);

@@ -345,6 +345,31 @@ class AutoJudgeTest {
         }
     }
 
+    @Nested
+    @Import(RecheckWarnsMeanwhile.Config.class)
+    class RecheckArrivesMeanwhile {
+
+        @Test
+        @DisplayName("판정기가 퇴실 직후 결과만 읽은 뒤 다시 확인(RECHECK)이 깨끗하게 들어오면 옛 결과로 경고하지 않는다")
+        void staleFirstNotUsed() {
+            // given
+            cameraSaw("LEFT_ITEMS", "{cup}", "{0.95}");
+            long id = report("MESSY", "10 minutes");
+            RecheckWarnsMeanwhile.MEANWHILE.set(() -> jdbc.sql("""
+                    INSERT INTO tidy_check (event_id, reservation_id, room_id, device_id, phase, result, items, confidences,
+                                            left_items, observed_at, received_at)
+                    VALUES ('ev-late', :rid, 1, 'camera-1', 'RECHECK', 'CLEAN', '{}', '{}', '{}', now(), now())
+                    """).param("rid", previous).update());
+
+            // when
+            judge.judgeOpen();
+
+            // then
+            assertThat(verdict(id)).isEqualTo("UNVERIFIED");
+            assertThat(warnings(1)).isZero();
+        }
+    }
+
     /** 11/11 지영: 카메라 정확도 51%라 카메라만으로는 사실로 정하지 않는다 (기본값 camera-warn=false) */
     @Nested
     @TestPropertySource(properties = "mspace.tidy.camera-warn=false")

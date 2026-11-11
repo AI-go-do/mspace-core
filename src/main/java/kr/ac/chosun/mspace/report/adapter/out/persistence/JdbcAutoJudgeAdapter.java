@@ -56,7 +56,7 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
                                        WHERE f.reservation_id = p.reporter_reservation_id AND f.kind = 'CHECK_IN') AS check_in,
                                EXISTS (SELECT 1 FROM reservation_photo f
                                        WHERE f.reservation_id = prev.id AND f.kind = 'CHECK_OUT') AS prev_check_out,
-                               t.result, t.items, t.confidences,
+                               t.result, t.items, t.confidences, COALESCE(t.phase = 'RECHECK', false) AS rechecked,
                                EXISTS (SELECT 1 FROM user_warning w JOIN report c ON c.id = w.report_id
                                        WHERE w.reservation_id = prev.id AND c.category = 'MESSY') AS prev_warned,
                                EXISTS (SELECT 1 FROM retrieve_pass q
@@ -73,7 +73,7 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
                         LEFT JOIN LATERAL (
                             -- 다시 확인(RECHECK)이 있으면 그것이 더 늦은 사실이라 먼저 본다.
                             -- 앞 팀이 신고자보다 늦게 입실했으면(다음 예약 조기 입실) 앞 팀이 아니라 카메라 결과를 쓰지 않는다
-                            SELECT result, items, confidences FROM tidy_check
+                            SELECT phase, result, items, confidences FROM tidy_check
                             WHERE reservation_id = prev.id
                               AND (SELECT checked_in_at FROM reservation WHERE id = prev.id) <= mine.checked_in_at
                             ORDER BY (phase = 'RECHECK') DESC
@@ -93,21 +93,24 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
                             rs.getBoolean("check_in"), rs.getBoolean("prev_check_out"), rs.getString("result"),
                             Arrays.asList(strings(rs.getArray("items"))), confidences,
                             rs.getBoolean("prev_warned"), rs.getBoolean("prev_retrieved"),
-                            rs.getObject("prev_id", Long.class));
+                            rs.getObject("prev_id", Long.class), rs.getBoolean("rechecked"));
                 })
                 .optional();
     }
 
     @Override
-    public boolean lockPreviousSettled(long previousReservationId) {
+    public boolean lockPreviousSettled(long previousReservationId, boolean sawRecheck) {
         jdbc.sql("SELECT id FROM reservation WHERE id = :id FOR UPDATE").param("id", previousReservationId)
                 .query(Long.class).optional();
         return jdbc.sql("""
                         SELECT EXISTS (SELECT 1 FROM retrieve_pass WHERE reservation_id = :id AND first_used_at IS NOT NULL)
                             OR EXISTS (SELECT 1 FROM user_warning w JOIN report r ON r.id = w.report_id
                                        WHERE w.reservation_id = :id AND r.category = 'MESSY')
+                            OR (NOT :sawRecheck AND EXISTS (SELECT 1 FROM tidy_check
+                                                           WHERE reservation_id = :id AND phase = 'RECHECK'))
                         """)
-                .param("id", previousReservationId).query(Boolean.class).single();
+                .param("id", previousReservationId).param("sawRecheck", sawRecheck)
+                .query(Boolean.class).single();
     }
 
     @Override

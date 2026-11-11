@@ -86,7 +86,7 @@ class AutoJudgeService implements AutoJudgeUseCase {
             Instant now = clock.instant();
             // 판정기는 트랜잭션 밖에서 읽었다. 그 사이 정리 다시 확인이 같은 예약에 경고했거나 QR로 찾아갔으면 확인 불가로
             ReportVerdict applied = decided == ReportVerdict.CONFIRMED && "MESSY".equals(c.get().category())
-                    && previous != null && port.lockPreviousSettled(previous) ? ReportVerdict.UNVERIFIED : decided;
+                    && previous != null && port.lockPreviousSettled(previous, c.get().previousRechecked()) ? ReportVerdict.UNVERIFIED : decided;
             Optional<List<NewNotification>> out = reports.judgeBySystem(id, applied, now);
             out.ifPresent(n -> port.record(id, j, applied, now));
             return out.map(n -> inbox.store(n, now));

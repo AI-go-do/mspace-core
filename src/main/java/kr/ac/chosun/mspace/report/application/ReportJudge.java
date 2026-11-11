@@ -23,11 +23,12 @@ public interface ReportJudge {
      * @param previousWarned        앞 팀이 같은 퇴실로 이미 카메라 경고를 받았나 (같은 물건으로 두 번 경고하지 않게)
      * @param previousRetrieved     앞 팀이 "찾으러 갈게요" QR로 문을 열었나 (11/11 수연·지영: 열었으면 경고 안 함)
      * @param previousReservationId 앞 팀 예약 번호, 없으면 null (판정기에는 쓰지 않고 적용 때 다시 확인용)
+     * @param previousRechecked     previousTidyResult가 다시 확인(RECHECK) 결과인가 (적용 때 다시 확인용)
      */
     record Case(long reportId, String category, String content, boolean reporterCheckInPhoto,
                 boolean previousCheckOutPhoto, String previousTidyResult, List<String> previousItems,
                 List<Double> previousConfidences, boolean previousWarned, boolean previousRetrieved,
-                Long previousReservationId) {
+                Long previousReservationId, boolean previousRechecked) {
     }
 
     /**
