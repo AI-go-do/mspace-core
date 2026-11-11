@@ -78,6 +78,13 @@ class RetrievePassService implements RetrievePassUseCase {
         if (code == null || !code.matches("[0-9]{6}")) {
             return Optional.empty();
         }
-        return port.use(roomId, code, clock.instant());
+        Optional<RetrievePassPort.Live> live = port.find(roomId, code, clock.instant());
+        if (live.isEmpty()) {
+            return Optional.empty();
+        }
+        // 자동 판정·다시 확인과 같은 예약 잠금을 잡고, 기다리는 동안 QR이 닫혔는지 지금 시각으로 다시 본다
+        port.lockReservation(live.get().reservationId());
+        return port.markUsed(live.get().passId(), clock.instant())
+                ? Optional.of(live.get().reservationId()) : Optional.empty();
     }
 }

@@ -84,23 +84,29 @@ class JdbcRetrievePassAdapter implements RetrievePassPort {
     }
 
     @Override
-    public Optional<Long> use(int roomId, String code, Instant now) {
-        Optional<long[]> pass = jdbc.sql("""
+    public Optional<Live> find(int roomId, String code, Instant now) {
+        return jdbc.sql("""
                         SELECT id, reservation_id FROM retrieve_pass
                         WHERE room_id = :room AND code = :code AND expires_at > :now
                         ORDER BY expires_at DESC LIMIT 1
                         """)
                 .param("room", roomId).param("code", code).param("now", Timestamp.from(now))
-                .query((rs, n) -> new long[] {rs.getLong(1), rs.getLong(2)}).optional();
-        if (pass.isEmpty()) {
-            return Optional.empty();
-        }
-        // 자동 판정·다시 확인과 같은 예약 행 잠금. QR 사용과 경고가 동시에 확정되지 않게 한 줄로 세운다
+                .query((rs, n) -> new Live(rs.getLong(1), rs.getLong(2))).optional();
+    }
+
+    @Override
+    public void lockReservation(long reservationId) {
         jdbc.sql("SELECT id FROM reservation WHERE id = :rid FOR UPDATE")
-                .param("rid", pass.get()[1]).query((rs, n) -> rs.getLong(1)).optional();
-        jdbc.sql("UPDATE retrieve_pass SET first_used_at = coalesce(first_used_at, :now) WHERE id = :id")
-                .param("id", pass.get()[0]).param("now", Timestamp.from(now))
-                .update();
-        return Optional.of(pass.get()[1]);
+                .param("rid", reservationId).query((rs, n) -> rs.getLong(1)).optional();
+    }
+
+    @Override
+    public boolean markUsed(long passId, Instant now) {
+        return jdbc.sql("""
+                        UPDATE retrieve_pass SET first_used_at = coalesce(first_used_at, :now)
+                        WHERE id = :id AND expires_at > :now
+                        """)
+                .param("id", passId).param("now", Timestamp.from(now))
+                .update() == 1;
     }
 }

@@ -302,4 +302,37 @@ class RetrievePassApiTest {
         assertThat(jdbc.sql("SELECT first_used_at IS NOT NULL FROM retrieve_pass").query((rs, n) -> rs.getBoolean(1))
                 .single()).isTrue();
     }
+
+    @Test
+    @DisplayName("예약 잠금을 기다리는 동안 QR이 닫히면 쓰지 않는다 (CodeRabbit #118)")
+    void expiredWhileWaitingNotUsed() throws Exception {
+        // given: 다른 트랜잭션이 예약 행을 잡고 있는 동안 QR이 닫힌다
+        first("LEFT_ITEMS", UMBRELLA);
+        String code = code(pass(1, ended));
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CompletableFuture<Void> judge = CompletableFuture.runAsync(() -> tx.executeWithoutResult(st -> {
+            jdbc.sql("SELECT id FROM reservation WHERE id = :id FOR UPDATE").param("id", ended)
+                    .query((rs, n) -> rs.getLong(1)).single();
+            locked.countDown();
+            try {
+                release.await(10, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            jdbc.sql("UPDATE retrieve_pass SET issued_at = now() - interval '11 minutes', expires_at = now() - interval '1 second'").update();
+        }));
+        assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
+
+        // when
+        CompletableFuture<?> use = CompletableFuture.supplyAsync(() -> retrieves.open(1, code));
+        Thread.sleep(500);
+        release.countDown();
+        judge.get(10, TimeUnit.SECONDS);
+
+        // then
+        assertThat(use.get(10, TimeUnit.SECONDS)).isEqualTo(java.util.Optional.empty());
+        assertThat(jdbc.sql("SELECT first_used_at IS NULL FROM retrieve_pass").query((rs, n) -> rs.getBoolean(1))
+                .single()).isTrue();
+    }
 }
