@@ -177,21 +177,35 @@ class GeminiWarningReviewerTest {
 
     @Test
     @DisplayName("다시 시도 대기 중 인터럽트되면 규칙 판단기로 정하지 않고 실패로 남긴다")
-    void interruptedDoesNotFallBack() {
-        // given: 503이 이어지고, 대기 전에 인터럽트
+    void interruptedDoesNotFallBack() throws Exception {
+        // given: 503이 이어지고, 첫 503 뒤 다시 시도 대기(10초) 중에 인터럽트
         busy.set(3);
         reply = "{}";
         GeminiWarningReviewer r = reviewer();
-        r.retryWaitMillis = 1000;
-        Thread.currentThread().interrupt();
+        r.retryWaitMillis = 10_000;
+        java.util.concurrent.atomic.AtomicReference<Throwable> thrown = new java.util.concurrent.atomic.AtomicReference<>();
+        Thread worker = new Thread(() -> {
+            try {
+                r.review(CAMERA);
+            } catch (Throwable t) {
+                thrown.set(t);
+            }
+        });
 
-        // when, then
-        try {
-            org.assertj.core.api.Assertions.assertThatThrownBy(() -> r.review(CAMERA))
-                    .isInstanceOf(IllegalStateException.class);
-        } finally {
-            Thread.interrupted();
+        // when: 첫 요청이 503을 받은 뒤 대기에 들어가면 인터럽트
+        worker.start();
+        long until = System.currentTimeMillis() + 5_000;
+        while (calls.get() < 1 && System.currentTimeMillis() < until) {
+            Thread.onSpinWait();
         }
+        Thread.sleep(200);
+        worker.interrupt();
+        worker.join(5_000);
+
+        // then: 다시 보내지 않고, 규칙 판단기로 정하지 않고 예외
+        assertThat(worker.isAlive()).isFalse();
+        assertThat(calls.get()).isEqualTo(1);
+        assertThat(thrown.get()).isInstanceOf(IllegalStateException.class);
     }
 
     @Test
