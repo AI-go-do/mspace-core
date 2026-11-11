@@ -95,9 +95,9 @@ class JdbcRetrievePassAdapter implements RetrievePassPort {
     }
 
     @Override
-    public void lockReservation(long reservationId) {
-        jdbc.sql("SELECT id FROM reservation WHERE id = :rid FOR UPDATE")
-                .param("rid", reservationId).query((rs, n) -> rs.getLong(1)).optional();
+    public boolean lockReservation(long reservationId) {
+        return jdbc.sql("SELECT id FROM reservation WHERE id = :rid FOR UPDATE")
+                .param("rid", reservationId).query((rs, n) -> rs.getLong(1)).optional().isPresent();
     }
 
     @Override

@@ -7,6 +7,7 @@ import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -294,11 +295,11 @@ class RetrievePassApiTest {
         CompletableFuture<?> use = CompletableFuture.supplyAsync(() -> retrieves.open(1, code));
 
         // then: 잠금이 풀릴 때까지 기다렸다가 쓴다
-        Thread.sleep(500);
+        waitUntilBlockedOnLock();
         assertThat(use).isNotDone();
         release.countDown();
         judge.get(10, TimeUnit.SECONDS);
-        assertThat(use.get(10, TimeUnit.SECONDS)).isEqualTo(java.util.Optional.of(ended));
+        assertThat(use.get(10, TimeUnit.SECONDS)).isEqualTo(Optional.of(ended));
         assertThat(jdbc.sql("SELECT first_used_at IS NOT NULL FROM retrieve_pass").query((rs, n) -> rs.getBoolean(1))
                 .single()).isTrue();
     }
@@ -326,13 +327,29 @@ class RetrievePassApiTest {
 
         // when
         CompletableFuture<?> use = CompletableFuture.supplyAsync(() -> retrieves.open(1, code));
-        Thread.sleep(500);
+        waitUntilBlockedOnLock();
         release.countDown();
         judge.get(10, TimeUnit.SECONDS);
 
         // then
-        assertThat(use.get(10, TimeUnit.SECONDS)).isEqualTo(java.util.Optional.empty());
+        assertThat(use.get(10, TimeUnit.SECONDS)).isEqualTo(Optional.empty());
         assertThat(jdbc.sql("SELECT first_used_at IS NULL FROM retrieve_pass").query((rs, n) -> rs.getBoolean(1))
                 .single()).isTrue();
+    }
+
+    /** QR 사용이 QR을 찾은 뒤 예약 잠금에서 기다리고 있는지 DB에서 확인한다 (시간에 기대지 않게) */
+    void waitUntilBlockedOnLock() throws InterruptedException {
+        for (int i = 0; i < 200; i++) {
+            boolean waiting = jdbc.sql("""
+                            SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+                                           WHERE wait_event_type = 'Lock' AND query LIKE '%FOR UPDATE%')
+                            """)
+                    .query((rs, n) -> rs.getBoolean(1)).single();
+            if (waiting) {
+                return;
+            }
+            Thread.sleep(50);
+        }
+        throw new AssertionError("QR 사용이 예약 잠금에서 기다리지 않음");
     }
 }
