@@ -33,24 +33,34 @@ class ReviewerEval {
     static final TidyPolicy TIDY = new TidyPolicy(180, 0.8, 10);
     static final JsonMapper JSON = JsonMapper.builder().build();
 
-    record Sample(String id, String group, Decision truth, String why, Case c) {
+    /** 서비스와 같은 규칙: 판단기가 "유지"라도 확신도가 이보다 낮으면 철회 (mspace.appeal.min-confidence) */
+    static final double MIN_CONFIDENCE = 0.8;
+
+    record Sample(String id, String group, String set, Decision truth, String why, Case c) {
     }
 
     record Row(Sample s, Review r, long millis) {
+        /** 학생에게 실제로 적용되는 결정 (AppealReviewService와 같은 규칙) */
+        Decision applied() {
+            return r.decision() == Decision.KEPT && r.confidence() < MIN_CONFIDENCE ? Decision.WITHDRAWN : r.decision();
+        }
+
         boolean right() {
-            return r.decision() == s.truth();
+            return applied() == s.truth();
         }
 
         /** 철회해야 하는데 유지 = 잘못된 벌칙. 가장 심각한 오류로 따로 센다 */
         boolean serious() {
-            return s.truth() == Decision.WITHDRAWN && r.decision() == Decision.KEPT;
+            return s.truth() == Decision.WITHDRAWN && applied() == Decision.KEPT;
         }
     }
 
     @Test
     @DisplayName("규칙 판단기와 Gemini의 경고 철회 판단 정확도를 같은 사례로 잰다")
     void measure() throws IOException {
-        List<Sample> samples = load();
+        // EVAL_SET: dev(고칠 때 쓰는 사례, 기본) | holdout(마지막 확인용, 손대지 않음) | all
+        String set = System.getenv().getOrDefault("EVAL_SET", "dev");
+        List<Sample> samples = load().stream().filter(s -> "all".equals(set) || s.set().equals(set)).toList();
         Map<String, List<Row>> results = new LinkedHashMap<>();
         results.put(RuleWarningReviewer.NAME, run(new RuleWarningReviewer(TIDY), samples, 0));
 
@@ -66,6 +76,7 @@ class ReviewerEval {
         Path out = Path.of("target/eval/reviewer-eval.md");
         Files.createDirectories(out.getParent());
         Files.writeString(out, report(samples, results, model));
+        Files.writeString(Path.of("target/eval/reviewer-eval.json"), JSON.writeValueAsString(raw(results)));
         System.out.println(Files.readString(out));
         assertThat(results.get(RuleWarningReviewer.NAME)).hasSize(samples.size());
     }
@@ -103,11 +114,29 @@ class ReviewerEval {
                 Case c = new Case(++n, j.path("reason").asString(), j.path("source").asString(), j.path("type").asString(),
                         content, j.path("appeal").asString(), evidence, j.path("inPhoto").asBoolean(),
                         j.path("outPhoto").asBoolean(), items, conf);
-                samples.add(new Sample(j.path("id").asString(), j.path("group").asString(),
+                samples.add(new Sample(j.path("id").asString(), j.path("group").asString(), j.path("set").asString("dev"),
                         Decision.valueOf(j.path("truth").asString()), j.path("why").asString(), c));
             }
         }
         return samples;
+    }
+
+    /** 판마다 비교하려고 사례별 답을 그대로 남긴다 */
+    static Map<String, Object> raw(Map<String, List<Row>> results) {
+        Map<String, Object> all = new LinkedHashMap<>();
+        results.forEach((name, rows) -> all.put(name, rows.stream().map(r -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", r.s().id());
+            m.put("truth", r.s().truth().name());
+            m.put("decision", r.r().decision().name());
+            m.put("confidence", r.r().confidence());
+            m.put("applied", r.applied().name());
+            m.put("reviewer", r.r().reviewer());
+            m.put("millis", r.millis());
+            m.put("reasons", r.r().reasons());
+            return m;
+        }).toList()));
+        return all;
     }
 
     static String report(List<Sample> samples, Map<String, List<Row>> results, String model) {
@@ -146,10 +175,10 @@ class ReviewerEval {
             md.append('\n');
         });
 
-        md.append("\n## 틀린 사례\n\n| 판단기 | 사례 | 묶음 | 정답 | 답 | 확신도 | 정답 근거 |\n|---|---|---|---|---|---|---|\n");
+        md.append("\n## 틀린 사례\n\n| 판단기 | 사례 | 묶음 | 정답 | 적용(판단기 답) | 확신도 | 정답 근거 |\n|---|---|---|---|---|---|---|\n");
         results.forEach((name, rows) -> rows.stream().filter(r -> !r.right()).forEach(r -> md.append(
-                "| %s | %s | %s | %s | %s | %.2f | %s |\n".formatted(name, r.s().id(), r.s().group(), r.s().truth(),
-                        r.r().decision(), r.r().confidence(), r.s().why()))));
+                "| %s | %s | %s | %s | %s(%s) | %.2f | %s |\n".formatted(name, r.s().id(), r.s().group(), r.s().truth(),
+                        r.applied(), r.r().decision(), r.r().confidence(), r.s().why()))));
         return md.toString();
     }
 }

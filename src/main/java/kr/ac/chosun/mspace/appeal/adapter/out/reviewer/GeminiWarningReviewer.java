@@ -13,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -29,19 +30,22 @@ import tools.jackson.databind.json.JsonMapper;
  */
 class GeminiWarningReviewer implements WarningReviewer {
 
-    static final String VERSION = "gemini-v1";
+    static final String VERSION = "gemini-v2";
     static final Set<String> EVIDENCE = Set.of("TIDY_CHECK", "REPORT", "APPEAL");
 
     private static final Logger log = LoggerFactory.getLogger(GeminiWarningReviewer.class);
     private static final Pattern LONG_NUMBER = Pattern.compile("\\d(?:[\\s-]?\\d){6,}");
     private static final int REASON_MAX = 200;
     private static final int REASONS_MAX = 3;
+    /** 503(Gemini 쪽 과부하)은 잠깐 뒤 다시 하면 대개 된다. 11/11 측정에서 35건 중 5건이 503 → 규칙 판단기로 넘어감 */
+    private static final int RETRIES = 2;
 
     private final GeminiReviewerProperties props;
     private final TidyPolicy tidy;
     private final WarningReviewer fallback;
     private final RestClient http;
     private final JsonMapper json = JsonMapper.builder().build();
+    long retryWaitMillis = 1000;
 
     GeminiWarningReviewer(GeminiReviewerProperties props, TidyPolicy tidy, WarningReviewer fallback) {
         this.props = props;
@@ -72,7 +76,26 @@ class GeminiWarningReviewer implements WarningReviewer {
         return fallback.review(c);
     }
 
+    /** 5xx면 1초, 2초 쉬고 다시 한다. 429(무료 한도)·4xx는 다시 해도 같아 바로 규칙 판단기로 */
     private String call(Map<String, Object> body) {
+        for (int attempt = 0; ; attempt++) {
+            try {
+                return send(body);
+            } catch (HttpServerErrorException e) {
+                if (attempt >= RETRIES) {
+                    throw e;
+                }
+                try {
+                    Thread.sleep(retryWaitMillis * (attempt + 1));
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
+            }
+        }
+    }
+
+    private String send(Map<String, Object> body) {
         return http.post()
                 .uri("/v1beta/models/{model}:generateContent", props.model())
                 .header("x-goog-api-key", props.apiKey())
@@ -97,6 +120,7 @@ class GeminiWarningReviewer implements WarningReviewer {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("name", c.recheckItems().get(i));
             item.put("confidence", i < c.recheckConfidences().size() ? c.recheckConfidences().get(i) : null);
+            item.put("roomFixture", RoomFixtures.isFixture(c.recheckItems().get(i)));
             items.add(item);
         }
         facts.put("recheckItems", items);
@@ -179,9 +203,15 @@ class GeminiWarningReviewer implements WarningReviewer {
             1. 기록으로 확인되는 사실을 학생 주장보다 앞에 둔다.
             2. reportSource가 CAMERA면: 방 카메라가 퇴실 recheckAfter 뒤 다시 봤을 때 남아 있던 물건(recheckItems)과 확신도로 정한다.
                가장 높은 확신도가 warnMinConfidence 이상이면 KEPT가 기본이다. 학생이 가져갔다고 말해도 다시 확인 기록이 남은 물건을 봤다면 유지한다.
-               기준보다 낮으면 WITHDRAWN이다. 물건 이름이 방에 원래 있을 만한 것(의자, 책상 등)뿐이면 WITHDRAWN 쪽으로 본다.
+               기준보다 낮으면 WITHDRAWN이다.
+               recheckItems의 roomFixture가 true인 것은 방에 원래 있는 비품(의자·책상·모니터 등)이라 학생이 두고 간 물건이 아니다.
+               확신도를 볼 때 비품은 빼고, roomFixture가 false인 물건만 본다. 그런 물건이 없거나 모두 기준보다 낮으면 WITHDRAWN이다.
             3. reportSource가 USER면: 너는 사진을 볼 수 없다. checkInPhotoExists·checkOutPhotoExists는 사진이 있었는지만 알려 준다.
-               신고 글과 학생 사유만으로 사실을 확인할 수 없으면 confidence를 0.5 이하로 준다. 확인할 수 없으면 벌칙을 주지 않는 것이 원칙이다.
+               단, 학생이 studentAppeal에서 신고된 행동을 스스로 인정하면 사실이 확인된 것이다. KEPT, confidence 0.9 이상으로 준다.
+               인정한 뒤 "처음이니 봐 달라", "그게 경고까지 받을 일이냐"처럼 벌칙이 과하다고만 하는 것은 부인이 아니다.
+               인정이란 신고 글이 문제 삼은 결과(시끄러웠다, 어질러 두고 나왔다, 열어 둔 채 나왔다, 망가뜨렸다)를 인정하는 것이다.
+               그 자체로는 문제없는 행동(통화를 했다, 창문을 열었다가 닫았다)만 인정하고 문제 된 결과는 부인하면 인정이 아니다.
+               인정이 없고 신고 글과 학생 사유만으로 사실을 확인할 수 없으면 WITHDRAWN이다. 확인할 수 없으면 벌칙을 주지 않는 것이 원칙이다.
             4. warningReason이 FALSE_REPORT면 학생이 한 신고가 허위로 판정된 경고다. 같은 원칙으로 본다.
             5. confidence는 네 결정이 맞을 확률(0~1)이다.
             6. reasons는 학생에게 그대로 보여 줄 한국어 해요체 문장 1~3개, 각 120자 안이다. 이름·학번·전화번호를 쓰지 않는다.
