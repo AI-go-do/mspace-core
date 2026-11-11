@@ -19,6 +19,12 @@ public interface TidyCheckPort {
 
     Optional<LastEnded> lastEnded(int roomId);
 
+    /**
+     * 남은 물건으로 경고하지 않아도 되나: 찾으러 갈게요 QR로 문을 열었거나(11/11 수연·지영),
+     * 같은 예약이 이미 어질러짐으로 경고를 받았다(학생 신고 자동 판정 등, 같은 물건으로 두 번 경고하지 않게)
+     */
+    boolean leftItemsSettled(long reservationId);
+
     /** 이 방에서 그 예약 말고 since 뒤에 입실한 예약이 있는지 (지금 사용 중이든 이미 나갔든) */
     boolean enteredSince(int roomId, long reservationId, Instant since);
 

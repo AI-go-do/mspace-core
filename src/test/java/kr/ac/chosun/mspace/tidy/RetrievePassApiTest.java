@@ -7,6 +7,10 @@ import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import kr.ac.chosun.mspace.TestcontainersConfiguration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,6 +21,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import kr.ac.chosun.mspace.tidy.application.RetrievePassUseCase;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.assertj.MvcTestResult;
 import org.springframework.transaction.support.TransactionOperations;
@@ -41,6 +46,9 @@ class RetrievePassApiTest {
 
     @Autowired
     TransactionOperations tx;
+
+    @Autowired
+    RetrievePassUseCase retrieves;
 
     long ended;
     long now;
@@ -261,5 +269,92 @@ class RetrievePassApiTest {
                 .param("id", ended).update();
         jdbc.sql("DELETE FROM retrieve_pass").update();
         assertThat(pass(1, ended)).hasStatus(409).bodyJson().extractingPath("$.code").isEqualTo("RETRIEVE_TOO_LATE");
+    }
+
+    @Test
+    @DisplayName("QR 사용은 예약 행 잠금을 기다려, 자동 판정·다시 확인의 경고와 동시에 확정되지 않는다 (CodeRabbit #118)")
+    void useWaitsForReservationLock() throws Exception {
+        // given: QR을 받고, 다른 트랜잭션(자동 판정이라 치고)이 그 예약 행을 잡고 있다
+        first("LEFT_ITEMS", UMBRELLA);
+        String code = code(pass(1, ended));
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CompletableFuture<Void> judge = CompletableFuture.runAsync(() -> tx.executeWithoutResult(st -> {
+            jdbc.sql("SELECT id FROM reservation WHERE id = :id FOR UPDATE").param("id", ended)
+                    .query((rs, n) -> rs.getLong(1)).single();
+            locked.countDown();
+            try {
+                release.await(10, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }));
+        assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
+
+        // when
+        CompletableFuture<?> use = CompletableFuture.supplyAsync(() -> retrieves.open(1, code));
+
+        // then: 잠금이 풀릴 때까지 기다렸다가 쓴다
+        waitUntilBlockedOnLock();
+        assertThat(use).isNotDone();
+        release.countDown();
+        judge.get(10, TimeUnit.SECONDS);
+        assertThat(use.get(10, TimeUnit.SECONDS)).isEqualTo(Optional.of(ended));
+        assertThat(jdbc.sql("SELECT first_used_at IS NOT NULL FROM retrieve_pass").query((rs, n) -> rs.getBoolean(1))
+                .single()).isTrue();
+    }
+
+    @Test
+    @DisplayName("예약 잠금을 기다리는 동안 QR이 닫히면 쓰지 않는다 (CodeRabbit #118)")
+    void expiredWhileWaitingNotUsed() throws Exception {
+        // given: 다른 트랜잭션이 예약 행을 잡고 있는 동안 QR이 닫힌다
+        first("LEFT_ITEMS", UMBRELLA);
+        String code = code(pass(1, ended));
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CompletableFuture<Void> judge = CompletableFuture.runAsync(() -> tx.executeWithoutResult(st -> {
+            jdbc.sql("SELECT id FROM reservation WHERE id = :id FOR UPDATE").param("id", ended)
+                    .query((rs, n) -> rs.getLong(1)).single();
+            locked.countDown();
+            try {
+                release.await(10, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            jdbc.sql("UPDATE retrieve_pass SET issued_at = now() - interval '11 minutes', expires_at = now() - interval '1 second'").update();
+        }));
+        assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
+
+        // when
+        CompletableFuture<?> use = CompletableFuture.supplyAsync(() -> retrieves.open(1, code));
+        waitUntilBlockedOnLock();
+        release.countDown();
+        judge.get(10, TimeUnit.SECONDS);
+
+        // then
+        assertThat(use.get(10, TimeUnit.SECONDS)).isEqualTo(Optional.empty());
+        assertThat(jdbc.sql("SELECT first_used_at IS NULL FROM retrieve_pass").query((rs, n) -> rs.getBoolean(1))
+                .single()).isTrue();
+    }
+
+    /**
+     * QR 사용이 QR을 찾은 뒤 예약 잠금에서 기다리고 있는지 DB에서 확인한다 (시간에 기대지 않게).
+     * 잠금을 잡은 쪽은 기다리지 않으므로, 이 SQL로 Lock을 기다리는 세션은 QR 사용(lockReservation)뿐이다. 못 찾으면 실패한다
+     */
+    void waitUntilBlockedOnLock() throws InterruptedException {
+        for (int i = 0; i < 200; i++) {
+            boolean waiting = jdbc.sql("""
+                            SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+                                           WHERE datname = current_database() AND pid <> pg_backend_pid()
+                                             AND wait_event_type = 'Lock'
+                                             AND query = 'SELECT id FROM reservation WHERE id = $1 FOR UPDATE')
+                            """)
+                    .query((rs, n) -> rs.getBoolean(1)).single();
+            if (waiting) {
+                return;
+            }
+            Thread.sleep(50);
+        }
+        throw new AssertionError("QR 사용이 예약 잠금에서 기다리지 않음");
     }
 }
