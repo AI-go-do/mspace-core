@@ -60,6 +60,7 @@ class ReviewerEval {
     void measure() throws IOException {
         // EVAL_SET: dev(고칠 때 쓰는 사례, 기본) | holdout(마지막 확인용, 손대지 않음) | fresh(11/11 지영 "새 가짜 데이터로 시험")
         //   | team(11/11 지영이 쓴 학생 글) | team2(11/11 팀원 문제지 글, 정답은 지영)
+        //   | fresh2(11/11 밤 Claude가 새로 쓴 30개, 지시문 고칠 때 안 봄)
         //   | excluded(실제로 안 생기거나 사진을 봐야 정할 수 있어 점수에서 뺀 것, 직접 골라야만 잼) | all(excluded 빼고 전부). 쉼표로 여러 개 (예: team,team2)
         String set = System.getenv().getOrDefault("EVAL_SET", "dev");
         List<String> sets = List.of(set.split(","));
