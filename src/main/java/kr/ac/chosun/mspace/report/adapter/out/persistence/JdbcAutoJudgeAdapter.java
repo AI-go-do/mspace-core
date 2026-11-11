@@ -69,10 +69,13 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
                               AND r.checked_in_at IS NOT NULL AND r.checked_in_at <= p.created_at
                             ORDER BY r.checked_in_at DESC, r.id DESC
                             LIMIT 1) prev ON true
+                        LEFT JOIN reservation mine ON mine.id = p.reporter_reservation_id
                         LEFT JOIN LATERAL (
-                            -- 다시 확인(RECHECK)이 있으면 그것이 더 늦은 사실이라 먼저 본다
+                            -- 다시 확인(RECHECK)이 있으면 그것이 더 늦은 사실이라 먼저 본다.
+                            -- 앞 팀이 신고자보다 늦게 입실했으면(다음 예약 조기 입실) 앞 팀이 아니라 카메라 결과를 쓰지 않는다
                             SELECT result, items, confidences FROM tidy_check
                             WHERE reservation_id = prev.id
+                              AND (SELECT checked_in_at FROM reservation WHERE id = prev.id) <= mine.checked_in_at
                             ORDER BY (phase = 'RECHECK') DESC
                             LIMIT 1) t ON true
                         WHERE p.id = :id AND p.verdict = 'OPEN' AND p.category <> 'NOISE'

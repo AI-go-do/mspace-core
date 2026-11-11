@@ -271,6 +271,23 @@ class AutoJudgeTest {
         assertThat(warnings(1)).isZero();
     }
 
+    @Test
+    @DisplayName("신고자보다 늦게 입실한 예약의 카메라 결과로는 사실로 정하지 않는다 (CodeRabbit)")
+    void laterReservationNotUsed() {
+        // given: 앞 팀으로 잡히는 예약이 신고자보다 늦게 입실함(다음 예약 조기 입실)
+        jdbc.sql("UPDATE reservation SET checked_in_at = now() - interval '30 minutes' WHERE id = :id")
+                .param("id", previous).update();
+        cameraSaw("LEFT_ITEMS", "{cup}", "{0.95}");
+        long id = report("MESSY", "10 minutes");
+
+        // when
+        judge.judgeOpen();
+
+        // then
+        assertThat(verdict(id)).isEqualTo("UNVERIFIED");
+        assertThat(warnings(1)).isZero();
+    }
+
     /** 11/11 지영: 카메라 정확도 51%라 카메라만으로는 사실로 정하지 않는다 (기본값 camera-warn=false) */
     @Nested
     @TestPropertySource(properties = "mspace.tidy.camera-warn=false")
