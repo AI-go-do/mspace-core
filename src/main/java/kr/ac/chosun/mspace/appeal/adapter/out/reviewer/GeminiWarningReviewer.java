@@ -30,7 +30,7 @@ import tools.jackson.databind.json.JsonMapper;
  */
 class GeminiWarningReviewer implements WarningReviewer {
 
-    static final String VERSION = "gemini-v2";
+    static final String VERSION = "gemini-v3";
     static final Set<String> EVIDENCE = Set.of("TIDY_CHECK", "REPORT", "APPEAL");
 
     private static final Logger log = LoggerFactory.getLogger(GeminiWarningReviewer.class);
@@ -120,7 +120,6 @@ class GeminiWarningReviewer implements WarningReviewer {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("name", c.recheckItems().get(i));
             item.put("confidence", i < c.recheckConfidences().size() ? c.recheckConfidences().get(i) : null);
-            item.put("roomFixture", RoomFixtures.isFixture(c.recheckItems().get(i)));
             items.add(item);
         }
         facts.put("recheckItems", items);
@@ -204,8 +203,8 @@ class GeminiWarningReviewer implements WarningReviewer {
             2. reportSource가 CAMERA면: 방 카메라가 퇴실 recheckAfter 뒤 다시 봤을 때 남아 있던 물건(recheckItems)과 확신도로 정한다.
                가장 높은 확신도가 warnMinConfidence 이상이면 KEPT가 기본이다. 학생이 가져갔다고 말해도 다시 확인 기록이 남은 물건을 봤다면 유지한다.
                기준보다 낮으면 WITHDRAWN이다.
-               recheckItems의 roomFixture가 true인 것은 방에 원래 있는 비품(의자·책상·모니터 등)이라 학생이 두고 간 물건이 아니다.
-               확신도를 볼 때 비품은 빼고, roomFixture가 false인 물건만 본다. 그런 물건이 없거나 모두 기준보다 낮으면 WITHDRAWN이다.
+               recheckItems는 입실 직전 빈 방보다 늘어난 물건만이라 방 비품은 들어 있지 않다. 학생이 비품이라고 말해도 기록을 따른다.
+               이름을 못 붙인 물건은 unknown(확신도 0.5)이다.
             3. reportSource가 USER면: 너는 사진을 볼 수 없다. checkInPhotoExists·checkOutPhotoExists는 사진이 있었는지만 알려 준다.
                단, 학생이 studentAppeal에서 신고된 행동을 스스로 인정하면 사실이 확인된 것이다. KEPT, confidence 0.9 이상으로 준다.
                인정한 뒤 "처음이니 봐 달라", "그게 경고까지 받을 일이냐"처럼 벌칙이 과하다고만 하는 것은 부인이 아니다.

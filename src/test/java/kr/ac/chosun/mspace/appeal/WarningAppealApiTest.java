@@ -216,7 +216,7 @@ class WarningAppealApiTest {
         assertThat(myWarnings(1)).isEqualTo(0);
         var record = jdbc.sql("SELECT reviewer, prompt_version, confidence FROM warning_appeal")
                 .query((rs, n) -> rs.getString(1) + "/" + rs.getString(2) + "/" + rs.getFloat(3)).single();
-        assertThat(record).isEqualTo("rules/rules-v2/0.0");
+        assertThat(record).isEqualTo("rules/rules-v1/0.0");
         assertThat(jdbc.sql("SELECT count(*) FROM notification WHERE user_id = 1 AND kind = 'WARNING_APPEAL_RESULT' AND reservation_id = :r")
                 .param("r", used).query(Integer.class).single()).isEqualTo(1);
         // 다시 돌려도 끝난 요청은 다시 보지 않는다
