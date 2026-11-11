@@ -146,6 +146,11 @@ mspace:
       suspend-days: 14
     messy:                   # 어질러짐 신고 (FR-RPT-101, 11/8 지영). 자기 방만, 입실 사진이 있어야, 연장한 예약은 안 됨
       window-minutes: 5      # 입실 뒤 5분 안에만
+    judge:                   # 신고 자동 판정 (FR-RPT-103 10차: 관리자 대신 판정기, Q-28)
+      wait-after: PT5M       # 신고 5분 뒤에 판정 (앞 팀 퇴실 직후 방 카메라 결과가 들어올 시간)
+      min-confidence: 0.8    # 사실·허위라도 확신도가 0.8보다 낮으면 확인 불가(벌칙 없음)
+      batch-size: 10
+      interval: PT1M         # 1분마다
   appeal:                    # 경고 철회 요청 (FR-RPT-105, Q-24 11/10 지영 "추천대로")
     days: 7                  # 경고를 받은 뒤 7일 안, 경고마다 1번
     min-confidence: 0.8      # 판단기가 "유지"라도 확신도가 0.8보다 낮으면 철회 (확인 불가 = 철회)

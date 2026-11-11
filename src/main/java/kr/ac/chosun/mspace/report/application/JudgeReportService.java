@@ -137,6 +137,16 @@ public class JudgeReportService implements JudgeReportUseCase {
         return out;
     }
 
+    /**
+     * 사람 없이 판정기가 정한 학생 신고 (FR-RPT-103 10차: AI 판정, 관리자는 판정하지 않음).
+     * 부르는 쪽 트랜잭션 안에서 판정·경고·정지를 남긴다. 결과 알림은 관리자 판정과 같다.
+     *
+     * @return 알림함에 넣을 알림. 이미 판정됐거나(관리자·다른 판정) 소음이면 빈 값
+     */
+    Optional<List<NewNotification>> judgeBySystem(long reportId, ReportVerdict verdict, Instant now) {
+        return reports.judgeIfOpen(reportId, null, verdict).map(report -> penalize(report, now));
+    }
+
     /** @param suspendedUntil 이번 경고로 정지가 걸렸으면 끝나는 시각, 아니면 null */
     private record Penalty(int warnings, int limit, int windowDays, int suspendDays, Instant suspendedUntil) {
         String describe(String blocked) {

@@ -1,0 +1,95 @@
+package kr.ac.chosun.mspace.report.adapter.out.persistence;
+
+import java.sql.Array;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
+import kr.ac.chosun.mspace.report.application.AutoJudgePort;
+import kr.ac.chosun.mspace.report.application.ReportJudge;
+import kr.ac.chosun.mspace.report.domain.ReportVerdict;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.stereotype.Repository;
+
+@Repository
+class JdbcAutoJudgeAdapter implements AutoJudgePort {
+
+    private final JdbcClient jdbc;
+
+    JdbcAutoJudgeAdapter(JdbcClient jdbc) {
+        this.jdbc = jdbc;
+    }
+
+    @Override
+    public List<Long> openReports(Instant createdBefore, int limit) {
+        // 카메라 신고(source CAMERA)는 core가 만들면서 바로 정한다. 소음은 판정 대상이 아님
+        return jdbc.sql("""
+                        SELECT id FROM report
+                        WHERE verdict = 'OPEN' AND source = 'USER' AND category <> 'NOISE' AND created_at <= :before
+                        ORDER BY created_at, id
+                        LIMIT :limit
+                        """)
+                .param("before", Timestamp.from(createdBefore)).param("limit", limit)
+                .query(Long.class).list();
+    }
+
+    @Override
+    public Optional<ReportJudge.Case> loadCase(long reportId) {
+        // 앞 팀 = 경고 받을 예약과 같은 규칙(FR-RPT-104): 신고 전에 그 방에 입실한 예약 중 가장 늦은 것, 신고자 예약 제외
+        return jdbc.sql("""
+                        SELECT p.id, p.category, p.content,
+                               EXISTS (SELECT 1 FROM reservation_photo f
+                                       WHERE f.reservation_id = p.reporter_reservation_id AND f.kind = 'CHECK_IN') AS check_in,
+                               EXISTS (SELECT 1 FROM reservation_photo f
+                                       WHERE f.reservation_id = prev.id AND f.kind = 'CHECK_OUT') AS prev_check_out,
+                               t.result, t.items, t.confidences
+                        FROM report p
+                        LEFT JOIN LATERAL (
+                            SELECT r.id FROM reservation r
+                            WHERE r.room_id = p.room_id
+                              AND r.id IS DISTINCT FROM p.reporter_reservation_id
+                              AND r.checked_in_at IS NOT NULL AND r.checked_in_at <= p.created_at
+                            ORDER BY r.checked_in_at DESC, r.id DESC
+                            LIMIT 1) prev ON true
+                        LEFT JOIN tidy_check t ON t.reservation_id = prev.id AND t.phase = 'FIRST'
+                        WHERE p.id = :id AND p.verdict = 'OPEN' AND p.category <> 'NOISE'
+                        """)
+                .param("id", reportId)
+                .query((rs, n) -> {
+                    Array conf = rs.getArray("confidences");
+                    List<Double> confidences = new ArrayList<>();
+                    if (conf != null) {
+                        for (Float f : (Float[]) conf.getArray()) {
+                            confidences.add(f == null ? null : f.doubleValue());
+                        }
+                    }
+                    return new ReportJudge.Case(rs.getLong("id"), rs.getString("category"), rs.getString("content"),
+                            rs.getBoolean("check_in"), rs.getBoolean("prev_check_out"), rs.getString("result"),
+                            Arrays.asList(strings(rs.getArray("items"))), confidences);
+                })
+                .optional();
+    }
+
+    @Override
+    public void record(long reportId, ReportJudge.Judgement j, ReportVerdict applied, Instant now) {
+        String reasons = String.join(" ", j.reasons()).strip();
+        jdbc.sql("""
+                        INSERT INTO report_judgement (report_id, judge, prompt_version, verdict, confidence, applied,
+                                                      reasons, evidence_used, created_at)
+                        VALUES (:id, :judge, :prompt, :verdict, :confidence, :applied, :reasons, :used, :now)
+                        """)
+                .param("id", reportId).param("judge", j.judge()).param("prompt", j.promptVersion())
+                .param("verdict", j.verdict().name()).param("confidence", j.confidence())
+                .param("applied", applied.name())
+                .param("reasons", reasons.length() > 1000 ? reasons.substring(0, 999) + "…" : reasons)
+                .param("used", j.evidenceUsed().toArray(String[]::new)).param("now", Timestamp.from(now))
+                .update();
+    }
+
+    private static String[] strings(Array array) throws SQLException {
+        return array == null ? new String[0] : (String[]) array.getArray();
+    }
+}
