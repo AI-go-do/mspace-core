@@ -57,8 +57,8 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
                                EXISTS (SELECT 1 FROM reservation_photo f
                                        WHERE f.reservation_id = prev.id AND f.kind = 'CHECK_OUT') AS prev_check_out,
                                t.result, t.items, t.confidences,
-                               EXISTS (SELECT 1 FROM report c
-                                       WHERE c.source = 'CAMERA' AND c.target_reservation_id = prev.id) AS prev_warned,
+                               EXISTS (SELECT 1 FROM user_warning w JOIN report c ON c.id = w.report_id
+                                       WHERE w.reservation_id = prev.id AND c.category = 'MESSY') AS prev_warned,
                                EXISTS (SELECT 1 FROM retrieve_pass q
                                        WHERE q.reservation_id = prev.id AND q.first_used_at IS NOT NULL) AS prev_retrieved
                         FROM report p

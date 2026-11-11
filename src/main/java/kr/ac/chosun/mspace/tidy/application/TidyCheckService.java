@@ -129,7 +129,7 @@ class TidyCheckService implements TidyCheckUseCase {
                 return new Done(new Recorded(false, null), inbox.store(leftItemAlerts(check), now));
             }
             List<Item> sure = check.items().stream().filter(i -> i.confidence() >= warnMinConfidence).toList();
-            if (sure.isEmpty() || port.retrieveUsed(check.reservationId())) {
+            if (sure.isEmpty() || port.leftItemsSettled(check.reservationId())) {
                 port.insert(check, null, now);
                 return new Done(new Recorded(false, null), List.of());
             }

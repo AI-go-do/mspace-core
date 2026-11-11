@@ -314,6 +314,27 @@ class TidyCheckApiTest {
     }
 
     @Test
+    @DisplayName("다음 팀 어질러짐 신고로 이미 경고를 받은 예약이면 다시 봤을 때 물건이 남아도 또 경고하지 않는다 (CodeRabbit)")
+    void alreadyWarnedByReportNoSecondWarning() {
+        // given: 학생 어질러짐 신고가 사실로 판정돼 ended 대표자가 경고를 받음
+        assertThat(post(1, first("e5w", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        long report = jdbc.sql("""
+                INSERT INTO report (room_id, reporter_id, reporter_reservation_id, category, content, verdict, judged_at)
+                VALUES (1, 4, :mine, 'MESSY', '어질러져 있어요', 'CONFIRMED', now()) RETURNING id
+                """).param("mine", now).query(Long.class).single();
+        jdbc.sql("INSERT INTO user_warning (user_id, reason, report_id, reservation_id, created_at) VALUES (1, 'VIOLATION', :r, :rid, now())")
+                .param("r", report).param("rid", ended).update();
+        recheckDue();
+
+        // when
+        MvcTestResult r = post(1, check("e5w-r", ended, "RECHECK", "LEFT_ITEMS", UMBRELLA));
+
+        // then
+        assertThat(r).hasStatusOk().bodyJson().extractingPath("$.reportId").isNull();
+        assertThat(count("user_warning")).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("QR을 받기만 하고 문을 열지 않았으면 그대로 경고한다")
     void retrieveQrIssuedButUnusedStillWarns() {
         assertThat(post(1, first("e5u", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
