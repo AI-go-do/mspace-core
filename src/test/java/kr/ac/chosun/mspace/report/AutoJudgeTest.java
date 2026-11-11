@@ -39,7 +39,7 @@ class AutoJudgeTest {
     @BeforeEach
     void setUp() {
         jdbc.sql("""
-                TRUNCATE report_judgement, warning_appeal, tidy_check, notification, report_suspension, user_suspension,
+                TRUNCATE report_judgement, retrieve_pass, warning_appeal, tidy_check, notification, report_suspension, user_suspension,
                          user_warning, report, reservation_photo, reservation_participant, reservation, users
                          RESTART IDENTITY CASCADE
                 """).update();
@@ -187,6 +187,68 @@ class AutoJudgeTest {
         assertThat(verdict(fresh)).isEqualTo("OPEN");
         assertThat(verdict(noise)).isEqualTo("OPEN");
         assertThat(jdbc.sql("SELECT count(*) FROM report_judgement").query(Integer.class).single()).isZero();
+    }
+
+    @Test
+    @DisplayName("앞 팀이 3시간 뒤 다시 확인으로 이미 카메라 경고를 받았으면 같은 물건으로 학생 신고가 와도 확인 불가, 경고는 1번")
+    void alreadyWarnedByCameraNotTwice() {
+        // given: 다시 확인에서 core가 카메라 신고를 만들어 앞 팀 대표자를 이미 경고함
+        cameraSaw("LEFT_ITEMS", "{cup}", "{0.95}");
+        long camera = jdbc.sql("""
+                INSERT INTO report (room_id, source, target_reservation_id, category, content, verdict, judged_at)
+                VALUES (1, 'CAMERA', :prev, 'MESSY', 'cup(0.95)', 'CONFIRMED', now()) RETURNING id
+                """).param("prev", previous).query(Long.class).single();
+        jdbc.sql("INSERT INTO user_warning (user_id, report_id, reservation_id, reason) VALUES (1, :r, :prev, 'VIOLATION')")
+                .param("r", camera).param("prev", previous).update();
+        long id = report("MESSY", "10 minutes");
+
+        // when
+        judge.judgeOpen();
+
+        // then
+        assertThat(verdict(id)).isEqualTo("UNVERIFIED");
+        assertThat(warnings(1)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("앞 팀이 찾으러 갈게요 QR로 문을 열었으면 퇴실 직후 카메라가 물건을 봤어도 확인 불가")
+    void retrievedIsUnverified() {
+        // given
+        cameraSaw("LEFT_ITEMS", "{cup}", "{0.95}");
+        jdbc.sql("""
+                INSERT INTO retrieve_pass (reservation_id, room_id, issued_by, code, issued_at, expires_at, first_used_at)
+                VALUES (:prev, 1, 1, '123456', now() - interval '100 minutes', now() - interval '90 minutes',
+                        now() - interval '95 minutes')
+                """).param("prev", previous).update();
+        long id = report("MESSY", "10 minutes");
+
+        // when
+        judge.judgeOpen();
+
+        // then
+        assertThat(verdict(id)).isEqualTo("UNVERIFIED");
+        assertThat(warnings(1)).isZero();
+    }
+
+    @Test
+    @DisplayName("다시 확인(RECHECK)이 깨끗했으면 퇴실 직후 물건을 봤어도 그 뒤 결과를 따라 확인 불가")
+    void recheckCleanWins() {
+        // given
+        cameraSaw("LEFT_ITEMS", "{cup}", "{0.95}");
+        jdbc.sql("""
+                INSERT INTO tidy_check (event_id, reservation_id, room_id, device_id, phase, result, items, confidences,
+                                        left_items, observed_at, received_at)
+                VALUES ('ev-re', :rid, 1, 'camera-1', 'RECHECK', 'CLEAN', '{}', '{}', '{}',
+                        now() - interval '20 minutes', now() - interval '20 minutes')
+                """).param("rid", previous).update();
+        long id = report("MESSY", "10 minutes");
+
+        // when
+        judge.judgeOpen();
+
+        // then
+        assertThat(verdict(id)).isEqualTo("UNVERIFIED");
+        assertThat(warnings(1)).isZero();
     }
 
     /** 11/11 지영: 카메라 정확도 51%라 카메라만으로는 사실로 정하지 않는다 (기본값 camera-warn=false) */

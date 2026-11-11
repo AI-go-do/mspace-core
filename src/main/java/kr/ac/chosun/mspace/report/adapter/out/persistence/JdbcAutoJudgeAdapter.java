@@ -45,7 +45,11 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
                                        WHERE f.reservation_id = p.reporter_reservation_id AND f.kind = 'CHECK_IN') AS check_in,
                                EXISTS (SELECT 1 FROM reservation_photo f
                                        WHERE f.reservation_id = prev.id AND f.kind = 'CHECK_OUT') AS prev_check_out,
-                               t.result, t.items, t.confidences
+                               t.result, t.items, t.confidences,
+                               EXISTS (SELECT 1 FROM report c
+                                       WHERE c.source = 'CAMERA' AND c.target_reservation_id = prev.id) AS prev_warned,
+                               EXISTS (SELECT 1 FROM retrieve_pass q
+                                       WHERE q.reservation_id = prev.id AND q.first_used_at IS NOT NULL) AS prev_retrieved
                         FROM report p
                         LEFT JOIN LATERAL (
                             SELECT r.id FROM reservation r
@@ -54,7 +58,12 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
                               AND r.checked_in_at IS NOT NULL AND r.checked_in_at <= p.created_at
                             ORDER BY r.checked_in_at DESC, r.id DESC
                             LIMIT 1) prev ON true
-                        LEFT JOIN tidy_check t ON t.reservation_id = prev.id AND t.phase = 'FIRST'
+                        LEFT JOIN LATERAL (
+                            -- 다시 확인(RECHECK)이 있으면 그것이 더 늦은 사실이라 먼저 본다
+                            SELECT result, items, confidences FROM tidy_check
+                            WHERE reservation_id = prev.id
+                            ORDER BY (phase = 'RECHECK') DESC
+                            LIMIT 1) t ON true
                         WHERE p.id = :id AND p.verdict = 'OPEN' AND p.category <> 'NOISE'
                         """)
                 .param("id", reportId)
@@ -68,7 +77,8 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
                     }
                     return new ReportJudge.Case(rs.getLong("id"), rs.getString("category"), rs.getString("content"),
                             rs.getBoolean("check_in"), rs.getBoolean("prev_check_out"), rs.getString("result"),
-                            Arrays.asList(strings(rs.getArray("items"))), confidences);
+                            Arrays.asList(strings(rs.getArray("items"))), confidences,
+                            rs.getBoolean("prev_warned"), rs.getBoolean("prev_retrieved"));
                 })
                 .optional();
     }

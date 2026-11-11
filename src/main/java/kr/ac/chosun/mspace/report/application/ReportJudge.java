@@ -16,13 +16,16 @@ public interface ReportJudge {
      * @param content               신고 메모 (없으면 null)
      * @param reporterCheckInPhoto  신고자 예약에 입실 사진이 있나
      * @param previousCheckOutPhoto 앞 팀 예약에 퇴실 사진이 있나
-     * @param previousTidyResult    앞 팀 퇴실 직후 방 카메라 첫 확인(FIRST) 결과 CLEAN · LEFT_ITEMS, 없으면 null
+     * @param previousTidyResult    앞 팀 방 카메라 확인 결과 CLEAN · LEFT_ITEMS, 없으면 null.
+     *                              3시간 뒤 다시 확인(RECHECK)이 있으면 그것, 없으면 퇴실 직후 첫 확인(FIRST)
      * @param previousItems         그때 본 물건 이름
      * @param previousConfidences   previousItems와 같은 순서의 확신도
+     * @param previousWarned        앞 팀이 같은 퇴실로 이미 카메라 경고를 받았나 (같은 물건으로 두 번 경고하지 않게)
+     * @param previousRetrieved     앞 팀이 "찾으러 갈게요" QR로 문을 열었나 (11/11 수연·지영: 열었으면 경고 안 함)
      */
     record Case(long reportId, String category, String content, boolean reporterCheckInPhoto,
                 boolean previousCheckOutPhoto, String previousTidyResult, List<String> previousItems,
-                List<Double> previousConfidences) {
+                List<Double> previousConfidences, boolean previousWarned, boolean previousRetrieved) {
     }
 
     /**
