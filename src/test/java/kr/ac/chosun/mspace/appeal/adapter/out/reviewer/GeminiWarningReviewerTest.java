@@ -176,6 +176,25 @@ class GeminiWarningReviewerTest {
     }
 
     @Test
+    @DisplayName("다시 시도 대기 중 인터럽트되면 규칙 판단기로 정하지 않고 실패로 남긴다")
+    void interruptedDoesNotFallBack() {
+        // given: 503이 이어지고, 대기 전에 인터럽트
+        busy.set(3);
+        reply = "{}";
+        GeminiWarningReviewer r = reviewer();
+        r.retryWaitMillis = 1000;
+        Thread.currentThread().interrupt();
+
+        // when, then
+        try {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> r.review(CAMERA))
+                    .isInstanceOf(IllegalStateException.class);
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    @Test
     @DisplayName("결정 값이 틀리거나 확신도가 0~1 밖이면 규칙 판단기로 본다")
     void badShapeFallsBackToRules() {
         // given

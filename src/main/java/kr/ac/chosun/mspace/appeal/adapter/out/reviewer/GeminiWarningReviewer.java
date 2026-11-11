@@ -70,6 +70,10 @@ class GeminiWarningReviewer implements WarningReviewer {
             }
             log.warn("Gemini 판단 답 모양이 틀림, 규칙 판단기로 봄: appeal={}", c.appealId());
         } catch (RuntimeException e) {
+            if (Thread.currentThread().isInterrupted()) {
+                // 서버 종료 중 다시 시도 대기가 끊겼다. 규칙 판단기로 대신 정해 저장하지 않고 대기로 남긴다 (CodeRabbit #120)
+                throw new IllegalStateException("Gemini 판단 중 인터럽트", e);
+            }
             // 사유·신고 글이 들어 있을 수 있어 메시지는 찍지 않는다 (CLAUDE.md 4장 로그 규칙)
             log.warn("Gemini 판단 실패, 규칙 판단기로 봄: appeal={} error={}", c.appealId(), e.getClass().getSimpleName());
         }
