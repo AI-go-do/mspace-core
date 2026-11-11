@@ -13,6 +13,7 @@ import java.util.Map;
 import kr.ac.chosun.mspace.TestcontainersConfiguration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -20,6 +21,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.assertj.MvcTestResult;
 import org.springframework.transaction.support.TransactionOperations;
@@ -29,7 +31,8 @@ import org.springframework.transaction.support.TransactionOperations;
  * 퇴실 직후(FIRST)는 알림만, 3시간 뒤 다시 봐도(RECHECK) 확신도 0.8 이상 물건이 남으면 core가 바로 대표자 경고.
  * 1번 방: 회원 1(대표자)·2·3이 2~1시간 전에 쓰고 퇴실(ended), 지금은 회원 4가 사용 중(now). 회원 5는 관리자.
  */
-@SpringBootTest(properties = {"mspace.auth.dev-header=true", "mspace.access.device-token=test-device-token"})
+@SpringBootTest(properties = {"mspace.auth.dev-header=true", "mspace.access.device-token=test-device-token",
+        "mspace.tidy.camera-warn=true"})
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
 class TidyCheckApiTest {
@@ -286,6 +289,73 @@ class TidyCheckApiTest {
         assertThat(reports()).isEmpty();
         assertThat(count("user_warning")).isZero();
         assertThat(inbox("WARNING")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("찾으러 갈게요 QR로 문을 열었으면 다시 봤을 때 물건이 남아 보여도 경고하지 않는다 (11/11 지영·수연)")
+    void retrieveQrUsedNoWarning() {
+        // given: 대표자가 QR을 받아 문을 한 번 열었다
+        assertThat(post(1, first("e5q", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        recheckDue();
+        jdbc.sql("""
+                INSERT INTO retrieve_pass (reservation_id, room_id, issued_by, code, issued_at, expires_at, first_used_at)
+                VALUES (:rid, 1, 1, '123456', now() - interval '3 hours', now() - interval '170 minutes',
+                        now() - interval '175 minutes')
+                """).param("rid", ended).update();
+
+        // when
+        MvcTestResult r = post(1, check("e5q-r", ended, "RECHECK", "LEFT_ITEMS", UMBRELLA));
+
+        // then
+        assertThat(r).hasStatusOk().bodyJson().extractingPath("$.reportId").isNull();
+        assertThat(reports()).isEmpty();
+        assertThat(count("user_warning")).isZero();
+        assertThat(inbox("WARNING")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("QR을 받기만 하고 문을 열지 않았으면 그대로 경고한다")
+    void retrieveQrIssuedButUnusedStillWarns() {
+        assertThat(post(1, first("e5u", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        recheckDue();
+        jdbc.sql("""
+                INSERT INTO retrieve_pass (reservation_id, room_id, issued_by, code, issued_at, expires_at)
+                VALUES (:rid, 1, 1, '123456', now() - interval '3 hours', now() - interval '170 minutes')
+                """).param("rid", ended).update();
+
+        assertThat(post(1, check("e5u-r", ended, "RECHECK", "LEFT_ITEMS", UMBRELLA))).hasStatusOk()
+                .bodyJson().extractingPath("$.reportId").isNotNull();
+        assertThat(count("user_warning")).isEqualTo(1);
+    }
+
+    /** 11/11 지영: 카메라 정확도 51%라 카메라만으로 경고하지 않고 알림만 (기본값 camera-warn=false) */
+    @Nested
+    @TestPropertySource(properties = "mspace.tidy.camera-warn=false")
+    class CameraWarnOff {
+
+        @Test
+        @DisplayName("카메라 경고가 꺼져 있으면 다시 봐도 물건이 남았을 때 신고·경고 없이 대표자·참여자에게 알림만 보낸다")
+        void recheckNotifiesOnly() {
+            // given
+            assertThat(post(1, first("e7", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+            recheckDue();
+
+            // when
+            MvcTestResult r = post(1, check("e7-r", ended, "RECHECK", "LEFT_ITEMS", UMBRELLA));
+
+            // then
+            assertThat(r).hasStatusOk().bodyJson().extractingPath("$.reportId").isNull();
+            assertThat(reports()).isEmpty();
+            assertThat(count("user_warning")).isZero();
+            assertThat(inbox("WARNING")).isEmpty();
+            List<Map<String, Object>> still = jdbc.sql("""
+                    SELECT user_id, body FROM notification WHERE kind = 'LEFT_ITEM' AND title = '물건이 아직 남아 있어요'
+                    ORDER BY user_id""").query().listOfRows();
+            assertThat(still).extracting(m -> ((Number) m.get("user_id")).longValue()).containsExactly(1L, 2L, 3L);
+            assertThat((String) still.getFirst().get("body")).contains("umbrella").contains("경고는 없어요");
+            assertThat(jdbc.sql("SELECT count(*) FROM tidy_check WHERE phase = 'RECHECK' AND report_id IS NULL")
+                    .query(Long.class).single()).isEqualTo(1);
+        }
     }
 
     @Test

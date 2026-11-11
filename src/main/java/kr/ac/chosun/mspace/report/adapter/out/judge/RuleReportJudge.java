@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
  *   <li>어질러짐: 앞 팀 퇴실 직후 방 카메라(FIRST)가 물건을 경고 기준(mspace.tidy.warn-min-confidence, 0.8) 이상으로
  *       봤으면 사실. 그 확신도를 그대로 낸다. 아니면 확인 불가</li>
  *   <li>비품 고장·창문 열림: 자동으로 볼 근거(센서·사진 판독)가 없어 확인 불가</li>
+ *   <li>카메라 경고가 꺼져 있으면(mspace.tidy.camera-warn, 11/11 지영: 정확도 51%) 카메라만으로는 사실로 정하지 않고 확인 불가</li>
  *   <li>허위는 내지 않는다: 카메라가 깨끗하다고 봐도 못 본 것일 수 있어, 그것만으로 신고자를 벌하지 않는다</li>
  * </ul>
  * 신고 메모는 읽지 않는다 (규칙으로 판단할 수 있는 근거만 본다).
@@ -34,7 +35,7 @@ class RuleReportJudge implements ReportJudge {
         if ("MESSY".equals(c.category()) && c.previousTidyResult() != null) {
             double best = c.previousConfidences().stream().filter(Objects::nonNull)
                     .mapToDouble(Double::doubleValue).max().orElse(-1);
-            if ("LEFT_ITEMS".equals(c.previousTidyResult()) && best >= tidy.warnMinConfidence()) {
+            if (tidy.cameraWarn() && "LEFT_ITEMS".equals(c.previousTidyResult()) && best >= tidy.warnMinConfidence()) {
                 return new Judgement(ReportVerdict.CONFIRMED, best,
                         List.of("앞 팀이 퇴실한 직후 방 카메라가 남은 물건을 봤어요(가장 높은 확신도 %.2f).".formatted(best)),
                         List.of("TIDY_CHECK"), NAME, VERSION);

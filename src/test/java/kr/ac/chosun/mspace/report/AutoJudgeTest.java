@@ -6,18 +6,21 @@ import kr.ac.chosun.mspace.TestcontainersConfiguration;
 import kr.ac.chosun.mspace.report.application.AutoJudgeUseCase;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.support.TransactionOperations;
 
 /**
  * 신고 자동 판정 (FR-RPT-103 10차, 규칙 판정기 report-rules-v1).
  * 확신도 기준을 0.9로 올려 "판정기는 사실, 확신도 낮아 확인 불가"도 같이 본다.
  */
-@SpringBootTest(properties = {"mspace.auth.dev-header=true", "mspace.report.judge.min-confidence=0.9"})
+@SpringBootTest(properties = {"mspace.auth.dev-header=true", "mspace.report.judge.min-confidence=0.9",
+        "mspace.tidy.camera-warn=true"})
 @Import(TestcontainersConfiguration.class)
 class AutoJudgeTest {
 
@@ -184,5 +187,26 @@ class AutoJudgeTest {
         assertThat(verdict(fresh)).isEqualTo("OPEN");
         assertThat(verdict(noise)).isEqualTo("OPEN");
         assertThat(jdbc.sql("SELECT count(*) FROM report_judgement").query(Integer.class).single()).isZero();
+    }
+
+    /** 11/11 지영: 카메라 정확도 51%라 카메라만으로는 사실로 정하지 않는다 (기본값 camera-warn=false) */
+    @Nested
+    @TestPropertySource(properties = "mspace.tidy.camera-warn=false")
+    class CameraWarnOff {
+
+        @Test
+        @DisplayName("카메라 경고가 꺼져 있으면 앞 팀 카메라가 0.95로 봤어도 어질러짐 신고는 확인 불가, 경고 없음")
+        void messyUnverified() {
+            // given
+            cameraSaw("LEFT_ITEMS", "{cup}", "{0.95}");
+            long id = report("MESSY", "10 minutes");
+
+            // when
+            judge.judgeOpen();
+
+            // then
+            assertThat(verdict(id)).isEqualTo("UNVERIFIED");
+            assertThat(warnings(1)).isZero();
+        }
     }
 }

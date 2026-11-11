@@ -19,6 +19,9 @@ public interface TidyCheckPort {
 
     Optional<LastEnded> lastEnded(int roomId);
 
+    /** "찾으러 갈게요" QR로 문을 한 번이라도 열었는지 (retrieve_pass.first_used_at) */
+    boolean retrieveUsed(long reservationId);
+
     /** 이 방에서 그 예약 말고 since 뒤에 입실한 예약이 있는지 (지금 사용 중이든 이미 나갔든) */
     boolean enteredSince(int roomId, long reservationId, Instant since);
 

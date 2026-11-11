@@ -24,7 +24,7 @@ import tools.jackson.databind.json.JsonMapper;
 /** Gemini 판단기: 보내는 모양, 답 해석, 실패하면 규칙 판단기 (가짜 Gemini = JDK HttpServer, 진짜 키 없이) */
 class GeminiWarningReviewerTest {
 
-    static final TidyPolicy TIDY = new TidyPolicy(180, 0.8, 10);
+    static final TidyPolicy TIDY = new TidyPolicy(180, 0.8, 10, true);
     static final String PATH = "/v1beta/models/gemini-3.5-flash-lite:generateContent";
     static final Case CAMERA = new Case(7, "VIOLATION", "CAMERA", "MESSY", "카메라 자동 확인 010-1234-5678",
             "퇴실할 때 우산은 챙겼어요. 다시 봐 주세요.", List.of("TIDY_CHECK"), true, false,
