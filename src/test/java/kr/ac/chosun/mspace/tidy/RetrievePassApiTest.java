@@ -337,12 +337,17 @@ class RetrievePassApiTest {
                 .single()).isTrue();
     }
 
-    /** QR 사용이 QR을 찾은 뒤 예약 잠금에서 기다리고 있는지 DB에서 확인한다 (시간에 기대지 않게) */
+    /**
+     * QR 사용이 QR을 찾은 뒤 예약 잠금에서 기다리고 있는지 DB에서 확인한다 (시간에 기대지 않게).
+     * 잠금을 잡은 쪽은 기다리지 않으므로, 이 SQL로 Lock을 기다리는 세션은 QR 사용(lockReservation)뿐이다. 못 찾으면 실패한다
+     */
     void waitUntilBlockedOnLock() throws InterruptedException {
         for (int i = 0; i < 200; i++) {
             boolean waiting = jdbc.sql("""
                             SELECT EXISTS (SELECT 1 FROM pg_stat_activity
-                                           WHERE wait_event_type = 'Lock' AND query LIKE '%FOR UPDATE%')
+                                           WHERE datname = current_database() AND pid <> pg_backend_pid()
+                                             AND wait_event_type = 'Lock'
+                                             AND query = 'SELECT id FROM reservation WHERE id = $1 FOR UPDATE')
                             """)
                     .query((rs, n) -> rs.getBoolean(1)).single();
             if (waiting) {
