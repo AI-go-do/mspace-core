@@ -79,10 +79,14 @@ class AutoJudgeService implements AutoJudgeUseCase {
                 || !(j.confidence() >= 0 && j.confidence() <= 1)) {
             throw new IllegalStateException("판정기 결과가 올바르지 않다 (판정 없음 또는 확신도 0~1 밖)");
         }
-        ReportVerdict applied = j.verdict() != ReportVerdict.UNVERIFIED && j.confidence() < policy.minConfidence()
+        ReportVerdict decided = j.verdict() != ReportVerdict.UNVERIFIED && j.confidence() < policy.minConfidence()
                 ? ReportVerdict.UNVERIFIED : j.verdict();
+        Long previous = c.get().previousReservationId();
         Optional<List<Notification>> stored = Objects.requireNonNull(tx.execute(st -> {
             Instant now = clock.instant();
+            // 판정기는 트랜잭션 밖에서 읽었다. 그 사이 정리 다시 확인이 같은 예약에 경고했거나 QR로 찾아갔으면 확인 불가로
+            ReportVerdict applied = decided == ReportVerdict.CONFIRMED && "MESSY".equals(c.get().category())
+                    && previous != null && port.lockPreviousSettled(previous) ? ReportVerdict.UNVERIFIED : decided;
             Optional<List<NewNotification>> out = reports.judgeBySystem(id, applied, now);
             out.ifPresent(n -> port.record(id, j, applied, now));
             return out.map(n -> inbox.store(n, now));

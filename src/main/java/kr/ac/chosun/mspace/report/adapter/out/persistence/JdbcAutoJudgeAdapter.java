@@ -51,7 +51,7 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
     public Optional<ReportJudge.Case> loadCase(long reportId) {
         // 앞 팀 = 경고 받을 예약과 같은 규칙(FR-RPT-104): 신고 전에 그 방에 입실한 예약 중 가장 늦은 것, 신고자 예약 제외
         return jdbc.sql("""
-                        SELECT p.id, p.category, p.content,
+                        SELECT p.id, p.category, p.content, prev.id AS prev_id,
                                EXISTS (SELECT 1 FROM reservation_photo f
                                        WHERE f.reservation_id = p.reporter_reservation_id AND f.kind = 'CHECK_IN') AS check_in,
                                EXISTS (SELECT 1 FROM reservation_photo f
@@ -92,9 +92,22 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
                     return new ReportJudge.Case(rs.getLong("id"), rs.getString("category"), rs.getString("content"),
                             rs.getBoolean("check_in"), rs.getBoolean("prev_check_out"), rs.getString("result"),
                             Arrays.asList(strings(rs.getArray("items"))), confidences,
-                            rs.getBoolean("prev_warned"), rs.getBoolean("prev_retrieved"));
+                            rs.getBoolean("prev_warned"), rs.getBoolean("prev_retrieved"),
+                            rs.getObject("prev_id", Long.class));
                 })
                 .optional();
+    }
+
+    @Override
+    public boolean lockPreviousSettled(long previousReservationId) {
+        jdbc.sql("SELECT id FROM reservation WHERE id = :id FOR UPDATE").param("id", previousReservationId)
+                .query(Long.class).optional();
+        return jdbc.sql("""
+                        SELECT EXISTS (SELECT 1 FROM retrieve_pass WHERE reservation_id = :id AND first_used_at IS NOT NULL)
+                            OR EXISTS (SELECT 1 FROM user_warning w JOIN report r ON r.id = w.report_id
+                                       WHERE w.reservation_id = :id AND r.category = 'MESSY')
+                        """)
+                .param("id", previousReservationId).query(Boolean.class).single();
     }
 
     @Override

@@ -10,7 +10,11 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
+import kr.ac.chosun.mspace.report.application.ReportJudge;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.support.TransactionOperations;
@@ -286,6 +290,59 @@ class AutoJudgeTest {
         // then
         assertThat(verdict(id)).isEqualTo("UNVERIFIED");
         assertThat(warnings(1)).isZero();
+    }
+
+    /**
+     * 판정기가 사실을 읽은 뒤, 적용 전에 정리 다시 확인(RECHECK)이 같은 예약에 경고한 경우 (CodeRabbit #118).
+     * 판정기 호출 중에 경고를 넣어 그 순서를 만든다
+     */
+    @Nested
+    @Import(RecheckWarnsMeanwhile.Config.class)
+    class RecheckWarnsMeanwhile {
+
+        static final java.util.concurrent.atomic.AtomicReference<Runnable> MEANWHILE = new java.util.concurrent.atomic.AtomicReference<>();
+
+        @TestConfiguration
+        static class Config {
+            @Bean
+            @Primary
+            ReportJudge meanwhileJudge(kr.ac.chosun.mspace.common.config.TidyPolicy tidy) {
+                ReportJudge rules = new kr.ac.chosun.mspace.report.adapter.out.judge.RuleReportJudgeAccess(tidy).judge();
+                return c -> {
+                    ReportJudge.Judgement j = rules.judge(c);
+                    Runnable r = MEANWHILE.getAndSet(null);
+                    if (r != null) {
+                        r.run();
+                    }
+                    return j;
+                };
+            }
+        }
+
+        @Test
+        @DisplayName("판정기가 읽은 뒤 다시 확인이 먼저 경고했으면 적용할 때 잠그고 다시 봐서 확인 불가, 경고는 1번")
+        void secondWarningBlockedUnderLock() {
+            // given
+            cameraSaw("LEFT_ITEMS", "{cup}", "{0.95}");
+            long id = report("MESSY", "10 minutes");
+            MEANWHILE.set(() -> {
+                long camera = jdbc.sql("""
+                        INSERT INTO report (room_id, source, target_reservation_id, category, content, verdict, judged_at)
+                        VALUES (1, 'CAMERA', :prev, 'MESSY', 'cup(0.95)', 'CONFIRMED', now()) RETURNING id
+                        """).param("prev", previous).query(Long.class).single();
+                jdbc.sql("INSERT INTO user_warning (user_id, report_id, reservation_id, reason) VALUES (1, :r, :prev, 'VIOLATION')")
+                        .param("r", camera).param("prev", previous).update();
+            });
+
+            // when
+            judge.judgeOpen();
+
+            // then
+            assertThat(verdict(id)).isEqualTo("UNVERIFIED");
+            assertThat(warnings(1)).isEqualTo(1);
+            assertThat(jdbc.sql("SELECT verdict || '/' || applied FROM report_judgement").query(String.class).single())
+                    .isEqualTo("CONFIRMED/UNVERIFIED");
+        }
     }
 
     /** 11/11 지영: 카메라 정확도 51%라 카메라만으로는 사실로 정하지 않는다 (기본값 camera-warn=false) */
