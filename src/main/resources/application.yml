@@ -163,8 +163,8 @@ mspace:
   tidy:                      # 두고 간 물건 (FR-DEV-105, 11/10 10차 회의)
     recheck-after-minutes: 180   # 퇴실 뒤 3시간에 방 카메라가 다시 본다. 그 전에 다음 예약이 입실하면 다시 보지 않는다
     warn-min-confidence: 0.8     # 다시 볼 때 확신도 0.8 이상인 물건이 남아 있으면 대표자 경고 (모델 비교 뒤 조정)
-    retrieve-pass-minutes: 10
-    camera-warn: false           # 방 카메라 결과만으로 경고·사실 판정할지. 11/11 지영: 정확도 51%라 끄고 알림만 (오르면 true)    # "찾으러 갈게요"를 누르면 주는 입실 QR이 10분 동안 열림 (11/10 지영)
+    retrieve-pass-minutes: 10    # "찾으러 갈게요"를 누르면 주는 입실 QR이 10분 동안 열림 (11/10 지영). 어질러짐 자동 판정은 퇴실 + 3시간 + 이 시간 뒤
+    camera-warn: false           # 방 카메라 결과만으로 경고·사실 판정할지. 11/11 지영: 정확도 51%라 끄고 알림만 (오르면 true)
   photo:                     # 사진 체크인·아웃 (FR-RPT-102, 11/5 지영). 저장은 core DB
     max-bytes: 2097152       # 1장 최대 2MB (JPEG·PNG만)
     checkout-grace-minutes: 30   # 퇴실 사진은 퇴실 뒤 30분 안까지

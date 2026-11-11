@@ -49,7 +49,8 @@ class AutoJudgeService implements AutoJudgeUseCase {
         this.inbox = inbox;
         this.tx = tx;
         this.clock = clock;
-        this.retrieveWindow = Duration.ofMinutes(tidy.recheckAfterMinutes());
+        // QR은 퇴실 뒤 3시간 안에 받을 수 있고 받은 뒤 10분 동안 열린다. 마지막 QR이 닫힌 뒤에 판정해야 "가져가면 경고 없음"이 지켜진다
+        this.retrieveWindow = Duration.ofMinutes(tidy.recheckAfterMinutes() + (long) tidy.retrievePassMinutes());
     }
 
     @Override

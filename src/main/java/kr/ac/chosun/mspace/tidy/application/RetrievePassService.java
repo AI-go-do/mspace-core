@@ -73,6 +73,7 @@ class RetrievePassService implements RetrievePassUseCase {
     }
 
     @Override
+    @Transactional
     public Optional<Long> open(int roomId, String code) {
         if (code == null || !code.matches("[0-9]{6}")) {
             return Optional.empty();

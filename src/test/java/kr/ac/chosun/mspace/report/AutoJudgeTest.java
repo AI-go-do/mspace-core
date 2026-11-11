@@ -276,6 +276,22 @@ class AutoJudgeTest {
     }
 
     @Test
+    @DisplayName("퇴실 3시간 뒤라도 마지막 QR(10분)이 닫히기 전에는 어질러짐 신고를 판정하지 않는다 (CodeRabbit)")
+    void messyWaitsForLastPass() {
+        // given: 앞 팀이 3시간 5분 전에 퇴실. 2시간 59분에 받은 QR이면 아직 열려 있을 수 있다
+        jdbc.sql("UPDATE reservation SET checked_out_at = now() - interval '185 minutes' WHERE id = :id")
+                .param("id", previous).update();
+        cameraSaw("LEFT_ITEMS", "{cup}", "{0.95}");
+        long messy = report("MESSY", "10 minutes");
+
+        // when
+        judge.judgeOpen();
+
+        // then
+        assertThat(verdict(messy)).isEqualTo("OPEN");
+    }
+
+    @Test
     @DisplayName("신고자보다 늦게 입실한 예약의 카메라 결과로는 사실로 정하지 않는다 (CodeRabbit)")
     void laterReservationNotUsed() {
         // given: 앞 팀으로 잡히는 예약이 신고자보다 늦게 입실함(다음 예약 조기 입실)
