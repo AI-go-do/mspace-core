@@ -24,11 +24,29 @@ public interface ReportJudge {
      * @param previousRetrieved     앞 팀이 "찾으러 갈게요" QR로 문을 열었나 (11/11 수연·지영: 열었으면 경고 안 함)
      * @param previousReservationId 앞 팀 예약 번호, 없으면 null (판정기에는 쓰지 않고 적용 때 다시 확인용)
      * @param previousRechecked     previousTidyResult가 다시 확인(RECHECK) 결과인가 (적용 때 다시 확인용)
+     * @param roomAir               창문 열림 신고일 때만: 앞 팀 퇴실 앞뒤 방 CO2·온도. 다른 종류이거나 앞 팀이 없으면 null
      */
     record Case(long reportId, String category, String content, boolean reporterCheckInPhoto,
                 boolean previousCheckOutPhoto, String previousTidyResult, List<String> previousItems,
                 List<Double> previousConfidences, boolean previousWarned, boolean previousRetrieved,
-                Long previousReservationId, boolean previousRechecked) {
+                Long previousReservationId, boolean previousRechecked, RoomAir roomAir) {
+    }
+
+    /**
+     * 방 센서(SCD40) 값을 5분씩 묶은 평균. 시각은 앞 팀 퇴실을 0분으로 센다 (퇴실 15분 전부터 신고 때까지, 최대 3시간)
+     *
+     * @param reportMinute 신고한 때 (퇴실 뒤 몇 분)
+     * @param points       5분 묶음, 시간 순
+     */
+    record RoomAir(int reportMinute, List<AirPoint> points) {
+    }
+
+    /**
+     * @param minute       묶음 시작 (퇴실 뒤 몇 분, 퇴실 전이면 음수)
+     * @param ppm          CO2 평균
+     * @param temperatureC 온도 평균, 센서가 안 보냈으면 null
+     */
+    record AirPoint(int minute, int ppm, Double temperatureC) {
     }
 
     /**
