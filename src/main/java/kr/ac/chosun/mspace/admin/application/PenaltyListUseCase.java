@@ -18,8 +18,12 @@ public interface PenaltyListUseCase {
     record Penalties(int days, List<Warning> warnings, List<Suspension> suspensions) {
     }
 
-    /** @param reason VIOLATION(사실 판정, 이용한 방) 또는 FALSE_REPORT(허위 신고) */
-    record Warning(long id, Member member, String reason, long reportId, Long reservationId, Instant createdAt) {
+    /**
+     * @param reason      VIOLATION(사실 판정, 이용한 방) 또는 FALSE_REPORT(허위 신고)
+     * @param withdrawnAt 철회된 때(AI 판단기든 관리자든). 살아 있는 경고면 null
+     */
+    record Warning(long id, Member member, String reason, long reportId, Long reservationId, Instant createdAt,
+                   Instant withdrawnAt) {
     }
 
     /**

@@ -79,7 +79,7 @@ class GeminiReportJudgeTest {
     }
 
     static String verdict(String v, double conf) {
-        return answer("{\"verdict\":\"%s\",\"confidence\":%s,\"reasons\":[\"이유예요.\"],\"evidenceUsed\":[\"SENSOR\",\"REPORT\",\"ETC\"]}"
+        return answer("{\"verdict\":\"%s\",\"confidence\":%s,\"reasons\":[\"이유예요.\"],\"evidenceUsed\":[\"REPORT\",\"TIDY_CHECK\",\"ETC\"]}"
                 .formatted(v, conf));
     }
 
@@ -108,7 +108,7 @@ class GeminiReportJudgeTest {
         assertThat(j.confidence()).isEqualTo(0.9);
         assertThat(j.judge()).isEqualTo("gemini:gemini-3.5-flash-lite");
         assertThat(j.promptVersion()).isEqualTo(GeminiReportJudge.VERSION);
-        // 보내지 않은 신고 글(REPORT)은 근거로 남기지 않는다
+        // 보내지 않은 신고 글·카메라는 근거로 남기지 않는다 (Gemini가 REPORT·TIDY_CHECK라고 해도 SENSOR만)
         assertThat(j.evidenceUsed()).containsExactly("SENSOR");
     }
 

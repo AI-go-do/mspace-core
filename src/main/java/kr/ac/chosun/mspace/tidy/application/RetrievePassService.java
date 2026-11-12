@@ -53,9 +53,14 @@ class RetrievePassService implements RetrievePassUseCase {
         if (!now.isBefore(r.checkedOutAt().plus(within))) {
             throw new BusinessException(ErrorCode.RETRIEVE_TOO_LATE);
         }
+        // 살아 있는 QR은 문을 열었어도 그대로 준다 (10분 안에는 여러 번 열 수 있음, 결정 30).
+        // 닫힌 뒤 새 QR은 한 번도 문을 안 열었을 때만 (11/12 지영 "문 한 번 열면 못 받게")
         Optional<Pass> same = port.alive(reservationId, now);
         if (same.isPresent()) {
             return same.get();
+        }
+        if (port.used(reservationId)) {
+            throw new BusinessException(ErrorCode.RETRIEVE_ALREADY_USED);
         }
         Pass pass = new Pass(reservationId, r.roomId(), freeCode(r.roomId(), now), now.plus(alive));
         port.insert(pass, userId, now);

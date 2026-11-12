@@ -56,6 +56,7 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
         // 앞 팀 = 경고 받을 예약과 같은 규칙(FR-RPT-104): 신고 전에 그 방에 입실한 예약 중 가장 늦은 것, 신고자 예약 제외
         return jdbc.sql("""
                         SELECT p.id, p.category, p.content, p.room_id, p.created_at, prev.id AS prev_id, prev.checked_out_at AS prev_out,
+                               COALESCE(prev.checked_in_at <= mine.checked_in_at, false) AS prev_first,
                                EXISTS (SELECT 1 FROM reservation_photo f
                                        WHERE f.reservation_id = p.reporter_reservation_id AND f.kind = 'CHECK_IN') AS check_in,
                                EXISTS (SELECT 1 FROM reservation_photo f
@@ -67,7 +68,7 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
                                        WHERE q.reservation_id = prev.id AND q.first_used_at IS NOT NULL) AS prev_retrieved
                         FROM report p
                         LEFT JOIN LATERAL (
-                            SELECT r.id, r.checked_out_at FROM reservation r
+                            SELECT r.id, r.checked_in_at, r.checked_out_at FROM reservation r
                             WHERE r.room_id = p.room_id
                               AND r.id IS DISTINCT FROM p.reporter_reservation_id
                               AND r.checked_in_at IS NOT NULL AND r.checked_in_at <= p.created_at
@@ -86,8 +87,11 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
                         """)
                 .param("id", reportId)
                 .query((rs, n) -> {
+                    // 앞 팀이 신고자보다 늦게 입실했으면(다음 예약 조기 입실) 센서 구간에 신고자가 있던 때가 섞여
+                    // 앞 팀 탓인지 알 수 없다 → 카메라 결과와 같이 센서 값도 넘기지 않는다 (CodeRabbit #121)
+                    Timestamp prevOut = rs.getBoolean("prev_first") ? rs.getTimestamp("prev_out") : null;
                     RoomRow room = new RoomRow(rs.getInt("room_id"), rs.getTimestamp("created_at").toInstant(),
-                            rs.getTimestamp("prev_out") == null ? null : rs.getTimestamp("prev_out").toInstant());
+                            prevOut == null ? null : prevOut.toInstant());
                     Array conf = rs.getArray("confidences");
                     List<Double> confidences = new ArrayList<>();
                     if (conf != null) {
@@ -117,7 +121,7 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
 
     /**
      * 창문 열림 판정용 방 CO2·온도 (FR-RPT-103, 11/12 지영 "창문 열림이랑 어질러짐"). 앞 팀 퇴실 15분 전부터 신고 때까지
-     * 5분씩 평균, 최대 3시간. 앞 팀이 없거나 신고 때 아직 퇴실 전이면 null
+     * 5분씩 평균, 최대 3시간. 앞 팀이 없거나, 신고자보다 늦게 입실했거나, 신고 때 아직 퇴실 전이면 null
      */
     private ReportJudge.RoomAir roomAir(RoomRow room) {
         if (room.previousOut() == null || room.previousOut().isAfter(room.reportedAt())) {

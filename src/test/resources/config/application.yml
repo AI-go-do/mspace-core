@@ -20,3 +20,7 @@ mspace:
   appeal:
     gemini:
       api-key: ""
+  admin:
+    daily-report:
+      gemini:
+        api-key: ""

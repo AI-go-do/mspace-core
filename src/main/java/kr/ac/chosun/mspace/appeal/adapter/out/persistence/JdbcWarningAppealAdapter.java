@@ -96,10 +96,16 @@ class JdbcWarningAppealAdapter implements WarningAppealPort {
     }
 
     @Override
-    public Optional<Instant> lockMine(long userId, long warningId) {
-        return jdbc.sql("SELECT created_at FROM user_warning WHERE id = :id AND user_id = :user FOR UPDATE")
+    public Optional<Mine> lockMine(long userId, long warningId) {
+        return jdbc.sql("SELECT created_at, withdrawn_at IS NOT NULL FROM user_warning WHERE id = :id AND user_id = :user FOR UPDATE")
                 .param("id", warningId).param("user", userId)
-                .query((rs, n) -> rs.getTimestamp(1).toInstant()).optional();
+                .query((rs, n) -> new Mine(rs.getTimestamp(1).toInstant(), rs.getBoolean(2))).optional();
+    }
+
+    @Override
+    public boolean isWithdrawn(long warningId) {
+        return jdbc.sql("SELECT withdrawn_at IS NOT NULL FROM user_warning WHERE id = :id").param("id", warningId)
+                .query(Boolean.class).optional().orElse(false);
     }
 
     @Override
