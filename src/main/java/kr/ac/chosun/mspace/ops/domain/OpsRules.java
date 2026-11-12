@@ -83,7 +83,11 @@ public final class OpsRules {
         if (p.atEnd() ? !occupiedAtEnd : p.continuous() && occupiedSince.isAfter(endAt)) {
             return false;
         }
-        return nextStart == null || !nextStart.isBefore(endAt.plus(p.nextGrace()));
+        if (nextStart == null || p.nextGrace().isZero()) {
+            return true;
+        }
+        // 즉시 시작 예약은 30분 칸이 아니라 누른 시각에 시작해서 끝 + nextGrace와 같을 수 있다. 같으면 다음 팀으로 본다
+        return nextStart.isAfter(endAt.plus(p.nextGrace()));
     }
 
     /** 예약 없는 사용: after 넘게 "있음"인데 [시작 - earlyGrace, 끝 + lateGrace)에 드는 예약이 없다 */
