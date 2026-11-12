@@ -102,6 +102,7 @@ public enum ErrorCode {
     // 찾으러 갈게요 10분 QR (11/10 지영)
     RETRIEVE_NOT_NEEDED(HttpStatus.CONFLICT, "방 카메라가 두고 간 물건을 찾지 않은 예약입니다"),
     RETRIEVE_TOO_LATE(HttpStatus.CONFLICT, "찾으러 올 수 있는 시간이 지났습니다"),
+    RETRIEVE_ALREADY_USED(HttpStatus.CONFLICT, "이미 찾으러 와서 문을 열었어요. 새 QR은 받을 수 없어요"),
     // 허위 신고 경고가 쌓이면 (FR-RPT-103 벌칙, 11/6)
     REPORT_SUSPENDED(HttpStatus.FORBIDDEN, "허위 신고 경고가 쌓여 신고가 정지되었습니다"),
 
