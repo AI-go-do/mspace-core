@@ -341,9 +341,23 @@ class TidyCheckApiTest {
         assertThat(((Number) JsonPath.read(json, "$.recheck.reservationId")).longValue()).isEqualTo(ended);
         assertThat(ZonedDateTime.parse(JsonPath.<String>read(json, "$.recheck.at")).toInstant())
                 .isEqualTo(used.plus(Duration.ofMinutes(10)));
-        // 10분 전에 본 화면은 아직 받지 않는다
-        assertThat(post(1, check("e-rq-r", ended, "RECHECK", "CLEAN", "[]")))
+    }
+
+    @Test
+    @DisplayName("QR로 문을 연 뒤 본 화면이면 10분이 안 됐어도 RECHECK를 받는다(젯슨 시계가 조금 빨라도 409 없음), 연 시각 전 화면은 409")
+    void retrieveRecheckAcceptedAfterEntry() {
+        // given: 2분 전에 QR로 문을 열었다
+        assertThat(post(1, first("e-ra", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        roomFree();
+        retrievedMinutesAgo(2);
+        String before = OffsetDateTime.now(ZoneOffset.ofHours(9)).minusMinutes(5).withNano(0).toString();
+
+        // when·then: 문 열기 전에 본 화면은 받지 않는다
+        assertThat(post(1, check("e-ra-0", ended, "RECHECK", "CLEAN", "[]").replaceAll(
+                "\"observedAt\":\"[^\"]+\"", "\"observedAt\":\"" + before + "\"")))
                 .hasStatus(409).bodyJson().extractingPath("$.code").isEqualTo("TIDY_RECHECK_TOO_EARLY");
+        // 문 연 뒤 본 화면은 받는다
+        assertThat(post(1, check("e-ra-1", ended, "RECHECK", "CLEAN", "[]"))).hasStatusOk();
     }
 
     @Test
