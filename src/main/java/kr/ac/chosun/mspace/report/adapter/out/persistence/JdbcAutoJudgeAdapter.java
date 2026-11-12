@@ -48,7 +48,7 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
                         """)
                 .param("before", Timestamp.from(createdBefore)).param("outBefore", Timestamp.from(previousOutBefore))
                 .param("limit", limit)
-                .query(Long.class).list();
+                .query((rs, n) -> rs.getLong(1)).list();
     }
 
     @Override
@@ -151,7 +151,7 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
     @Override
     public boolean lockPreviousSettled(long previousReservationId, boolean sawRecheck) {
         jdbc.sql("SELECT id FROM reservation WHERE id = :id FOR UPDATE").param("id", previousReservationId)
-                .query(Long.class).optional();
+                .query((rs, n) -> rs.getLong(1)).optional();
         return jdbc.sql("""
                         SELECT EXISTS (SELECT 1 FROM retrieve_pass WHERE reservation_id = :id AND first_used_at IS NOT NULL)
                             OR EXISTS (SELECT 1 FROM user_warning w JOIN report r ON r.id = w.report_id
@@ -160,7 +160,7 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
                                                            WHERE reservation_id = :id AND phase = 'RECHECK'))
                         """)
                 .param("id", previousReservationId).param("sawRecheck", sawRecheck)
-                .query(Boolean.class).single();
+                .query((rs, n) -> rs.getBoolean(1)).single();
     }
 
     @Override

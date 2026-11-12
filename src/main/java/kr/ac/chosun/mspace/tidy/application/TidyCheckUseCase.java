@@ -60,10 +60,11 @@ public interface TidyCheckUseCase {
      * @param reportId 11/10 전 NEEDS_CLEANING 기록이 자동으로 만든 신고. 그 밖에는 null
      * @param before   입실 전 사진: 방 카메라 ENTRY, 없으면 학생 입실 사진(CHECK_IN), 둘 다 없으면 null
      * @param after    이 단계 사진: 방 카메라(FIRST·RECHECK), FIRST인데 없으면 학생 퇴실 사진(CHECK_OUT), 없으면 null
+     * @param retrievedAt 찾으러 갈게요 QR로 처음 문을 연 시각, 안 열었으면 null (11/12 지영)
      */
     record Listed(long reservationId, int roomId, String roomName, Instant endedAt, Phase phase, Result result,
                   List<Item> items, List<LeftItem> leftItems, Long reportId, Instant observedAt,
-                  PhotoRef before, PhotoRef after) {
+                  PhotoRef before, PhotoRef after, Instant retrievedAt) {
     }
 
     /**

@@ -143,7 +143,7 @@ class GeminiReportJudgeTest {
 
         // then
         assertThat(calls.get()).isZero();
-        assertThat(out).allSatisfy(j -> {
+        assertThat(out).hasSize(3).allSatisfy(j -> {
             assertThat(j.verdict()).isEqualTo(ReportVerdict.UNVERIFIED);
             assertThat(j.judge()).isEqualTo("rules");
         });

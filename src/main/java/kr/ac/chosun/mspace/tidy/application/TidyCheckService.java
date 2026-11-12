@@ -28,7 +28,9 @@ import org.springframework.transaction.support.TransactionOperations;
  *   <li>FIRST가 LEFT_ITEMS면 대표자·참여자에게 LEFT_ITEM 알림. 신고는 만들지 않는다
  *       (11/10: 쓰레기도 "두고 감"으로 합쳐, 바로 신고 + 3시간 뒤 경고로 두 번 걸리지 않게)</li>
  *   <li>RECHECK는 FIRST가 LEFT_ITEMS이고, 퇴실 + mspace.tidy.recheck-after-minutes가 지났고,
- *       그 사이 다음 예약이 입실하지 않았을 때만 받는다</li>
+ *       그 사이 다음 예약이 입실하지 않았을 때만 받는다. 찾으러 갈게요 QR로 문을 열었으면
+ *       그 시각 + mspace.tidy.retrieve-pass-minutes(10분)로 당기고(11/12 지영: 가져갔는지 사진으로 확인),
+ *       RECHECK는 문 연 시각 뒤에 본 화면이면 받는다</li>
  *   <li>RECHECK에 확신도 mspace.tidy.warn-min-confidence 이상인 물건이 남아 있으면 카메라 신고를 만들어
  *       사람 없이 사실로 정하고 그 예약 대표자에게 경고 (11/10 지영 "core가 바로 경고")</li>
  *   <li>단, "찾으러 갈게요" QR로 문을 열었으면 경고 안 함(11/11 지영·수연: 찾아갔는데 카메라가 잘못 볼 수 있음).
@@ -49,6 +51,8 @@ class TidyCheckService implements TidyCheckUseCase {
     private final TransactionOperations tx;
     private final Clock clock;
     private final Duration recheckAfter;
+    /** QR로 문을 연 뒤 다시 볼 때까지. QR 하나가 살아 있는 시간과 같다 */
+    private final Duration recheckAfterRetrieve;
     /** "3시간"처럼 사람이 읽는 기한. 이용 수칙(GET /api/rules)과 같은 문구 */
     private final String recheckAfterText;
     /** 장치 확신도가 float라 기준도 float로 맞춘다. double로 비교하면 0.9f(0.8999…)가 0.9 기준에서 빠진다 */
@@ -63,6 +67,7 @@ class TidyCheckService implements TidyCheckUseCase {
         this.tx = tx;
         this.clock = clock;
         this.recheckAfter = Duration.ofMinutes(policy.recheckAfterMinutes());
+        this.recheckAfterRetrieve = Duration.ofMinutes(policy.retrievePassMinutes());
         this.recheckAfterText = policy.recheckAfterText();
         this.warnMinConfidence = (float) policy.warnMinConfidence();
         this.cameraWarn = policy.cameraWarn();
@@ -83,7 +88,26 @@ class TidyCheckService implements TidyCheckUseCase {
                 || !needsRecheck(last.reservationId())) {
             return null;
         }
-        return new Recheck(last.reservationId(), last.endedAt().plus(recheckAfter));
+        return new Recheck(last.reservationId(), recheckDue(last));
+    }
+
+    /**
+     * RECHECK를 받기 시작하는 시각. QR로 문을 열었으면 연 시각부터(11/12 재웅·지영: 젯슨이 QR 입실 10분 뒤
+     * 자기 시계로 찍어 보내니, core 시계와 몇 초 어긋나도 409가 나지 않게 10분을 여기선 따지지 않는다).
+     * 안 열었으면 퇴실 + 3시간
+     */
+    private Instant acceptFrom(LastEnded last) {
+        Instant due = last.endedAt().plus(recheckAfter);
+        return port.retrievedAt(last.reservationId()).filter(t -> t.isBefore(due)).orElse(due);
+    }
+
+    /** 퇴실 + 3시간. 그 전에 QR로 문을 열었으면 연 시각 + 10분 (둘 중 이른 쪽) */
+    private Instant recheckDue(LastEnded last) {
+        Instant due = last.endedAt().plus(recheckAfter);
+        return port.retrievedAt(last.reservationId())
+                .map(t -> t.plus(recheckAfterRetrieve))
+                .filter(t -> t.isBefore(due))
+                .orElse(due);
     }
 
     private boolean needsRecheck(long reservationId) {
@@ -152,9 +176,9 @@ class TidyCheckService implements TidyCheckUseCase {
                 || !needsRecheck(check.reservationId())) {
             throw new BusinessException(ErrorCode.TIDY_RECHECK_NOT_NEEDED);
         }
-        Instant due = last.endedAt().plus(recheckAfter);
+        Instant from = acceptFrom(last);
         // 기한 전에 본 화면을 늦게 보내도 받지 않는다 (그 사이 가져갔을 수 있다)
-        if (now.isBefore(due) || check.observedAt().isBefore(due)) {
+        if (now.isBefore(from) || check.observedAt().isBefore(from)) {
             throw new BusinessException(ErrorCode.TIDY_RECHECK_TOO_EARLY);
         }
     }
