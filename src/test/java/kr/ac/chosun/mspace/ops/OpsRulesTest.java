@@ -72,6 +72,11 @@ class OpsRulesTest {
         assertThat(OpsRules.overtime(end, true, true, min(-30), NOW, min(30), OVER)).isTrue();
         assertThat(OpsRules.overtime(end, false, true, min(-3), NOW, null, OVER)).isFalse();
         assertThat(OpsRules.overtime(end, true, true, min(-30), NOW, end, OVER)).isFalse();
+        // 즉시 시작은 아무 분에나 시작: 끝 + 10분이면 다음 팀(안 알림), 그 뒤면 알림. 0분이면 늘 알림
+        assertThat(OpsRules.overtime(end, true, true, min(-30), NOW, end.plusSeconds(600), OVER)).isFalse();
+        assertThat(OpsRules.overtime(end, true, true, min(-30), NOW, end.plusSeconds(660), OVER)).isTrue();
+        var noGrace = new OpsPolicy.Overtime(OVER.after(), OVER.within(), true, false, Duration.ZERO);
+        assertThat(OpsRules.overtime(end, true, true, min(-30), NOW, end, noGrace)).isTrue();
         assertThat(OpsRules.overtime(min(-4), true, true, min(-30), NOW, null, OVER)).isFalse();
         assertThat(OpsRules.overtime(min(-16), true, true, min(-30), NOW, null, OVER)).isFalse();
     }
