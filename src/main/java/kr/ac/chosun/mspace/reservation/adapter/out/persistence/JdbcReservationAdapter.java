@@ -69,7 +69,7 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
 
     @Override
     public Optional<String> findName(long userId) {
-        return jdbc.sql("SELECT name FROM users WHERE id = :id").param("id", userId).query(String.class).optional();
+        return jdbc.sql("SELECT name FROM users WHERE id = :id").param("id", userId).query((rs, n) -> rs.getString(1)).optional();
     }
 
     /**

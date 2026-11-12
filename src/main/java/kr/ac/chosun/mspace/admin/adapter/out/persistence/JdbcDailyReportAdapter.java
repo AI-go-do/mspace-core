@@ -45,7 +45,7 @@ class JdbcDailyReportAdapter implements DailyReportPort {
                         WHERE p.created_at >= :from AND p.created_at < :to
                         """)
                 .param("from", Timestamp.from(from)).param("to", Timestamp.from(to))
-                .query(Long.class).single();
+                .query((rs, n) -> rs.getLong(1)).single();
     }
 
     @Override

@@ -79,7 +79,7 @@ class JdbcTidyCheckAdapter implements TidyCheckPort {
                             OR EXISTS (SELECT 1 FROM user_warning w JOIN report r ON r.id = w.report_id
                                        WHERE w.reservation_id = :id AND r.category = 'MESSY')
                         """)
-                .param("id", reservationId).query(Boolean.class).single();
+                .param("id", reservationId).query((rs, n) -> rs.getBoolean(1)).single();
     }
 
     @Override
