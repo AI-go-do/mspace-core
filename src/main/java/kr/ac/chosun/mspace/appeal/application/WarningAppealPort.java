@@ -18,7 +18,14 @@ public interface WarningAppealPort {
     Optional<WarningItem> one(long userId, long warningId, int appealableDays);
 
     /** 내 경고를 잠그고 받은 시각을 돌려준다. 남의 경고면 비어 있다 */
-    Optional<Instant> lockMine(long userId, long warningId);
+    Optional<Mine> lockMine(long userId, long warningId);
+
+    /** @param withdrawn 이미 철회됨(AI 판단기든 관리자든) */
+    record Mine(Instant warnedAt, boolean withdrawn) {
+    }
+
+    /** 경고가 이미 철회됐는지. 호출 전에 그 사람을 잠가 둔다(관리자 철회도 같은 사람을 잠근다) */
+    boolean isWithdrawn(long warningId);
 
     /** @return 새로 넣었으면 true, 이미 요청이 있으면 false */
     boolean insertIfAbsent(long userId, long warningId, String text, List<String> evidence, Instant now);

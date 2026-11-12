@@ -92,6 +92,8 @@ public class AppealReviewService implements AppealReviewUseCase {
         return true;
     }
 
+    static final String ALREADY_WITHDRAWN = "이미 철회된 경고예요.";
+
     /** @return 알림함에 넣은 알림. 다른 판단이 먼저 끝냈으면 빈 Optional */
     private Optional<List<Notification>> apply(long appealId, Review review) {
         Optional<WarningAppealPort.Pending> locked = port.lockPending(appealId);
@@ -105,6 +107,13 @@ public class AppealReviewService implements AppealReviewUseCase {
         String answer = answer(review, unsure);
 
         penalties.lockUser(p.userId());
+        // 판단하는 사이 관리자가 먼저 철회했으면(관리자 철회도 같은 사람을 잠근다) 판단 결과와 상관없이 철회로 닫고
+        // 알림은 보내지 않는다. 관리자 철회가 이미 알렸다 (재웅 #123)
+        if (port.isWithdrawn(p.warningId())) {
+            port.decide(appealId, Decision.WITHDRAWN, ALREADY_WITHDRAWN,
+                    new Review(Decision.WITHDRAWN, 1, List.of(ALREADY_WITHDRAWN), List.of(), "withdrawn", "withdrawn-v1"), now);
+            return Optional.of(List.of());
+        }
         boolean lifted = false;
         if (decision == Decision.WITHDRAWN) {
             port.withdraw(p.warningId(), now);

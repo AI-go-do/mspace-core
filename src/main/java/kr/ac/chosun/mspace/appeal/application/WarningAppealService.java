@@ -61,7 +61,13 @@ public class WarningAppealService implements WarningAppealUseCase {
             throw new BusinessException(ErrorCode.INVALID_REQUEST, "evidence는 CHECKIN_PHOTO, CHECKOUT_PHOTO, TIDY_CHECK 중에서 고릅니다");
         }
         List<String> picked = List.copyOf(asked);
-        Instant warnedAt = port.lockMine(userId, warningId).orElseThrow(() -> new BusinessException(ErrorCode.WARNING_NOT_FOUND));
+        WarningAppealPort.Mine mine = port.lockMine(userId, warningId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WARNING_NOT_FOUND));
+        // 관리자가 이미 철회한 경고에 요청이 들어가면 판단기가 다시 보고 "유지"라고 답할 수 있다 (재웅 #123)
+        if (mine.withdrawn()) {
+            throw new BusinessException(ErrorCode.WARNING_ALREADY_WITHDRAWN);
+        }
+        Instant warnedAt = mine.warnedAt();
         Instant now = clock.instant();
         if (!now.isBefore(warnedAt.plus(Duration.ofDays(policy.days())))) {
             throw new BusinessException(ErrorCode.WARNING_APPEAL_EXPIRED);
