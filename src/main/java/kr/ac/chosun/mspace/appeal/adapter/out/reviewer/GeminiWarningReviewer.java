@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 import kr.ac.chosun.mspace.appeal.application.WarningReviewer;
@@ -33,7 +34,7 @@ class GeminiWarningReviewer implements WarningReviewer {
     static final Set<String> EVIDENCE = Set.of("TIDY_CHECK", "REPORT", "APPEAL");
 
     private static final Logger log = LoggerFactory.getLogger(GeminiWarningReviewer.class);
-    private static final Pattern LONG_NUMBER = Pattern.compile("\\d(?:[\\s-]?\\d){6,}");
+    private static final Pattern LONG_NUMBER = Pattern.compile("\\d(?:[\\s-]?+\\d){6,}+");
     private static final int REASON_MAX = 200;
     private static final int REASONS_MAX = 3;
 
@@ -148,7 +149,7 @@ class GeminiWarningReviewer implements WarningReviewer {
         }
         List<String> reasons = new ArrayList<>();
         for (JsonNode r : out.path("reasons")) {
-            String s = mask(r.asString("").strip());
+            String s = Objects.toString(mask(r.asString("").strip()), "");
             if (!s.isEmpty() && reasons.size() < REASONS_MAX) {
                 reasons.add(s.length() > REASON_MAX ? s.substring(0, REASON_MAX - 1) + "…" : s);
             }

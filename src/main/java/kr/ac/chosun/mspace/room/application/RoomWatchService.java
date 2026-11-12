@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.notification.application.Notification;
@@ -74,7 +75,7 @@ class RoomWatchService implements RoomWatchUseCase {
             return freed.size();
         });
         inbox.publish(stored);
-        return n == null ? 0 : n;
+        return Objects.requireNonNullElse(n, 0);
     }
 
     private static Watch watch(WatchRow w) {
