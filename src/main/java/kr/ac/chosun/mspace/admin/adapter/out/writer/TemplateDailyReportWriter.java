@@ -16,7 +16,7 @@ import kr.ac.chosun.mspace.admin.application.UsageStatsUseCase.Usage;
 class TemplateDailyReportWriter implements DailyReportWriter {
 
     static final String NAME = "template";
-    static final String VERSION = "daily-template-v1";
+    static final String VERSION = "daily-template-v2";
 
     @Override
     public Written write(LocalDate date, Facts f) {
@@ -41,6 +41,12 @@ class TemplateDailyReportWriter implements DailyReportWriter {
             long kept = f.appeals().getOrDefault("KEPT", 0L);
             lines.add("경고 철회 요청 처리 %d건(철회 %d, 유지 %d), 새로 들어와 대기 %d건, 장치 고장 %d건이에요.".formatted(
                     withdrawn + kept, withdrawn, kept, f.appeals().getOrDefault("PENDING", 0L), faults));
+        }
+        if (!f.aiActions().isEmpty()) {
+            lines.add("AI가 미리 환기 %d번, 더움 안내 %d번, 시간 넘김 안내 %d번 했고 센서 고장 %d건, 예약 없는 사용 %d건을 남겼어요."
+                    .formatted(f.aiActions().getOrDefault("VENT_SOON", 0L), f.aiActions().getOrDefault("ROOM_HOT", 0L),
+                            f.aiActions().getOrDefault("OVERTIME", 0L), f.aiActions().getOrDefault("SENSOR_DOWN", 0L),
+                            f.aiActions().getOrDefault("UNBOOKED", 0L)));
         }
         Usage t = f.total();
         if (t.sensor().co2Readings() > 0) {

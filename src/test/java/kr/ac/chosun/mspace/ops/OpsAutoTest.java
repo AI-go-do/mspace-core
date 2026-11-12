@@ -26,7 +26,7 @@ import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.transaction.support.TransactionOperations;
 
 /**
- * AI 자동 처리 (11/12 지영): 관리자 기록 2종(센서 고장·예약 없는 사용).
+ * AI 자동 처리 5개 (11/12 지영): 학생 알림 3종(미리 환기·예약 전 더움·시간 넘김)과 관리자 기록 2종(센서 고장·예약 없는 사용).
  * 회원 1–6 학생, 7 관리자. 날짜는 2030-03-05(서울), 시각은 테스트마다 정한다.
  */
 @SpringBootTest(properties = "mspace.auth.dev-header=true")
@@ -139,9 +139,67 @@ class OpsAutoTest {
                 .param("last", min(lastMin)).update();
     }
 
+    void co2(int room, int agoMin, int ppm, double temp) {
+        jdbc.sql("""
+                INSERT INTO sensor_event (event_id, room_id, device_id, kind, ppm, temperature_c, observed_at, received_at)
+                VALUES (:id, :room, 'co2', 'CO2', :ppm, :t, :at, :at)
+                """).param("id", "o-" + (++seq)).param("room", room).param("ppm", ppm).param("t", temp)
+                .param("at", min(-agoMin)).update();
+    }
+
+    List<String> notified(String kind) {
+        return jdbc.sql("SELECT user_id || ':' || reservation_id FROM notification WHERE kind = :k ORDER BY user_id")
+                .param("k", kind).query((rs, n) -> rs.getString(1)).list();
+    }
+
     List<String> recorded() {
         return jdbc.sql("SELECT kind || ':' || room_id || ':' || notified FROM ops_action ORDER BY kind, room_id")
                 .query((rs, n) -> rs.getString(1)).list();
+    }
+
+    @Test
+    @DisplayName("미리 환기: 사용 중 방 CO2가 1분에 30ppm씩 올라 곧 1000을 넘으면 팀 전원에게 1번 알린다")
+    void ventSoon() {
+        now("10:00");
+        long id = team(1, 1, "09:30", "10:30", "IN_USE");
+        presence(1, true, -30, 0);
+        int[] ppm = {910, 880, 850, 820, 790};
+        for (int i = 0; i < ppm.length; i++) {
+            co2(1, i, ppm[i], 23.0);
+        }
+
+        assertThat(ops.check()).isEqualTo(1);
+        assertThat(notified("VENT_SOON")).containsExactly("1:" + id, "2:" + id, "3:" + id);
+        assertThat(ops.check()).isZero();   // 예약마다 1번
+        assertThat(recorded()).containsExactly("VENT_SOON:1:3");
+    }
+
+    @Test
+    @DisplayName("예약 전 더움: 10분 안에 시작하는 예약 방이 29도면 대표자에게만 알린다")
+    void roomHot() {
+        now("09:50");
+        long id = team(2, 4, "10:00", "11:00", "BOOKED");
+        presence(2, false, -60, 0);
+        for (int i = 0; i < 6; i++) {
+            co2(2, i, 500, 29.0);
+        }
+
+        assertThat(ops.check()).isEqualTo(1);
+        assertThat(notified("ROOM_HOT")).containsExactly("4:" + id);
+    }
+
+    @Test
+    @DisplayName("시간 넘김: 자동 퇴실 6분 뒤에도 끝나기 전부터 계속 있으면 그 팀에 알리고, 다음 예약이 바로면 안 알린다")
+    void overtime() {
+        now("10:06");
+        long id = team(3, 1, "09:00", "10:00", "AUTO_CHECKED_OUT");
+        presence(3, true, -60, 0);
+        team(4, 4, "09:00", "10:00", "AUTO_CHECKED_OUT");
+        team(4, 1, "10:00", "11:00", "IN_USE");   // 다음 팀이 바로 이어서
+        presence(4, true, -60, 0);
+
+        assertThat(ops.check()).isEqualTo(1);
+        assertThat(notified("OVERTIME")).containsExactly("1:" + id, "2:" + id, "3:" + id);
     }
 
     @Test
