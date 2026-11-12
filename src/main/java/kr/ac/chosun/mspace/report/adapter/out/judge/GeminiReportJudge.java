@@ -190,6 +190,10 @@ class GeminiReportJudge implements ReportJudge {
         if (!conf.isNumber() || !(conf.asDouble() >= 0 && conf.asDouble() <= 1)) {
             return null;
         }
+        // 배열이 아닌 답(예: {"x": "이유"})은 모양이 틀린 것으로 보고 규칙으로 넘긴다 (CodeRabbit #121)
+        if (!out.path("reasons").isArray() || !out.path("evidenceUsed").isArray()) {
+            return null;
+        }
         List<String> reasons = new ArrayList<>();
         for (JsonNode r : out.path("reasons")) {
             String s = mask(r.asString("").strip());

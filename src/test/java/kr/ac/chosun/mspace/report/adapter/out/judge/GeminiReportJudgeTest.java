@@ -226,6 +226,12 @@ class GeminiReportJudgeTest {
 
         reply = answer("{\"verdict\":\"CONFIRMED\",\"confidence\":1.5,\"reasons\":[\"이유\"],\"evidenceUsed\":[]}");
         assertThat(judge(CAMERA_ON).judge(WINDOW).judge()).isEqualTo("rules");
+
+        reply = answer("{\"verdict\":\"CONFIRMED\",\"confidence\":0.9,\"reasons\":{\"x\":\"이유\"},\"evidenceUsed\":[]}");
+        assertThat(judge(CAMERA_ON).judge(WINDOW).judge()).isEqualTo("rules");
+
+        reply = answer("{\"verdict\":\"CONFIRMED\",\"confidence\":0.9,\"reasons\":[\"이유\"]}");
+        assertThat(judge(CAMERA_ON).judge(WINDOW).judge()).isEqualTo("rules");
     }
 
     @Test
