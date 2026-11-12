@@ -93,10 +93,9 @@ class GeminiReportJudge implements ReportJudge {
 
     /** 어질러짐은 규칙보다 무겁게 사실로 정하지 않는다. 사실이면 확신도도 카메라 확신도를 넘지 않게 */
     private static Judgement limit(Case c, Judgement g, Judgement byRules) {
-        if ("WINDOW_OPEN".equals(c.category()) && g.evidenceUsed().contains("REPORT")) {
-            // 창문 열림은 신고 글을 보내지 않으니 REPORT는 근거로 남기지 않는다
-            g = new Judgement(g.verdict(), g.confidence(), g.reasons(),
-                    g.evidenceUsed().stream().filter(e -> !"REPORT".equals(e)).toList(), g.judge(), g.promptVersion());
+        if ("WINDOW_OPEN".equals(c.category())) {
+            // 창문 열림은 센서 숫자만 보낸다(신고 글·카메라 없음). 근거도 SENSOR만 남긴다
+            g = new Judgement(g.verdict(), g.confidence(), g.reasons(), List.of("SENSOR"), g.judge(), g.promptVersion());
         }
         if (!"MESSY".equals(c.category()) || g.verdict() != ReportVerdict.CONFIRMED) {
             return g;
