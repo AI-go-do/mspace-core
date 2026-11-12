@@ -33,7 +33,7 @@ class GeminiReportJudgeTest {
             new AirPoint(15, 440, 19.0)));
     static final Case WINDOW = new Case(1, "WINDOW_OPEN", "창문 열려 있어요 010-1234-5678", true, false, null, List.of(),
             List.of(), false, false, 10L, false, AIR);
-    static final Case MESSY = new Case(2, "MESSY", "컵이랑 병이 있어요", true, true, "LEFT_ITEMS", List.of("cup", "bottle"),
+    static final Case MESSY = new Case(2, "MESSY", "컵이랑 병이 있어요 010.1234.5678", true, true, "LEFT_ITEMS", List.of("cup", "bottle"),
             List.of(0.95, 0.4), false, false, 10L, false, null);
 
     HttpServer server;
@@ -84,7 +84,7 @@ class GeminiReportJudgeTest {
     }
 
     @Test
-    @DisplayName("창문 열림: 키는 헤더로, 신고 글(긴 숫자 가림)과 방 CO2·온도를 보내고 Gemini 판정을 그대로 쓴다")
+    @DisplayName("창문 열림: 키는 헤더로, 신고 글은 빼고 방 CO2·온도만 보내고 Gemini 판정을 그대로 쓴다")
     void windowRequestAndAnswer() {
         // given
         reply = verdict("CONFIRMED", 0.9);
@@ -98,7 +98,8 @@ class GeminiReportJudgeTest {
         assertThat(body.path("generationConfig").path("responseMimeType").asString()).isEqualTo("application/json");
         JsonNode facts = JsonMapper.builder().build()
                 .readTree(body.path("contents").path(0).path("parts").path(0).path("text").asString());
-        assertThat(facts.path("reportContent").asString()).isEqualTo("창문 열려 있어요 [숫자 가림]");
+        assertThat(facts.has("reportContent")).isFalse();
+        assertThat(sentBody.get()).doesNotContain("창문 열려 있어요");
         assertThat(facts.path("reportMinuteAfterCheckout").asInt()).isEqualTo(30);
         assertThat(facts.path("roomAir")).hasSize(3);
         assertThat(facts.path("roomAir").path(1).path("co2ppm").asInt()).isEqualTo(520);
@@ -107,7 +108,8 @@ class GeminiReportJudgeTest {
         assertThat(j.confidence()).isEqualTo(0.9);
         assertThat(j.judge()).isEqualTo("gemini:gemini-3.5-flash-lite");
         assertThat(j.promptVersion()).isEqualTo(GeminiReportJudge.VERSION);
-        assertThat(j.evidenceUsed()).containsExactly("SENSOR", "REPORT");
+        // 보내지 않은 신고 글(REPORT)은 근거로 남기지 않는다
+        assertThat(j.evidenceUsed()).containsExactly("SENSOR");
     }
 
     @Test
@@ -162,6 +164,7 @@ class GeminiReportJudgeTest {
         JsonNode facts = JsonMapper.builder().build().readTree(JsonMapper.builder().build().readTree(sentBody.get())
                 .path("contents").path(0).path("parts").path(0).path("text").asString());
         assertThat(facts.path("cameraItems").path(0).path("name").asString()).isEqualTo("cup");
+        assertThat(facts.path("reportContent").asString()).isEqualTo("컵이랑 병이 있어요 [숫자 가림]");
         assertThat(facts.has("roomAir")).isFalse();
     }
 
@@ -225,6 +228,12 @@ class GeminiReportJudgeTest {
         assertThat(judge(CAMERA_ON).judge(WINDOW).judge()).isEqualTo("rules");
 
         reply = answer("{\"verdict\":\"CONFIRMED\",\"confidence\":1.5,\"reasons\":[\"이유\"],\"evidenceUsed\":[]}");
+        assertThat(judge(CAMERA_ON).judge(WINDOW).judge()).isEqualTo("rules");
+
+        reply = answer("{\"verdict\":\"CONFIRMED\",\"confidence\":0.9,\"reasons\":{\"x\":\"이유\"},\"evidenceUsed\":[]}");
+        assertThat(judge(CAMERA_ON).judge(WINDOW).judge()).isEqualTo("rules");
+
+        reply = answer("{\"verdict\":\"CONFIRMED\",\"confidence\":0.9,\"reasons\":[\"이유\"]}");
         assertThat(judge(CAMERA_ON).judge(WINDOW).judge()).isEqualTo("rules");
     }
 
