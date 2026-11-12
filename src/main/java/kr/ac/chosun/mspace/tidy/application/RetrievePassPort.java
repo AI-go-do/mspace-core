@@ -25,6 +25,15 @@ public interface RetrievePassPort {
 
     void insert(Pass pass, long issuedBy, Instant issuedAt);
 
-    /** 이 방의 살아 있는 QR을 찾아 처음 쓴 시각을 남기고 예약 id. 없으면 빈 값 */
-    Optional<Long> use(int roomId, String code, Instant now);
+    /** 이 방에서 now에 살아 있는 QR. 없으면 빈 값 */
+    Optional<Live> find(int roomId, String code, Instant now);
+
+    record Live(long passId, long reservationId) {
+    }
+
+    /** 예약 줄을 잠근다. 자동 판정·다시 확인과 같은 잠금이라 QR 사용과 경고가 한 줄로 선다. 줄이 없으면 false */
+    boolean lockReservation(long reservationId);
+
+    /** 아직 살아 있으면 처음 쓴 시각을 남긴다. 잠금을 기다리는 동안 닫혔으면 false */
+    boolean markUsed(long passId, Instant now);
 }

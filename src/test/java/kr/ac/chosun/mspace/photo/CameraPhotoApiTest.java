@@ -122,6 +122,24 @@ class CameraPhotoApiTest {
     }
 
     @Test
+    @DisplayName("입실 직전 빈 방(ENTRY) 사진도 퇴실 뒤 같은 예약에 1장 올리고, 그 예약 사람과 관리자가 본다 (Q-27 11/11)")
+    void entryPhoto() throws Exception {
+        // when
+        MvcTestResult r = upload(TOKEN, 1, latest, "ENTRY", JPEG);
+
+        // then
+        assertThat(r).hasStatus(201).bodyJson().extractingPath("$.phase").isEqualTo("ENTRY");
+        assertThat(upload(TOKEN, 1, latest, "entry", JPEG)).hasStatus(409);
+        assertThat(upload(TOKEN, 1, older, "ENTRY", JPEG)).hasStatus(409)
+                .bodyJson().extractingPath("$.code").isEqualTo("TIDY_CHECK_NOT_LATEST");
+        MvcTestResult mine = view(latest, 4, "ENTRY");
+        assertThat(mine).hasStatusOk();
+        assertThat(mine.getResponse().getContentAsByteArray()).isEqualTo(JPEG);
+        assertThat(view(latest, 7, "ENTRY")).hasStatusOk();
+        assertThat(view(latest, 1, "ENTRY")).hasStatus(404);
+    }
+
+    @Test
     @DisplayName("같은 단계 두 번째는 409, 지난 예약에는 409 TIDY_CHECK_NOT_LATEST, 다른 방 예약은 404")
     void rejects() {
         // given

@@ -31,6 +31,8 @@ import org.springframework.transaction.support.TransactionOperations;
  *       그 사이 다음 예약이 입실하지 않았을 때만 받는다</li>
  *   <li>RECHECK에 확신도 mspace.tidy.warn-min-confidence 이상인 물건이 남아 있으면 카메라 신고를 만들어
  *       사람 없이 사실로 정하고 그 예약 대표자에게 경고 (11/10 지영 "core가 바로 경고")</li>
+ *   <li>단, "찾으러 갈게요" QR로 문을 열었으면 경고 안 함(11/11 지영·수연: 찾아갔는데 카메라가 잘못 볼 수 있음).
+ *       카메라 경고가 꺼져 있으면(mspace.tidy.camera-warn, 11/11 지영: 정확도 51%) 경고 대신 대표자·참여자에게 알림만</li>
  * </ol>
  * 알림은 커밋 뒤에 바깥 채널로 낸다.
  */
@@ -51,6 +53,7 @@ class TidyCheckService implements TidyCheckUseCase {
     private final String recheckAfterText;
     /** 장치 확신도가 float라 기준도 float로 맞춘다. double로 비교하면 0.9f(0.8999…)가 0.9 기준에서 빠진다 */
     private final float warnMinConfidence;
+    private final boolean cameraWarn;
 
     TidyCheckService(TidyCheckPort port, CameraReportUseCase reports, NotificationInbox inbox,
                      TransactionOperations tx, Clock clock, TidyPolicy policy) {
@@ -62,6 +65,7 @@ class TidyCheckService implements TidyCheckUseCase {
         this.recheckAfter = Duration.ofMinutes(policy.recheckAfterMinutes());
         this.recheckAfterText = policy.recheckAfterText();
         this.warnMinConfidence = (float) policy.warnMinConfidence();
+        this.cameraWarn = policy.cameraWarn();
     }
 
     @Override
@@ -125,9 +129,13 @@ class TidyCheckService implements TidyCheckUseCase {
                 return new Done(new Recorded(false, null), inbox.store(leftItemAlerts(check), now));
             }
             List<Item> sure = check.items().stream().filter(i -> i.confidence() >= warnMinConfidence).toList();
-            if (sure.isEmpty()) {
+            if (sure.isEmpty() || port.leftItemsSettled(check.reservationId())) {
                 port.insert(check, null, now);
                 return new Done(new Recorded(false, null), List.of());
+            }
+            if (!cameraWarn) {
+                port.insert(check, null, now);
+                return new Done(new Recorded(false, null), inbox.store(stillLeftAlerts(check, sure), now));
             }
             Warned warned = reports.warnLeftItems(check.roomId(), check.reservationId(), content(sure),
                     "두고 간 물건을 " + recheckAfterText + " 안에 챙겨 가지 않았어요.", now);
@@ -162,6 +170,31 @@ class TidyCheckService implements TidyCheckUseCase {
             out.add(new NewNotification(user, check.reservationId(), LEFT_ITEM_KIND, "두고 간 물건이 있어요", body));
         }
         return out;
+    }
+
+    /** 카메라 경고가 꺼져 있을 때: 다시 볼 때도 남아 있던 물건을 알리기만 한다. 경고는 없다 */
+    private List<NewNotification> stillLeftAlerts(TidyCheck check, List<Item> sure) {
+        String body = stillLeftBody(port.roomName(check.roomId()), sure.stream().map(Item::name).distinct().toList(),
+                recheckAfterText);
+        List<NewNotification> out = new ArrayList<>();
+        for (long user : port.members(check.reservationId())) {
+            out.add(new NewNotification(user, check.reservationId(), LEFT_ITEM_KIND, "물건이 아직 남아 있어요", body));
+        }
+        return out;
+    }
+
+    static String stillLeftBody(String room, List<String> names, String after) {
+        String head = "퇴실 " + after + " 뒤에도 " + room + "에 ";
+        String tail = "이(가) 남아 있는 것 같아요. 카메라 확인이라 경고는 없어요.";
+        for (int shown = names.size(); shown >= 1; shown--) {
+            String what = String.join("·", names.subList(0, shown))
+                    + (shown < names.size() ? " 외 " + (names.size() - shown) + "개" : "");
+            String body = head + what + tail;
+            if (body.length() <= NOTIFICATION_BODY_MAX) {
+                return body;
+            }
+        }
+        return head + "물건 " + names.size() + "개" + tail;
     }
 
     /** 알림 본문은 300자(V10 notification.body). 물건이 많으면 앞에서부터 넣고 "외 N개"로 줄인다. 기한 문장은 늘 남긴다 */

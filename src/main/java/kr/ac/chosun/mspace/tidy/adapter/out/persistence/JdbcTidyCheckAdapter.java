@@ -72,6 +72,16 @@ class JdbcTidyCheckAdapter implements TidyCheckPort {
     }
 
     @Override
+    public boolean leftItemsSettled(long reservationId) {
+        return jdbc.sql("""
+                        SELECT EXISTS (SELECT 1 FROM retrieve_pass WHERE reservation_id = :id AND first_used_at IS NOT NULL)
+                            OR EXISTS (SELECT 1 FROM user_warning w JOIN report r ON r.id = w.report_id
+                                       WHERE w.reservation_id = :id AND r.category = 'MESSY')
+                        """)
+                .param("id", reservationId).query(Boolean.class).single();
+    }
+
+    @Override
     public boolean enteredSince(int roomId, long reservationId, Instant since) {
         return jdbc.sql("""
                         SELECT EXISTS (SELECT 1 FROM reservation

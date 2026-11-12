@@ -30,7 +30,7 @@ import tools.jackson.databind.json.JsonMapper;
  */
 class ReviewerEval {
 
-    static final TidyPolicy TIDY = new TidyPolicy(180, 0.8, 10);
+    static final TidyPolicy TIDY = new TidyPolicy(180, 0.8, 10, true);
     static final JsonMapper JSON = JsonMapper.builder().build();
 
     /** 서비스와 같은 규칙: 판단기가 "유지"라도 확신도가 이보다 낮으면 철회 (mspace.appeal.min-confidence) */

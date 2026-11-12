@@ -84,15 +84,29 @@ class JdbcRetrievePassAdapter implements RetrievePassPort {
     }
 
     @Override
-    public Optional<Long> use(int roomId, String code, Instant now) {
+    public Optional<Live> find(int roomId, String code, Instant now) {
         return jdbc.sql("""
-                        UPDATE retrieve_pass SET first_used_at = coalesce(first_used_at, :now)
-                        WHERE id = (SELECT id FROM retrieve_pass
-                                    WHERE room_id = :room AND code = :code AND expires_at > :now
-                                    ORDER BY expires_at DESC LIMIT 1)
-                        RETURNING reservation_id
+                        SELECT id, reservation_id FROM retrieve_pass
+                        WHERE room_id = :room AND code = :code AND expires_at > :now
+                        ORDER BY expires_at DESC LIMIT 1
                         """)
                 .param("room", roomId).param("code", code).param("now", Timestamp.from(now))
-                .query((rs, n) -> rs.getLong(1)).optional();
+                .query((rs, n) -> new Live(rs.getLong(1), rs.getLong(2))).optional();
+    }
+
+    @Override
+    public boolean lockReservation(long reservationId) {
+        return jdbc.sql("SELECT id FROM reservation WHERE id = :rid FOR UPDATE")
+                .param("rid", reservationId).query((rs, n) -> rs.getLong(1)).optional().isPresent();
+    }
+
+    @Override
+    public boolean markUsed(long passId, Instant now) {
+        return jdbc.sql("""
+                        UPDATE retrieve_pass SET first_used_at = coalesce(first_used_at, :now)
+                        WHERE id = :id AND expires_at > :now
+                        """)
+                .param("id", passId).param("now", Timestamp.from(now))
+                .update() == 1;
     }
 }

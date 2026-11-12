@@ -4,7 +4,7 @@ import java.time.ZonedDateTime;
 
 /**
  * 방 카메라(젯슨) 사진 (FR-DEV-105, docs Q-27, 11/10 지영 "core에 올려 30일 보관"). 구현: {@link CameraPhotoService}
- * 정리 확인 단계(FIRST·RECHECK)마다 1장. 사람이 0명인 빈 방 화면만 보낸다(사람이 찍힌 사진은 장치가 보내지 않는다).
+ * 정리 확인 단계(입실 직전 ENTRY, 퇴실 뒤 FIRST, 다시 확인 RECHECK)마다 1장. 사람이 0명인 빈 방 화면만 보낸다(사람이 찍힌 사진은 장치가 보내지 않는다).
  */
 public interface CameraPhotoUseCase {
 
