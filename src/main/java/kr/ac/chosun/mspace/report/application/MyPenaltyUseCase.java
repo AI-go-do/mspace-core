@@ -1,6 +1,7 @@
 package kr.ac.chosun.mspace.report.application;
 
 import java.time.Instant;
+import kr.ac.chosun.mspace.reservation.application.MyNoShowsUseCase.Summary;
 
 /** 내 경고 횟수·정지 (FR-WEB-003 "내 경고 0회", FR-RPT-104). 구현: {@link MyPenaltyService} */
 public interface MyPenaltyUseCase {
@@ -14,8 +15,9 @@ public interface MyPenaltyUseCase {
      * @param limit                이 횟수가 되면 정지
      * @param suspendedUntil       이용 정지 중이면 끝나는 시각, 아니면 null
      * @param reportSuspendedUntil 신고 정지 중이면 끝나는 시각, 아니면 null
+     * @param noShows              노쇼 정지 셈 (FR-RSV-106, 경고와 따로 셈). 목록은 GET /api/penalties/me/no-shows
      */
     record MyPenalty(int warnings, int falseReportWarnings, int limit, int windowDays, Instant suspendedUntil,
-                     Instant reportSuspendedUntil) {
+                     Instant reportSuspendedUntil, Summary noShows) {
     }
 }
