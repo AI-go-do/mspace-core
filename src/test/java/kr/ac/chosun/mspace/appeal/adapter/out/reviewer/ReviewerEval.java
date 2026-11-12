@@ -67,8 +67,15 @@ class ReviewerEval {
         if (sets.isEmpty()) {
             throw new IllegalArgumentException("EVAL_SET이 비었어요: " + set);
         }
+        List<Sample> loaded = load();
+        java.util.Set<String> known = new java.util.HashSet<>(loaded.stream().map(Sample::set).toList());
+        known.add("all");
+        List<String> unknown = sets.stream().filter(x -> !known.contains(x)).toList();
+        if (!unknown.isEmpty()) {
+            throw new IllegalArgumentException("모르는 EVAL_SET 이름: " + unknown + " (있는 이름: " + new java.util.TreeSet<>(known) + ")");
+        }
         boolean all = sets.contains("all");
-        List<Sample> samples = load().stream().filter(s -> sets.contains(s.set()) || (all && !"excluded".equals(s.set()))).toList();
+        List<Sample> samples = loaded.stream().filter(s -> sets.contains(s.set()) || (all && !"excluded".equals(s.set()))).toList();
         if (samples.isEmpty()) {
             throw new IllegalArgumentException("EVAL_SET에 맞는 사례가 없어요: " + set);
         }
