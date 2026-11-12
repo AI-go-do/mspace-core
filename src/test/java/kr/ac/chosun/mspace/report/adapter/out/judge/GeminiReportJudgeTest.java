@@ -174,6 +174,25 @@ class GeminiReportJudgeTest {
     }
 
     @Test
+    @DisplayName("어질러짐: 카메라 확신도에 빈 값(null)이 섞여 있어도 Gemini에 묻고, 남아 있을 확률은 빈 값을 빼고 고른다 (리뷰 수연)")
+    void messyNullConfidenceSkipped() {
+        // given
+        reply = verdict("UNVERIFIED", 0.9);
+        Case withNull = new Case(7, "MESSY", "컵 있어요", true, true, "LEFT_ITEMS", List.of("unknown", "cup"),
+                java.util.Arrays.asList(null, 0.9), false, false, 10L, false, null);
+
+        // when
+        Judgement j = judge(CAMERA_OFF).judge(withNull);
+
+        // then
+        assertThat(calls.get()).isEqualTo(1);
+        assertThat(j.judge()).startsWith("gemini:");
+        JsonNode facts = JsonMapper.builder().build().readTree(JsonMapper.builder().build().readTree(sentBody.get())
+                .path("contents").path(0).path("parts").path(0).path("text").asString());
+        assertThat(facts.path("cameraLeftConfidence").asDouble()).isEqualTo(0.9);
+    }
+
+    @Test
     @DisplayName("어질러짐: 카메라 경고가 켜져 있고 규칙도 사실이면 사실, 확신도는 카메라 확신도를 넘지 않는다")
     void messyConfirmedCapped() {
         // given

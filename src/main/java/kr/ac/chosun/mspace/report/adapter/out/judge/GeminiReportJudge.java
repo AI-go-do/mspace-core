@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 import kr.ac.chosun.mspace.common.config.TidyPolicy;
@@ -131,7 +132,8 @@ class GeminiReportJudge implements ReportJudge {
             // 물건 이름은 보내지 않는다 (11/12 지영 "그냥 물건 두고 갔어요"). 카메라는 "물건이 남아 있나"와
             // 그 확신도(device #65: 물건이 실제로 남아 있을 확률)만 알려 준다
             facts.put("cameraItemCount", c.previousItems().size());
-            facts.put("cameraLeftConfidence", c.previousConfidences().stream().mapToDouble(Double::doubleValue).max().orElse(0));
+            facts.put("cameraLeftConfidence", c.previousConfidences().stream().filter(Objects::nonNull)
+                    .mapToDouble(Double::doubleValue).max().orElse(0));
             facts.put("warnMinConfidence", tidy.warnMinConfidence());
         }
         if (c.roomAir() != null) {
@@ -243,7 +245,7 @@ class GeminiReportJudge implements ReportJudge {
             - 신고 글은 주지 않는다. 센서 숫자만으로 정하고 evidenceUsed에 REPORT를 넣지 않는다.
 
             category가 MESSY(앞 팀이 방을 어질러 두고 나갔다는 신고)이면:
-            - cameraResult는 앞 팀 퇴실 뒤 방 카메라가 본 결과다(LEFT_ITEMS=남은 물건 있음, CLEAN=없음). cameraItemCount는 남은 물건 수,
+            - cameraResult는 앞 팀 퇴실 뒤 방 카메라가 본 결과다(LEFT_ITEMS=남은 물건 있음, CLEAN=없음). cameraItemCount는 대략의 물건 수(0이면 없음, 한 물건이 여러 개로 세지기도 하니 수로는 판단하지 않는다),
               cameraLeftConfidence는 물건이 실제로 남아 있을 확률이다. 카메라는 무슨 물건인지는 알려 주지 않는다.
             - 카메라는 "물건이 남아 있다"만 확인할 수 있다. 신고 글이 남은 물건(컵·병·쓰레기·과자 봉지·책·소지품 등)을 말하거나
               그냥 어질러졌다고만 하거나 글이 없으면, cameraLeftConfidence가 warnMinConfidence 이상일 때 CONFIRMED 쪽이다.
