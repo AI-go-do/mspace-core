@@ -219,7 +219,7 @@ class TidyCheckApiTest {
 
         assertThat(inbox("LEFT_ITEM")).extracting(m -> ((Number) m.get("user_id")).longValue())
                 .containsExactly(1L, 2L, 3L);
-        assertThat(inbox("LEFT_ITEM").getFirst().get("body")).asString().contains("umbrella·cup").contains("3시간 안에");
+        assertThat(inbox("LEFT_ITEM").getFirst().get("body")).asString().contains("물건을 두고 가신").doesNotContain("umbrella").contains("3시간 안에");
         assertThat(reports()).isEmpty();
         assertThat(count("user_warning")).isZero();
         assertThat(jdbc.sql("SELECT confidences FROM tidy_check").query((rs, n) -> List.of((Float[]) rs.getArray(1).getArray()))
@@ -463,7 +463,7 @@ class TidyCheckApiTest {
                     SELECT user_id, body FROM notification WHERE kind = 'LEFT_ITEM' AND title = '물건이 아직 남아 있어요'
                     ORDER BY user_id""").query().listOfRows();
             assertThat(still).extracting(m -> ((Number) m.get("user_id")).longValue()).containsExactly(1L, 2L, 3L);
-            assertThat((String) still.getFirst().get("body")).contains("umbrella").contains("경고는 없어요");
+            assertThat((String) still.getFirst().get("body")).contains("물건이 남아").doesNotContain("umbrella").contains("경고는 없어요");
             assertThat(jdbc.sql("SELECT count(*) FROM tidy_check WHERE phase = 'RECHECK' AND report_id IS NULL")
                     .query(Long.class).single()).isEqualTo(1);
         }
@@ -520,7 +520,7 @@ class TidyCheckApiTest {
     }
 
     @Test
-    @DisplayName("물건 이름이 길고 많아도 알림 본문은 300자 안, 기한 문장은 남는다")
+    @DisplayName("물건 이름이 길고 많아도 알림 본문엔 이름 없이 '물건'으로만 쓰고 기한 문장을 남긴다")
     void longItemNamesFitNotification() {
         String items = java.util.stream.IntStream.range(0, 8)
                 .mapToObj(i -> "{\"name\":\"" + String.valueOf((char) ('a' + i)).repeat(50) + "\",\"confidence\":0.9}")
@@ -529,7 +529,7 @@ class TidyCheckApiTest {
         assertThat(post(1, first("e20", ended, "LEFT_ITEMS", items))).hasStatusOk();
 
         assertThat(inbox("LEFT_ITEM")).hasSize(3).allSatisfy(m -> assertThat((String) m.get("body"))
-                .hasSizeLessThanOrEqualTo(300).contains(" 외 ").endsWith("3시간 안에 챙겨 가 주세요."));
+                .isEqualTo("1번 방에 물건을 두고 가신 것 같아요. 3시간 안에 챙겨 가 주세요."));
     }
 
     @Test
