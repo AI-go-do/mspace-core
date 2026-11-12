@@ -215,7 +215,7 @@ class RetrievePassApiTest {
     }
 
     @Test
-    @DisplayName("10분이 지나면 문이 안 열리고, 3시간 안이면 다시 눌러 새 QR을 받는다")
+    @DisplayName("문을 안 열고 10분이 지나면 그 QR은 안 열리고, 3시간 안이면 다시 눌러 새 QR을 받는다")
     void expiredPass() {
         // given
         first("LEFT_ITEMS", UMBRELLA);
@@ -228,6 +228,28 @@ class RetrievePassApiTest {
         assertThat(pass(1, ended)).hasStatusOk();
         assertThat(jdbc.sql("SELECT count(*) FROM retrieve_pass").query((rs, n) -> rs.getLong(1)).single())
                 .isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("QR로 문을 한 번 열었으면, 10분 안에는 같은 QR을 다시 주지만 닫힌 뒤에는 409 RETRIEVE_ALREADY_USED")
+    void usedPassNotReissued() {
+        // given
+        first("LEFT_ITEMS", UMBRELLA);
+        String code = code(pass(1, ended));
+        assertThat(door(code)).bodyJson().extractingPath("$.purpose").isEqualTo("RETRIEVE");
+
+        // when, then: 살아 있는 동안은 같은 QR (참여자가 눌러도)
+        assertThat(code(pass(2, ended))).isEqualTo(code);
+        assertThat(door(code)).bodyJson().extractingPath("$.purpose").isEqualTo("RETRIEVE");
+
+        // when, then: 닫힌 뒤에는 새 QR 없음
+        jdbc.sql("UPDATE retrieve_pass SET issued_at = now() - interval '11 minutes', expires_at = now() - interval '1 minute'")
+                .update();
+        assertThat(pass(1, ended)).hasStatus(409).bodyJson().extractingPath("$.code")
+                .isEqualTo("RETRIEVE_ALREADY_USED");
+        assertThat(pass(3, ended)).hasStatus(409);
+        assertThat(jdbc.sql("SELECT count(*) FROM retrieve_pass").query((rs, n) -> rs.getLong(1)).single())
+                .isEqualTo(1);
     }
 
     @Test

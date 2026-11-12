@@ -46,6 +46,12 @@ class JdbcRetrievePassAdapter implements RetrievePassPort {
     }
 
     @Override
+    public boolean used(long reservationId) {
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM retrieve_pass WHERE reservation_id = :id AND first_used_at IS NOT NULL)")
+                .param("id", reservationId).query((rs, n) -> rs.getBoolean(1)).single();
+    }
+
+    @Override
     public Optional<Pass> alive(long reservationId, Instant now) {
         return jdbc.sql("""
                         SELECT reservation_id, room_id, code, expires_at FROM retrieve_pass

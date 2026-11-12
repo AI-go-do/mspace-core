@@ -17,6 +17,9 @@ public interface RetrievePassPort {
     /** 퇴실 직후 확인(FIRST)이 LEFT_ITEMS인지 */
     boolean leftItems(long reservationId);
 
+    /** 그 예약의 QR로 문을 한 번이라도 열었는지 (first_used_at, 11/12 지영 "문 한 번 열면 새 QR 못 받게") */
+    boolean used(long reservationId);
+
     /** 그 예약에 now에 살아 있는 QR */
     Optional<Pass> alive(long reservationId, Instant now);
 
