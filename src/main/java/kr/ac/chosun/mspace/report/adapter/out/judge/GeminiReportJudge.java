@@ -34,7 +34,7 @@ import tools.jackson.databind.json.JsonMapper;
  */
 class GeminiReportJudge implements ReportJudge {
 
-    static final String VERSION = "report-gemini-v2";
+    static final String VERSION = "report-gemini-v3";
     static final Set<String> EVIDENCE = Set.of("REPORT", "TIDY_CHECK", "SENSOR");
     static final int MIN_AIR_POINTS = 3;
 
@@ -250,6 +250,8 @@ class GeminiReportJudge implements ReportJudge {
             category가 MESSY(앞 팀이 방을 어질러 두고 나갔다는 신고)이면:
             - cameraResult·cameraItems는 앞 팀 퇴실 뒤 방 카메라가 본 결과다(LEFT_ITEMS=남은 물건 있음, CLEAN=없음). 이름은 영어 물체 이름, unknown은 이름을 못 붙인 물건이다.
             - 확신도가 warnMinConfidence 이상인 물건이 있고 신고 글과 맞으면 CONFIRMED 쪽이다. 신고 글이 말하는 것과 카메라가 본 물건이 전혀 다르면 UNVERIFIED다.
+            - 카메라는 물건만 본다. 신고 글이 쏟음·얼룩처럼 물건이 아닌 어지름을 말하는데 카메라엔 그와 상관없는 물건(노트북·휴대폰·가방 같은 소지품)만 있으면,
+              신고 내용은 확인되지 않은 것이니 UNVERIFIED다. 남은 물건이 있다는 것만으로 다른 내용의 신고를 사실로 만들지 않는다.
             - 카메라는 틀릴 수 있다. CLEAN만으로는 FALSE를 높은 확신도로 내지 않는다.
 
             confidence는 네 판정이 맞을 확률(0~1)이다.
