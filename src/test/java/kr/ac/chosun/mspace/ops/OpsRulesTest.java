@@ -18,6 +18,9 @@ class OpsRulesTest {
     static final Instant NOW = Instant.parse("2030-03-05T01:00:00Z");
     static final OpsPolicy.VentSoon VENT = new OpsPolicy.VentSoon(1000, Duration.ofMinutes(8), Duration.ofMinutes(5), 2,
             800, true, true, 0, null, 0);
+    /** 지금 쓰는 11판 (application.yml과 같음) */
+    static final OpsPolicy.VentSoon VENT11 = new OpsPolicy.VentSoon(1000, Duration.ofMinutes(8), Duration.ofMinutes(5), 2,
+            800, true, true, 960, Duration.ofMinutes(30), 20);
     static final OpsPolicy.Hot HOT = new OpsPolicy.Hot(28, Duration.ofMinutes(10), 3, Duration.ofMinutes(60), true,
             true, true);
     static final OpsPolicy.SensorDown DOWN = new OpsPolicy.SensorDown(Duration.ofMinutes(5), true);
@@ -44,6 +47,21 @@ class OpsRulesTest {
         assertThat(OpsRules.ventSoon(series(1010, 980, 950), NOW, VENT)).isFalse();
         assertThat(OpsRules.ventSoon(series(1060, 900, 870, 840), NOW, VENT)).isFalse();   // 마지막 값이 이미 넘음: 환기 알림이 맡음
         assertThat(OpsRules.ventSoon(series(960), NOW, VENT)).isFalse();   // 값 1개
+    }
+
+    @Test
+    @DisplayName("미리 환기 11판: 960 이상에서 천천히 오르면 30분 앞까지 보고, 그 아래에서는 1분에 20 넘게 빨리 오를 때만 알린다")
+    void ventSoonNear() {
+        // 970 근처에서 1분에 약 3씩 오름: 8분 예측으론 994라 6판은 안 알리지만 30분 예측이면 넘는다
+        assertThat(OpsRules.ventSoon(series(975, 970, 968, 965, 962, 960), NOW, VENT)).isFalse();
+        assertThat(OpsRules.ventSoon(series(975, 970, 968, 965, 962, 960), NOW, VENT11)).isTrue();
+        // 960 이상이어도 내려가는 중이면 안 알린다
+        assertThat(OpsRules.ventSoon(series(962, 968, 972, 975, 980, 985), NOW, VENT11)).isFalse();
+        // 960 아래에서 1분에 10씩: 6판은 알리지만 11판은 1000 근처 오르내림으로 보고 안 알린다
+        assertThat(OpsRules.ventSoon(series(940, 930, 920, 910, 900, 890), NOW, VENT)).isTrue();
+        assertThat(OpsRules.ventSoon(series(940, 930, 920, 910, 900, 890), NOW, VENT11)).isFalse();
+        // 960 아래에서 1분에 30씩 빨리 오르면 알린다
+        assertThat(OpsRules.ventSoon(series(910, 880, 850, 820, 790, 760), NOW, VENT11)).isTrue();
     }
 
     @Test

@@ -107,14 +107,17 @@ mspace:
       interval: PT1M               # 1분마다 본다
   ops:                       # AI 자동 처리 5개 (11/12 지영). 숫자는 가짜 사례 측정으로 고름 (README "실험 기록: 자동 처리 규칙")
     interval: PT1M                 # 1분마다 본다 (예약 정리 스위치를 따름)
-    vent-soon:                     # 미리 환기 6판: 사용 중 팀 전원에게 예약마다 1번
+    vent-soon:                     # 미리 환기 11판: 사용 중 팀 전원에게 예약마다 1번 (11/12 지영, 실습실 실제 기록으로 고름)
       threshold-ppm: 1000
-      lookahead: PT8M              # 8분 안에 1000을 넘을 것 같으면
+      lookahead: PT8M              # 빨리 오를 때: 8분 안에 1000을 넘을 것 같으면
       window: PT5M                 # 최근 5분 값으로 기울기
       min-points: 2
       floor-ppm: 800               # 지금 800 아래면 안 봄
       fit: true                    # 모든 값으로 기울기(최소제곱)
       smooth: true                 # 지금 값 = 최근 3개 가운데 값
+      near-ppm: 960                # 지금 960 이상이고 오르는 중이면
+      near-lookahead: PT30M        # 30분 앞까지 예측 (큰 방은 천천히 오름)
+      fast-per-min: 20             # 960 아래에서는 1분에 20 넘게 오를 때만 8분 예측 (1000 근처 오르내림 헛알림 막기)
     hot:                           # 예약 전 더움 7판: 대표자에게 예약마다 1번
       threshold-c: 28
       before: PT10M                # 시작 10분 전
