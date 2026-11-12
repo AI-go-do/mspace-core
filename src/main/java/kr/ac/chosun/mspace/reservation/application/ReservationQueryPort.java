@@ -36,7 +36,7 @@ public interface ReservationQueryPort {
      */
     record Row(long id, int roomId, String roomName, Instant startAt, Instant endAt, ReservationStatus status,
                long ownerId, String accessCode, Instant checkinDeadline, Instant cancelableUntil,
-               List<ParticipantRow> participants) {
+               List<ParticipantRow> participants, Instant checkedInAt, Instant checkedOutAt) {
     }
 
     record ParticipantRow(long userId, String name, boolean owner) {

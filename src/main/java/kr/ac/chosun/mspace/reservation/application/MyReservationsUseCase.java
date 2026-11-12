@@ -22,10 +22,13 @@ public interface MyReservationsUseCase {
      * @param accessCode      키패드 번호. 대표자에게만 주고, 참여자면 null
      * @param checkinDeadline 입실 마감. 미리 예약은 max(시작, 예약한 시각) + 15분, 즉시 시작은 시작 + 10분
      * @param cancelableUntil 이 시각 전까지 대표자가 취소할 수 있다. 미리 예약은 시작, 즉시 시작은 누른 뒤 설정한 분(기본 5분)
+     * @param checkedInAt     입실한 시각. 입실 안 했으면 null
+     * @param checkedOutAt    퇴실한 시각(버튼·자동·자리 비움). 퇴실 안 했으면 null
      */
     record MyReservation(long id, int roomId, String roomName, ZonedDateTime startAt, ZonedDateTime endAt,
                          ReservationStatus status, boolean owner, String accessCode, ZonedDateTime checkinDeadline,
-                         ZonedDateTime cancelableUntil, List<Participant> participants) {
+                         ZonedDateTime cancelableUntil, List<Participant> participants,
+                         ZonedDateTime checkedInAt, ZonedDateTime checkedOutAt) {
     }
 
     /** @param name 가린 이름 (홍*동) */
