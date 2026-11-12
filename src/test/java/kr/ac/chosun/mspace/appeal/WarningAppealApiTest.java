@@ -353,6 +353,45 @@ class WarningAppealApiTest {
     }
 
     @Test
+    @DisplayName("관리자가 철회한 경고에는 학생이 철회 요청을 보낼 수 없다(409 WARNING_ALREADY_WITHDRAWN) (재웅 #123)")
+    void appealAfterAdminWithdrawRejected() {
+        // given
+        long admin = admin();
+        long w = userReportWarning("1 hour");
+        assertThat(adminWithdraw(admin, w, "직접 확인함")).hasStatusOk();
+
+        // when
+        MvcTestResult r = appeal(1, w);
+
+        // then
+        assertThat(r).hasStatus(HttpStatus.CONFLICT);
+        assertThat(r).bodyJson().extractingPath("$.code").isEqualTo("WARNING_ALREADY_WITHDRAWN");
+        assertThat(jdbc.sql("SELECT count(*) FROM warning_appeal").query(Long.class).single()).isZero();
+    }
+
+    @Test
+    @DisplayName("관리자 철회와 엇갈려 대기로 남은 요청은 AI 판단이 결과와 상관없이 철회로 닫고, 학생에게 다시 알리지 않는다 (재웅 #123)")
+    void pendingLeftAfterAdminWithdrawClosedSilently() {
+        // given: 관리자 철회가 대기 요청을 찾은 뒤 학생 요청이 먼저 들어간 경우 (요청 줄을 직접 넣어 만든다)
+        long admin = admin();
+        long w = userReportWarning("1 hour");
+        assertThat(adminWithdraw(admin, w, "직접 확인함")).hasStatusOk();
+        jdbc.sql("""
+                INSERT INTO warning_appeal (warning_id, user_id, text, evidence, created_at)
+                VALUES (:w, 1, :text, '{}', now())
+                """).param("w", w).param("text", TEXT).update();
+
+        // when
+        reviews.reviewPending();
+
+        // then
+        assertThat(jdbc.sql("SELECT status || ' ' || reviewer FROM warning_appeal WHERE warning_id = :w").param("w", w)
+                .query(String.class).single()).isEqualTo("WITHDRAWN withdrawn");
+        assertThat(jdbc.sql("SELECT title FROM notification WHERE user_id = 1 AND kind = 'WARNING_APPEAL_RESULT'")
+                .query(String.class).list()).containsExactly("경고가 철회됐어요");
+    }
+
+    @Test
     @DisplayName("관리자 철회: 관리자가 아니면 403, 없는 경고 404, 두 번째는 409, 이유가 없거나 200자 넘으면 400(이모지는 1자)")
     void adminWithdrawErrors() {
         long admin = admin();

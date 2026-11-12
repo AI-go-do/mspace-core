@@ -125,7 +125,10 @@ class PenaltyListApiTest {
         // then
         json.extractingPath("$.warnings.length()").isEqualTo(2);
         json.extractingPath("$.warnings[1].id").isEqualTo(1);
-        json.extractingPath("$.warnings[1].withdrawnAt").asString().endsWith("+09:00");
+        java.time.Instant saved = jdbc.sql("SELECT withdrawn_at FROM user_warning WHERE id = 1")
+                .query(java.sql.Timestamp.class).single().toInstant();
+        json.extractingPath("$.warnings[1].withdrawnAt").asString().endsWith("+09:00")
+                .satisfies(t -> assertThat(java.time.OffsetDateTime.parse(t).toInstant()).isEqualTo(saved));
         json.extractingPath("$.warnings[0].withdrawnAt").isNull();
     }
 
