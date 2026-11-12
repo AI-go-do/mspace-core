@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.jayway.jsonpath.JsonPath;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -311,6 +313,80 @@ class TidyCheckApiTest {
         assertThat(reports()).isEmpty();
         assertThat(count("user_warning")).isZero();
         assertThat(inbox("WARNING")).isEmpty();
+    }
+
+    /** 대표자가 찾으러 갈게요 QR로 minutesAgo분 전에 문을 열었다 */
+    void retrievedMinutesAgo(int minutesAgo) {
+        jdbc.sql("""
+                INSERT INTO retrieve_pass (reservation_id, room_id, issued_by, code, issued_at, expires_at, first_used_at)
+                VALUES (:rid, 1, 1, '123456', now() - make_interval(mins => :ago + 2),
+                        now() - make_interval(mins => :ago - 8), now() - make_interval(mins => :ago))
+                """).param("rid", ended).param("ago", minutesAgo).update();
+    }
+
+    @Test
+    @DisplayName("QR로 문을 열면 다시 확인 시각을 연 시각 + 10분으로 당긴다 (11/12 지영: 가져갔는지 사진으로 확인)")
+    void retrieveMovesRecheckEarlier() {
+        // given: 1시간쯤 전에 퇴실하며 우산을 두고 갔고, 방은 비어 있고, 2분 전에 QR로 문을 열었다
+        assertThat(post(1, first("e-rq", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        roomFree();
+        retrievedMinutesAgo(2);
+        Instant used = jdbc.sql("SELECT first_used_at FROM retrieve_pass WHERE reservation_id = :id")
+                .param("id", ended).query((rs, n) -> rs.getTimestamp(1).toInstant()).single();
+
+        // when
+        String json = body(current(1));
+
+        // then: 퇴실 + 3시간이 아니라 연 시각 + 10분
+        assertThat(((Number) JsonPath.read(json, "$.recheck.reservationId")).longValue()).isEqualTo(ended);
+        assertThat(ZonedDateTime.parse(JsonPath.<String>read(json, "$.recheck.at")).toInstant())
+                .isEqualTo(used.plus(Duration.ofMinutes(10)));
+        // 10분 전에 본 화면은 아직 받지 않는다
+        assertThat(post(1, check("e-rq-r", ended, "RECHECK", "CLEAN", "[]")))
+                .hasStatus(409).bodyJson().extractingPath("$.code").isEqualTo("TIDY_RECHECK_TOO_EARLY");
+    }
+
+    @Test
+    @DisplayName("QR로 문 연 지 10분이 지나면 퇴실 3시간 전이어도 다시 확인을 받고, 관리자 목록에 연 시각과 다시 찍은 사진 시각이 나온다")
+    void retrieveRecheckAcceptedAndListed() {
+        // given: 11분 전에 QR로 문을 열었다
+        assertThat(post(1, first("e-rl", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        roomFree();
+        retrievedMinutesAgo(11);
+
+        // when: 젯슨이 다시 보니 깨끗하다
+        MvcTestResult r = post(1, check("e-rl-r", ended, "RECHECK", "CLEAN", "[]"));
+
+        // then
+        assertThat(r).hasStatusOk().bodyJson().extractingPath("$.reportId").isNull();
+        assertThat(count("user_warning")).isZero();
+        assertThat(current(1)).bodyJson().extractingPath("$.recheck").as("다시 확인은 한 번").isNull();
+        assertThat(list(ADMIN, null)).hasStatusOk().bodyJson().satisfies(j -> {
+            j.assertThat().extractingPath("$.items[0].phase").isEqualTo("RECHECK");
+            j.assertThat().extractingPath("$.items[0].retrievedAt").asString().endsWith("+09:00");
+            j.assertThat().extractingPath("$.items[1].phase").isEqualTo("FIRST");
+            j.assertThat().extractingPath("$.items[1].retrievedAt").asString().endsWith("+09:00");
+        });
+    }
+
+    @Test
+    @DisplayName("QR을 퇴실 3시간 직전에 열어도 다시 확인은 퇴실 + 3시간보다 늦어지지 않는다")
+    void retrieveLateKeepsThreeHours() {
+        // given: 퇴실 2시간 55분 뒤(지금) QR로 문을 열었다
+        assertThat(post(1, first("e-rt", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        jdbc.sql("UPDATE reservation SET checked_out_at = now() - interval '175 minutes' WHERE id = :id")
+                .param("id", ended).update();
+        roomFree();
+        retrievedMinutesAgo(0);
+        Instant out = jdbc.sql("SELECT checked_out_at FROM reservation WHERE id = :id")
+                .param("id", ended).query((rs, n) -> rs.getTimestamp(1).toInstant()).single();
+
+        // when
+        String json = body(current(1));
+
+        // then
+        assertThat(ZonedDateTime.parse(JsonPath.<String>read(json, "$.recheck.at")).toInstant())
+                .isEqualTo(out.plus(Duration.ofHours(3)));
     }
 
     @Test
