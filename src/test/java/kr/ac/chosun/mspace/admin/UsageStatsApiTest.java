@@ -219,6 +219,18 @@ class UsageStatsApiTest {
         json.extractingPath("$.total.sensor.co2Readings").isEqualTo(3);
     }
 
+    @Test
+    @DisplayName("종료 시각이 지났는데 아직 자동 퇴실 전(IN_USE)인 예약은 종료 시각까지만 이용으로 본다 (#83)")
+    void inUsePastEndCountsUntilEnd() {
+        // 2번 방 12:00–13:00 입실, 퇴실 기록 없음. 예전에는 기간 끝(24:00)까지 이용으로 봐서 "예약 없이" 시간이 줄었다
+        reservation(2, 4, at(12, 0), at(13, 0), "IN_USE", at(12, 0), null, null);
+
+        var json = assertThat(day()).bodyJson();
+
+        // 1440 − 입실 10:10–11:00(50) − 12:00–13:00(60)
+        json.extractingPath("$.rooms[1].sensor.occupiedWithoutReservationMinutes").isEqualTo(1330);
+    }
+
     long reservationId(int room, Timestamp start) {
         return jdbc.sql("SELECT id FROM reservation WHERE room_id = :room AND start_at = :start")
                 .param("room", room).param("start", start).query((rs, n) -> rs.getLong(1)).single();
