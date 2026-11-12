@@ -83,6 +83,8 @@ class AutoJudgeService implements AutoJudgeUseCase {
         }
         ReportVerdict decided = j.verdict() != ReportVerdict.UNVERIFIED && j.confidence() < policy.minConfidence()
                 || j.verdict() == ReportVerdict.FALSE && !policy.applyFalse()
+                || j.verdict() == ReportVerdict.CONFIRMED && "WINDOW_OPEN".equals(c.get().category())
+                        && !policy.applyWindowConfirmed()
                 ? ReportVerdict.UNVERIFIED : j.verdict();
         Long previous = c.get().previousReservationId();
         Optional<List<Notification>> stored = Objects.requireNonNull(tx.execute(st -> {

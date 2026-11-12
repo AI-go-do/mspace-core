@@ -524,6 +524,57 @@ class AutoJudgeTest {
         }
     }
 
+    /** 창문 열림 사실 (11/12 재웅 리뷰): 기준 숫자가 추측이라 apply-window-confirmed가 꺼져 있으면 기록에만 사실 */
+    @Nested
+    @Import(WindowConfirmed.Config.class)
+    class WindowConfirmed {
+
+        @TestConfiguration
+        static class Config {
+            @Bean
+            @Primary
+            ReportJudge confirmedJudge() {
+                return c -> new ReportJudge.Judgement(kr.ac.chosun.mspace.report.domain.ReportVerdict.CONFIRMED, 0.95,
+                        List.of("퇴실 뒤 CO2가 바깥 수준으로 떨어졌어요."), List.of("SENSOR"), "test", "test-v1");
+            }
+        }
+
+        @Test
+        @DisplayName("창문 열림을 판정기가 사실이라 해도 apply-window-confirmed가 꺼져 있으면 확인 불가, 앞 팀은 경고받지 않고 기록에는 사실로 남는다")
+        void confirmedOnlyRecorded() {
+            // given
+            long id = report("WINDOW_OPEN", "10 minutes");
+
+            // when
+            judge.judgeOpen();
+
+            // then
+            assertThat(verdict(id)).isEqualTo("UNVERIFIED");
+            assertThat(warnings(1)).isZero();
+            assertThat(jdbc.sql("SELECT verdict || '/' || applied FROM report_judgement").query(String.class).single())
+                    .isEqualTo("CONFIRMED/UNVERIFIED");
+        }
+
+        @Nested
+        @TestPropertySource(properties = "mspace.report.judge.apply-window-confirmed=true")
+        class On {
+
+            @Test
+            @DisplayName("apply-window-confirmed를 켜면 창문 열림 사실이 그대로 적용돼 앞 팀 대표자가 경고를 받는다")
+            void confirmedApplied() {
+                // given
+                long id = report("WINDOW_OPEN", "10 minutes");
+
+                // when
+                judge.judgeOpen();
+
+                // then
+                assertThat(verdict(id)).isEqualTo("CONFIRMED");
+                assertThat(warnings(1)).isEqualTo(1);
+            }
+        }
+    }
+
     /** 11/11 지영: 카메라 정확도 51%라 카메라만으로는 사실로 정하지 않는다 (기본값 camera-warn=false) */
     @Nested
     @TestPropertySource(properties = "mspace.tidy.camera-warn=false")
