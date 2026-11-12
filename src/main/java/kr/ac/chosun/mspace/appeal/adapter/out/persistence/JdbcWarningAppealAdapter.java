@@ -105,7 +105,7 @@ class JdbcWarningAppealAdapter implements WarningAppealPort {
     @Override
     public boolean isWithdrawn(long warningId) {
         return jdbc.sql("SELECT withdrawn_at IS NOT NULL FROM user_warning WHERE id = :id").param("id", warningId)
-                .query(Boolean.class).optional().orElse(false);
+                .query((rs, n) -> rs.getBoolean(1)).optional().orElse(false);
     }
 
     @Override
@@ -123,7 +123,7 @@ class JdbcWarningAppealAdapter implements WarningAppealPort {
     @Override
     public List<Long> pending(int limit) {
         return jdbc.sql("SELECT id FROM warning_appeal WHERE status = 'PENDING' ORDER BY created_at, id LIMIT :n")
-                .param("n", limit).query(Long.class).list();
+                .param("n", limit).query((rs, n) -> rs.getLong(1)).list();
     }
 
     @Override

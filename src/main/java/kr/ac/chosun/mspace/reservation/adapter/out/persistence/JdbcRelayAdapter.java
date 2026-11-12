@@ -165,13 +165,13 @@ class JdbcRelayAdapter implements RelayPort {
                           AND NOT EXISTS (SELECT 1 FROM relay_offer o WHERE o.source_reservation_id = r.id)
                         ORDER BY 1
                         """)
-                .param("now", Timestamp.from(now)).param("from", Timestamp.from(from)).query(Integer.class).list();
+                .param("now", Timestamp.from(now)).param("from", Timestamp.from(from)).query((rs, n) -> rs.getInt(1)).list();
     }
 
     @Override
     public List<Integer> roomsWithExpiredOffers(Instant now) {
         return jdbc.sql("SELECT DISTINCT room_id FROM relay_offer WHERE status = 'OPEN' AND expires_at <= :now ORDER BY room_id")
-                .param("now", Timestamp.from(now)).query(Integer.class).list();
+                .param("now", Timestamp.from(now)).query((rs, n) -> rs.getInt(1)).list();
     }
 
     @Override
@@ -186,7 +186,7 @@ class JdbcRelayAdapter implements RelayPort {
                           AND NOT EXISTS (SELECT 1 FROM relay_offer o WHERE o.source_reservation_id = r.id)
                         ORDER BY r.id
                         """)
-                .param("from", Timestamp.from(from)).query(Long.class).list();
+                .param("from", Timestamp.from(from)).query((rs, n) -> rs.getLong(1)).list();
     }
 
 

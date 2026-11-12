@@ -79,7 +79,17 @@ class JdbcTidyCheckAdapter implements TidyCheckPort {
                             OR EXISTS (SELECT 1 FROM user_warning w JOIN report r ON r.id = w.report_id
                                        WHERE w.reservation_id = :id AND r.category = 'MESSY')
                         """)
-                .param("id", reservationId).query(Boolean.class).single();
+                .param("id", reservationId).query((rs, n) -> rs.getBoolean(1)).single();
+    }
+
+    @Override
+    public Optional<Instant> retrievedAt(long reservationId) {
+        return jdbc.sql("""
+                        SELECT first_used_at FROM retrieve_pass
+                        WHERE reservation_id = :id AND first_used_at IS NOT NULL
+                        ORDER BY first_used_at LIMIT 1
+                        """)
+                .param("id", reservationId).query((rs, n) -> rs.getTimestamp(1).toInstant()).optional();
     }
 
     @Override
@@ -173,7 +183,9 @@ class JdbcTidyCheckAdapter implements TidyCheckPort {
                                 WHERE p.reservation_id = t.reservation_id AND p.phase = t.phase) AS camera_after,
                                (SELECT p.created_at FROM reservation_photo p
                                 WHERE p.reservation_id = t.reservation_id AND p.kind = 'CHECK_OUT'
-                                  AND t.phase = 'FIRST') AS student_after
+                                  AND t.phase = 'FIRST') AS student_after,
+                               (SELECT min(q.first_used_at) FROM retrieve_pass q
+                                WHERE q.reservation_id = t.reservation_id) AS retrieved_at
                         FROM tidy_check t
                         JOIN reservation r ON r.id = t.reservation_id
                         JOIN rooms ro ON ro.id = t.room_id
@@ -189,9 +201,14 @@ class JdbcTidyCheckAdapter implements TidyCheckPort {
                             Arrays.stream((String[]) rs.getArray(9).getArray()).map(LeftItem::valueOf).toList(),
                             rs.getObject(10, Long.class), rs.getTimestamp(11).toInstant(),
                             photo(rs.getTimestamp(12), "ENTRY", rs.getTimestamp(13), "CHECK_IN"),
-                            photo(rs.getTimestamp(14), rs.getString(5), rs.getTimestamp(15), "CHECK_OUT"));
+                            photo(rs.getTimestamp(14), rs.getString(5), rs.getTimestamp(15), "CHECK_OUT"),
+                            instant(rs.getTimestamp(16)));
                 })
                 .list();
+    }
+
+    private static Instant instant(Timestamp t) {
+        return t == null ? null : t.toInstant();
     }
 
     /** 방 카메라 사진이 있으면 그것, 없으면 학생 사진, 둘 다 없으면 null (11/12 지영). 사진 내용(bytea)은 읽지 않는다 */

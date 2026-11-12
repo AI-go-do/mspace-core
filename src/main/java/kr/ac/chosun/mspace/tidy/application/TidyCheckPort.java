@@ -25,6 +25,9 @@ public interface TidyCheckPort {
      */
     boolean leftItemsSettled(long reservationId);
 
+    /** 찾으러 갈게요 QR로 처음 문을 연 시각. 열지 않았으면 비어 있다 (11/12 지영 "QR 연 뒤 10분에 다시 확인") */
+    Optional<Instant> retrievedAt(long reservationId);
+
     /** 이 방에서 그 예약 말고 since 뒤에 입실한 예약이 있는지 (지금 사용 중이든 이미 나갔든) */
     boolean enteredSince(int roomId, long reservationId, Instant since);
 

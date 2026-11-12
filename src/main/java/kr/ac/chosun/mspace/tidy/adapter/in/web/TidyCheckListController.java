@@ -53,16 +53,21 @@ class TidyCheckListController {
         }
     }
 
-    /** @param before 입실 전 사진, after 이 단계(퇴실 뒤·3시간 뒤) 사진. 없으면 null → 화면은 "사진을 못 받았어요" */
+    /**
+     * @param before      입실 전 사진, after 이 단계(퇴실 뒤·다시 확인) 사진. 없으면 null → 화면은 "사진을 못 받았어요"
+     * @param retrievedAt 찾으러 갈게요 QR로 처음 문을 연 시각, 안 열었으면 null. 다시 확인 사진 시각은 RECHECK 줄의 after.takenAt
+     */
     record ItemResponse(long reservationId, int roomId, String roomName, ZonedDateTime endedAt, String phase,
                         String result, List<SeenItem> items, List<String> leftItems, Long reportId,
-                        ZonedDateTime observedAt, PhotoResponse before, PhotoResponse after) {
+                        ZonedDateTime observedAt, PhotoResponse before, PhotoResponse after,
+                        ZonedDateTime retrievedAt) {
 
         static ItemResponse from(Listed l) {
             return new ItemResponse(l.reservationId(), l.roomId(), l.roomName(), seoul(l.endedAt()), l.phase().name(),
                     l.result().name(), l.items().stream().map(i -> new SeenItem(i.name(), i.confidence())).toList(),
                     l.leftItems().stream().map(Enum::name).toList(), l.reportId(), seoul(l.observedAt()),
-                    PhotoResponse.from(l.reservationId(), l.before()), PhotoResponse.from(l.reservationId(), l.after()));
+                    PhotoResponse.from(l.reservationId(), l.before()), PhotoResponse.from(l.reservationId(), l.after()),
+                    seoul(l.retrievedAt()));
         }
 
     }

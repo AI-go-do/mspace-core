@@ -45,7 +45,7 @@ class JdbcAdminWithdrawAdapter implements AdminWithdrawPort {
     @Override
     public Optional<Long> pendingAppealOf(long warningId) {
         return jdbc.sql("SELECT id FROM warning_appeal WHERE warning_id = :id AND status = 'PENDING'")
-                .param("id", warningId).query(Long.class).optional();
+                .param("id", warningId).query((rs, n) -> rs.getLong(1)).optional();
     }
 
     @Override

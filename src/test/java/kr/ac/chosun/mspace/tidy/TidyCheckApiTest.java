@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.jayway.jsonpath.JsonPath;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -217,7 +219,7 @@ class TidyCheckApiTest {
 
         assertThat(inbox("LEFT_ITEM")).extracting(m -> ((Number) m.get("user_id")).longValue())
                 .containsExactly(1L, 2L, 3L);
-        assertThat(inbox("LEFT_ITEM").getFirst().get("body")).asString().contains("umbrella·cup").contains("3시간 안에");
+        assertThat(inbox("LEFT_ITEM").getFirst().get("body")).asString().contains("물건을 두고 가신").doesNotContain("umbrella").contains("3시간 안에");
         assertThat(reports()).isEmpty();
         assertThat(count("user_warning")).isZero();
         assertThat(jdbc.sql("SELECT confidences FROM tidy_check").query((rs, n) -> List.of((Float[]) rs.getArray(1).getArray()))
@@ -313,6 +315,94 @@ class TidyCheckApiTest {
         assertThat(inbox("WARNING")).isEmpty();
     }
 
+    /** 대표자가 찾으러 갈게요 QR로 minutesAgo분 전에 문을 열었다 */
+    void retrievedMinutesAgo(int minutesAgo) {
+        jdbc.sql("""
+                INSERT INTO retrieve_pass (reservation_id, room_id, issued_by, code, issued_at, expires_at, first_used_at)
+                VALUES (:rid, 1, 1, '123456', now() - make_interval(mins => :ago + 2),
+                        now() - make_interval(mins => :ago - 8), now() - make_interval(mins => :ago))
+                """).param("rid", ended).param("ago", minutesAgo).update();
+    }
+
+    @Test
+    @DisplayName("QR로 문을 열면 다시 확인 시각을 연 시각 + 10분으로 당긴다 (11/12 지영: 가져갔는지 사진으로 확인)")
+    void retrieveMovesRecheckEarlier() {
+        // given: 1시간쯤 전에 퇴실하며 우산을 두고 갔고, 방은 비어 있고, 2분 전에 QR로 문을 열었다
+        assertThat(post(1, first("e-rq", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        roomFree();
+        retrievedMinutesAgo(2);
+        Instant used = jdbc.sql("SELECT first_used_at FROM retrieve_pass WHERE reservation_id = :id")
+                .param("id", ended).query((rs, n) -> rs.getTimestamp(1).toInstant()).single();
+
+        // when
+        String json = body(current(1));
+
+        // then: 퇴실 + 3시간이 아니라 연 시각 + 10분
+        assertThat(((Number) JsonPath.read(json, "$.recheck.reservationId")).longValue()).isEqualTo(ended);
+        assertThat(ZonedDateTime.parse(JsonPath.<String>read(json, "$.recheck.at")).toInstant())
+                .isEqualTo(used.plus(Duration.ofMinutes(10)));
+    }
+
+    @Test
+    @DisplayName("QR로 문을 연 뒤 본 화면이면 10분이 안 됐어도 RECHECK를 받는다(젯슨 시계가 조금 빨라도 409 없음), 연 시각 전 화면은 409")
+    void retrieveRecheckAcceptedAfterEntry() {
+        // given: 2분 전에 QR로 문을 열었다
+        assertThat(post(1, first("e-ra", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        roomFree();
+        retrievedMinutesAgo(2);
+        String before = OffsetDateTime.now(ZoneOffset.ofHours(9)).minusMinutes(5).withNano(0).toString();
+
+        // when·then: 문 열기 전에 본 화면은 받지 않는다
+        assertThat(post(1, check("e-ra-0", ended, "RECHECK", "CLEAN", "[]").replaceAll(
+                "\"observedAt\":\"[^\"]+\"", "\"observedAt\":\"" + before + "\"")))
+                .hasStatus(409).bodyJson().extractingPath("$.code").isEqualTo("TIDY_RECHECK_TOO_EARLY");
+        // 문 연 뒤 본 화면은 받는다
+        assertThat(post(1, check("e-ra-1", ended, "RECHECK", "CLEAN", "[]"))).hasStatusOk();
+    }
+
+    @Test
+    @DisplayName("QR로 문 연 지 10분이 지나면 퇴실 3시간 전이어도 다시 확인을 받고, 관리자 목록에 연 시각과 다시 찍은 사진 시각이 나온다")
+    void retrieveRecheckAcceptedAndListed() {
+        // given: 11분 전에 QR로 문을 열었다
+        assertThat(post(1, first("e-rl", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        roomFree();
+        retrievedMinutesAgo(11);
+
+        // when: 젯슨이 다시 보니 깨끗하다
+        MvcTestResult r = post(1, check("e-rl-r", ended, "RECHECK", "CLEAN", "[]"));
+
+        // then
+        assertThat(r).hasStatusOk().bodyJson().extractingPath("$.reportId").isNull();
+        assertThat(count("user_warning")).isZero();
+        assertThat(current(1)).bodyJson().extractingPath("$.recheck").as("다시 확인은 한 번").isNull();
+        assertThat(list(ADMIN, null)).hasStatusOk().bodyJson().satisfies(j -> {
+            j.assertThat().extractingPath("$.items[0].phase").isEqualTo("RECHECK");
+            j.assertThat().extractingPath("$.items[0].retrievedAt").asString().endsWith("+09:00");
+            j.assertThat().extractingPath("$.items[1].phase").isEqualTo("FIRST");
+            j.assertThat().extractingPath("$.items[1].retrievedAt").asString().endsWith("+09:00");
+        });
+    }
+
+    @Test
+    @DisplayName("QR을 퇴실 3시간 직전에 열어도 다시 확인은 퇴실 + 3시간보다 늦어지지 않는다")
+    void retrieveLateKeepsThreeHours() {
+        // given: 퇴실 2시간 55분 뒤(지금) QR로 문을 열었다
+        assertThat(post(1, first("e-rt", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        jdbc.sql("UPDATE reservation SET checked_out_at = now() - interval '175 minutes' WHERE id = :id")
+                .param("id", ended).update();
+        roomFree();
+        retrievedMinutesAgo(0);
+        Instant out = jdbc.sql("SELECT checked_out_at FROM reservation WHERE id = :id")
+                .param("id", ended).query((rs, n) -> rs.getTimestamp(1).toInstant()).single();
+
+        // when
+        String json = body(current(1));
+
+        // then
+        assertThat(ZonedDateTime.parse(JsonPath.<String>read(json, "$.recheck.at")).toInstant())
+                .isEqualTo(out.plus(Duration.ofHours(3)));
+    }
+
     @Test
     @DisplayName("다음 팀 어질러짐 신고로 이미 경고를 받은 예약이면 다시 봤을 때 물건이 남아도 또 경고하지 않는다 (CodeRabbit)")
     void alreadyWarnedByReportNoSecondWarning() {
@@ -373,7 +463,7 @@ class TidyCheckApiTest {
                     SELECT user_id, body FROM notification WHERE kind = 'LEFT_ITEM' AND title = '물건이 아직 남아 있어요'
                     ORDER BY user_id""").query().listOfRows();
             assertThat(still).extracting(m -> ((Number) m.get("user_id")).longValue()).containsExactly(1L, 2L, 3L);
-            assertThat((String) still.getFirst().get("body")).contains("umbrella").contains("경고는 없어요");
+            assertThat((String) still.getFirst().get("body")).contains("물건이 남아").doesNotContain("umbrella").contains("경고는 없어요");
             assertThat(jdbc.sql("SELECT count(*) FROM tidy_check WHERE phase = 'RECHECK' AND report_id IS NULL")
                     .query(Long.class).single()).isEqualTo(1);
         }
@@ -430,7 +520,7 @@ class TidyCheckApiTest {
     }
 
     @Test
-    @DisplayName("물건 이름이 길고 많아도 알림 본문은 300자 안, 기한 문장은 남는다")
+    @DisplayName("물건 이름이 길고 많아도 알림 본문엔 이름 없이 '물건'으로만 쓰고 기한 문장을 남긴다")
     void longItemNamesFitNotification() {
         String items = java.util.stream.IntStream.range(0, 8)
                 .mapToObj(i -> "{\"name\":\"" + String.valueOf((char) ('a' + i)).repeat(50) + "\",\"confidence\":0.9}")
@@ -439,7 +529,7 @@ class TidyCheckApiTest {
         assertThat(post(1, first("e20", ended, "LEFT_ITEMS", items))).hasStatusOk();
 
         assertThat(inbox("LEFT_ITEM")).hasSize(3).allSatisfy(m -> assertThat((String) m.get("body"))
-                .hasSizeLessThanOrEqualTo(300).contains(" 외 ").endsWith("3시간 안에 챙겨 가 주세요."));
+                .isEqualTo("1번 방에 물건을 두고 가신 것 같아요. 3시간 안에 챙겨 가 주세요."));
     }
 
     @Test
