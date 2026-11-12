@@ -24,8 +24,8 @@ public interface DailyReportPort {
 
     Optional<Saved> saved(LocalDate date);
 
-    void save(LocalDate date, List<String> lines, String writer, String promptVersion, Instant generatedAt);
+    void save(LocalDate date, List<String> lines, String writer, String promptVersion, String factsHash, Instant generatedAt);
 
-    record Saved(List<String> lines, String writer, Instant generatedAt) {
+    record Saved(List<String> lines, String writer, String factsHash, Instant generatedAt) {
     }
 }

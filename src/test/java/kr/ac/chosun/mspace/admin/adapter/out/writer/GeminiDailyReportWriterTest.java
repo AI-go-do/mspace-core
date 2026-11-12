@@ -100,19 +100,40 @@ class GeminiDailyReportWriterTest {
     }
 
     @Test
-    @DisplayName("3줄보다 적거나, 429·모양이 틀린 답이면 정해진 틀로 쓴다")
+    @DisplayName("3줄보다 적거나, 429·모양이 틀린 답이면 정해진 틀로 쓰고 대신 썼다고(template:fallback) 표시한다")
     void fallsBack() {
         reply = answer("{\"lines\":[\"한 줄뿐\"]}");
-        assertThat(writer().write(DAY, FACTS).writer()).isEqualTo("template");
+        assertThat(writer().write(DAY, FACTS).writer()).isEqualTo("template:fallback");
 
         reply = "{\"candidates\":[]}";
-        assertThat(writer().write(DAY, FACTS).writer()).isEqualTo("template");
+        assertThat(writer().write(DAY, FACTS).writer()).isEqualTo("template:fallback");
 
         status = 429;
         reply = "{}";
         Written w = writer().write(DAY, FACTS);
-        assertThat(w.writer()).isEqualTo("template");
+        assertThat(w.writer()).isEqualTo("template:fallback");
         assertThat(w.lines().getFirst()).isEqualTo("11월 11일 예약 4건 중 2건 이용, 노쇼 1건, 취소 1건이에요.");
+    }
+
+    @Test
+    @DisplayName("정해진 틀은 아무 일 없던 날도 3줄을 쓰고, 철회 요청은 처리와 새로 대기를 나눠 쓴다")
+    void templateLines() {
+        // given: 이용도 신고도 없는 날
+        Usage none = new Usage(1, "1번 방", new Reservations(0, 0, 0, 0, 0, 0, 0, 0), new Rates(null, null, null),
+                new Minutes(0, 0, null), 0, 0, new Sensor(0, null, null, null, 1000, 0, 0, 0), new Alerts(0, 0, null, 0, 0, null, 10));
+        Facts quiet = new Facts(false, none, List.of(none), Map.of(), 0, Map.of(), Map.of(), Map.of());
+
+        // when / then
+        assertThat(new TemplateDailyReportWriter().write(DAY, quiet).lines()).containsExactly(
+                "11월 11일 예약 0건 중 0건 이용, 노쇼 0건, 취소 0건이에요.", "방을 쓴 기록은 없어요.", "신고 0건(사실 0, 대기 0), 경고 0건이에요.");
+
+        // given: 전날 들어온 요청 2건을 오늘 처리, 오늘 새로 1건 대기
+        Facts appeals = new Facts(false, none, List.of(none), Map.of(), 0, Map.of(),
+                Map.of("WITHDRAWN", 1L, "KEPT", 1L, "PENDING", 1L), Map.of());
+
+        // when / then
+        assertThat(new TemplateDailyReportWriter().write(DAY, appeals).lines())
+                .contains("경고 철회 요청 처리 2건(철회 1, 유지 1), 새로 들어와 대기 1건, 장치 고장 0건이에요.");
     }
 
     @Test

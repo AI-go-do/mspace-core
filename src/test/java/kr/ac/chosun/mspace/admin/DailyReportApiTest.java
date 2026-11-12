@@ -134,50 +134,68 @@ class DailyReportApiTest {
         assertThat(r.getResponse().getContentAsString()).doesNotContain("홍길동").doesNotContain("2024008");
     }
 
-    @Test
-    @DisplayName("지난 날 요약은 그날이 끝난 뒤 쓴 것이면 다시 쓰지 않고, 그날 안에 쓴 것이면 새로 쓴다")
-    void pastDayCache() {
-        // given: 그날이 끝난 뒤 쓴 요약
+    /** 보관된 요약을 알아볼 수 있는 글로 바꾼다 (지문·쓴 사람·쓴 시각은 인자로) */
+    void stored(LocalDate date, String first, String writer, String hash, Instant at) {
         jdbc.sql("""
-                INSERT INTO daily_report (report_date, lines, writer, prompt_version, generated_at)
-                VALUES (:d, '{보관된 요약}', 'gemini:test', 'v', :at)
-                """).param("d", java.sql.Date.valueOf(DAY)).param("at", at(TODAY, 1)).update();
+                UPDATE daily_report SET lines = ARRAY[:first, '둘째 줄', '셋째 줄'], writer = :writer,
+                       facts_hash = COALESCE(:hash, facts_hash), generated_at = :at
+                WHERE report_date = :d
+                """).param("first", first).param("writer", writer).param("hash", hash).param("at", Timestamp.from(at))
+                .param("d", java.sql.Date.valueOf(date)).update();
+    }
 
-        // when / then
-        assertThat(get(ADMIN, "?date=" + DAY)).bodyJson().extractingPath("$.lines[0]").isEqualTo("보관된 요약");
-
-        // given: 그날 안(어제 15시)에 쓴 요약 → 숫자가 바뀌었을 수 있어 새로 쓴다
-        jdbc.sql("UPDATE daily_report SET generated_at = :at").param("at", at(DAY, 15)).update();
-
-        // when
-        MvcTestResult r = get(ADMIN, "?date=" + DAY);
-
-        // then
-        assertThat(r).bodyJson().extractingPath("$.writer").isEqualTo("template");
-        assertThat(jdbc.sql("SELECT writer FROM daily_report").query(String.class).single()).isEqualTo("template");
+    /** 요약 첫 줄 */
+    String first(String query) throws Exception {
+        String body = get(ADMIN, query).getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        return tools.jackson.databind.json.JsonMapper.builder().build().readTree(body).path("lines").path(0).asString();
     }
 
     @Test
-    @DisplayName("오늘 요약은 1시간 안이면 보관된 것을, 지나면 새로 쓴다. 날짜를 빼면 오늘")
-    void todayRefresh() {
-        // given: 30분 전에 쓴 오늘 요약
-        jdbc.sql("""
-                INSERT INTO daily_report (report_date, lines, writer, prompt_version, generated_at)
-                VALUES (:d, '{30분 전 요약}', 'gemini:test', 'v', :at)
-                """).param("d", java.sql.Date.valueOf(TODAY)).param("at", Timestamp.from(CLOCK.instant().minusSeconds(1800)))
-                .update();
+    @DisplayName("지난 날 요약은 숫자가 같으면 다시 쓰지 않고, 숫자가 바뀌었거나 Gemini 실패로 대신 쓴 글이면 새로 쓴다")
+    void pastDayCache() throws Exception {
+        // given: 한 번 열어 지금 숫자의 지문으로 보관된 요약
+        get(ADMIN, "?date=" + DAY);
+        Instant longAgo = CLOCK.instant().minusSeconds(86_400);
+        stored(DAY, "보관된 요약", "gemini:test", null, longAgo);
+
+        // when / then: 숫자가 같으면 오래됐어도 그대로
+        assertThat(first("?date=" + DAY)).isEqualTo("보관된 요약");
+
+        // given: 요약을 쓴 뒤 숫자가 바뀜(늦게 정해진 판정 등)
+        stored(DAY, "옛 숫자로 쓴 요약", "gemini:test", "changed", longAgo);
+
+        // when / then: 새로 쓴다
+        assertThat(first("?date=" + DAY)).startsWith("11월 11일 예약 2건");
+        assertThat(jdbc.sql("SELECT writer FROM daily_report").query(String.class).single()).isEqualTo("template");
+
+        // given: Gemini 실패로 정해진 틀로 대신 쓴 글, 30분 전
+        stored(DAY, "대신 쓴 요약", "template:fallback", null, CLOCK.instant().minusSeconds(1800));
+
+        // when / then: 1시간 안이면 그대로(실패 직후 또 부르지 않음), 지나면 다시 써 본다
+        assertThat(first("?date=" + DAY)).isEqualTo("대신 쓴 요약");
+        stored(DAY, "대신 쓴 요약", "template:fallback", null, CLOCK.instant().minusSeconds(7200));
+        assertThat(first("?date=" + DAY)).startsWith("11월 11일 예약 2건");
+    }
+
+    @Test
+    @DisplayName("오늘 요약은 숫자가 바뀌어도 1시간 안이면 보관된 것을, 지나면 새로 쓴다. 숫자가 같으면 그대로. 날짜를 빼면 오늘")
+    void todayRefresh() throws Exception {
+        // given: 숫자가 바뀐 뒤의 30분 전 요약
+        get(ADMIN, "");
+        stored(TODAY, "30분 전 요약", "gemini:test", "changed", CLOCK.instant().minusSeconds(1800));
 
         // when / then
         MvcTestResult fresh = get(ADMIN, "");
         assertThat(fresh).bodyJson().extractingPath("$.lines[0]").isEqualTo("30분 전 요약");
         assertThat(fresh).bodyJson().extractingPath("$.facts.partial").isEqualTo(true);
 
-        // given: 2시간 전에 쓴 요약
-        jdbc.sql("UPDATE daily_report SET generated_at = :at").param("at", Timestamp.from(CLOCK.instant().minusSeconds(7200)))
-                .update();
-
-        // when / then
+        // given: 숫자가 바뀐 채 2시간 전 요약 → 새로 쓴다
+        stored(TODAY, "2시간 전 요약", "gemini:test", "changed", CLOCK.instant().minusSeconds(7200));
         assertThat(get(ADMIN, "")).bodyJson().extractingPath("$.writer").isEqualTo("template");
+
+        // given: 방금 새로 쓰며 지금 지문이 보관됨. 2시간 전으로 돌려도 숫자가 같으면 그대로
+        stored(TODAY, "2시간 전 요약", "gemini:test", null, CLOCK.instant().minusSeconds(7200));
+        assertThat(first("")).isEqualTo("2시간 전 요약");
     }
 
     @Test

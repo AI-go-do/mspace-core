@@ -26,7 +26,8 @@ class TemplateDailyReportWriter implements DailyReportWriter {
         lines.add("%s 예약 %d건 중 %d건 이용, 노쇼 %d건, 취소 %d건이에요.".formatted(day, r.total(), r.used(), r.noShow(),
                 r.canceled()));
         f.rooms().stream().filter(u -> u.minutes().used() > 0).max(Comparator.comparingLong(u -> u.minutes().used()))
-                .ifPresent(u -> lines.add("가장 오래 쓴 방은 %s(%d분)이에요.".formatted(u.roomName(), u.minutes().used())));
+                .ifPresentOrElse(u -> lines.add("가장 오래 쓴 방은 %s(%d분)이에요.".formatted(u.roomName(), u.minutes().used())),
+                        () -> lines.add("방을 쓴 기록은 없어요."));
         long reports = f.reports().values().stream().flatMap(m -> m.values().stream()).mapToLong(Long::longValue).sum();
         long confirmed = verdict(f.reports(), "CONFIRMED");
         long open = verdict(f.reports(), "OPEN");
@@ -35,14 +36,18 @@ class TemplateDailyReportWriter implements DailyReportWriter {
         long appeals = f.appeals().values().stream().mapToLong(Long::longValue).sum();
         long faults = f.deviceFaults().values().stream().mapToLong(Long::longValue).sum();
         if (appeals > 0 || faults > 0) {
-            lines.add("경고 철회 요청 %d건(철회 %d, 유지 %d), 장치 고장 %d건이에요.".formatted(appeals,
-                    f.appeals().getOrDefault("WITHDRAWN", 0L), f.appeals().getOrDefault("KEPT", 0L), faults));
+            // appeals는 그날 정해진 결과 + 그날 들어와 대기 중인 것이라, 처리와 대기를 나눠 쓴다
+            long withdrawn = f.appeals().getOrDefault("WITHDRAWN", 0L);
+            long kept = f.appeals().getOrDefault("KEPT", 0L);
+            lines.add("경고 철회 요청 처리 %d건(철회 %d, 유지 %d), 새로 들어와 대기 %d건, 장치 고장 %d건이에요.".formatted(
+                    withdrawn + kept, withdrawn, kept, f.appeals().getOrDefault("PENDING", 0L), faults));
         }
         Usage t = f.total();
         if (t.sensor().co2Readings() > 0) {
             lines.add("CO2는 평균 %dppm, 가장 높을 때 %dppm, 환기 알림 %d번이에요.".formatted(t.sensor().co2AvgPpm(),
                     t.sensor().co2MaxPpm(), t.sensor().ventilationAlerts()));
         }
+        // 이용 한 줄 + 방 한 줄 + 신고·경고 한 줄은 늘 있어 3줄 아래로 내려가지 않는다 (V32 CHECK 3–5)
         return new Written(List.copyOf(lines.subList(0, Math.min(5, lines.size()))), NAME, VERSION);
     }
 

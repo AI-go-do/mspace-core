@@ -28,6 +28,7 @@ import tools.jackson.databind.json.JsonMapper;
 class GeminiDailyReportWriter implements DailyReportWriter {
 
     static final String VERSION = "daily-gemini-v1";
+    static final String FALLBACK = DailyReportWriter.FALLBACK;
 
     private static final Logger log = LoggerFactory.getLogger(GeminiDailyReportWriter.class);
     private static final Pattern LONG_NUMBER = Pattern.compile("\\d(?:[\\s-]?\\d){6,}");
@@ -64,7 +65,9 @@ class GeminiDailyReportWriter implements DailyReportWriter {
         } catch (RuntimeException e) {
             log.warn("Gemini 하루 운영 보고 실패, 정해진 틀로 씀: date={} error={}", date, e.getClass().getSimpleName());
         }
-        return fallback.write(date, facts);
+        // 대신 쓴 글은 표시해 둔다. 보관해도 refresh가 지나면 Gemini로 다시 써 본다 (지난 날도 영영 template로 남지 않게)
+        Written t = fallback.write(date, facts);
+        return new Written(t.lines(), FALLBACK, t.promptVersion());
     }
 
     Map<String, Object> request(LocalDate date, Facts facts) {

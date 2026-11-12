@@ -10,9 +10,12 @@ import kr.ac.chosun.mspace.admin.application.DailyReportUseCase.Facts;
  */
 public interface DailyReportWriter {
 
+    /** Gemini가 실패해 정해진 틀로 대신 쓴 글의 writer. 이 글은 refresh가 지나면 다시 쓴다 */
+    String FALLBACK = "template:fallback";
+
     Written write(LocalDate date, Facts facts);
 
-    /** @param writer gemini:모델 또는 template */
+    /** @param writer gemini:모델, template, 또는 Gemini가 실패해 정해진 틀로 대신 쓴 template:fallback */
     record Written(List<String> lines, String writer, String promptVersion) {
     }
 }

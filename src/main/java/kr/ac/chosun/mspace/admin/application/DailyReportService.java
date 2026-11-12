@@ -18,7 +18,7 @@ import org.springframework.stereotype.Service;
  * 관리자 하루 운영 보고 (11/12 지영 "core 다 AI화", 11/10 회의 "관리자 = 관제 대시보드").
  * <ul>
  *   <li>숫자는 매번 새로 센다(이용 통계와 같은 쿼리 + 신고·경고·철회·고장 GROUP BY). 글(요약)만 날짜별로 보관해 다시 쓴다</li>
- *   <li>오늘 요약은 refresh(1시간)가 지나면 새로 쓴다. 지난 날은 그날이 끝난 뒤 쓴 요약이 있으면 그대로 쓴다</li>
+ *   <li>글은 그때 본 숫자의 지문과 같이 보관하고, 숫자가 바뀌면 새로 쓴다(오늘은 refresh 1시간 안에선 기다림). 자세한 건 reusable</li>
  *   <li>요약 쓰기(외부 AI)는 트랜잭션 밖. 보관은 한 줄 upsert라 관리자 둘이 같이 열어도 문제없다</li>
  * </ul>
  */
@@ -42,7 +42,9 @@ class DailyReportService implements DailyReportUseCase {
 
     @Override
     public DailyReport report(long adminId, LocalDate date) {
-        LocalDate today = LocalDate.now(clock.withZone(SEOUL));
+        // 날짜와 시각을 한 번 읽은 시계 값으로 정한다 (자정 근처에 둘이 다른 날을 가리키지 않게)
+        Instant now = clock.instant();
+        LocalDate today = LocalDate.ofInstant(now, SEOUL);
         LocalDate day = date == null ? today : date;
         if (day.isAfter(today)) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST, "아직 오지 않은 날의 보고는 볼 수 없습니다");
@@ -51,23 +53,37 @@ class DailyReportService implements DailyReportUseCase {
         UsageStats usage = stats.usage(adminId, day, day);
         Instant from = day.atStartOfDay(SEOUL).toInstant();
         Instant to = day.plusDays(1).atStartOfDay(SEOUL).toInstant();
-        Instant now = clock.instant();
         Facts facts = new Facts(day.equals(today), usage.total(), usage.rooms(), port.reports(from, to),
                 port.autoJudged(from, to), port.warnings(from, to), port.appeals(from, to), port.deviceFaults(from, to));
 
+        String hash = Integer.toHexString(facts.hashCode());
+
         Optional<Saved> saved = port.saved(day);
-        if (saved.isPresent() && fresh(saved.get().generatedAt(), day, today, to, now)) {
+        if (saved.isPresent() && reusable(saved.get(), hash, day.equals(today), now)) {
             return new DailyReport(day, saved.get().lines(), saved.get().writer(), saved.get().generatedAt(), facts);
         }
         Written w = writer.write(day, facts);
-        port.save(day, w.lines(), w.writer(), w.promptVersion(), now);
+        port.save(day, w.lines(), w.writer(), w.promptVersion(), hash, now);
         return new DailyReport(day, w.lines(), w.writer(), now, facts);
     }
 
-    private boolean fresh(Instant generatedAt, LocalDate day, LocalDate today, Instant dayEnd, Instant now) {
-        if (day.equals(today)) {
-            return !generatedAt.plus(policy.refresh()).isBefore(now);
+    /**
+     * 보관한 글을 그대로 써도 되나.
+     * <ul>
+     *   <li>Gemini 실패로 대신 쓴 글: refresh 안에서만 (지난 날도 refresh가 지나면 Gemini로 다시 써 본다)</li>
+     *   <li>글을 쓸 때 본 숫자와 지금 숫자가 같으면: 그대로 (외부 AI를 다시 부르지 않음)</li>
+     *   <li>숫자가 바뀌었으면: 오늘은 refresh(1시간) 안에서만 그대로 두고(무료 한도), 지난 날은 바로 새로 쓴다</li>
+     * </ul>
+     * 오늘 글이 최대 refresh만큼 숫자보다 늦을 수 있어 generatedAt을 같이 돌려준다(화면이 "몇 시 기준"으로 보여 줌).
+     */
+    private boolean reusable(Saved saved, String hash, boolean today, Instant now) {
+        boolean withinRefresh = !saved.generatedAt().plus(policy.refresh()).isBefore(now);
+        if (DailyReportWriter.FALLBACK.equals(saved.writer())) {
+            return withinRefresh;
         }
-        return !generatedAt.isBefore(dayEnd);
+        if (saved.factsHash().equals(hash)) {
+            return true;
+        }
+        return today && withinRefresh;
     }
 }

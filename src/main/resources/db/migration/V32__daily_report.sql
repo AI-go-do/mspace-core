@@ -3,8 +3,9 @@
 -- 이름·학번은 들어가지 않는다 (숫자와 방 이름만 보내고 받음)
 CREATE TABLE daily_report (
     report_date     date          PRIMARY KEY,                       -- 서울 날짜
-    lines           text[]        NOT NULL CHECK (cardinality(lines) BETWEEN 1 AND 5),
-    writer          varchar(60)   NOT NULL,                          -- gemini:모델 또는 template
+    lines           text[]        NOT NULL CHECK (cardinality(lines) BETWEEN 3 AND 5),
+    writer          varchar(60)   NOT NULL,                          -- gemini:모델, template, Gemini 실패로 대신 쓴 template:fallback
+    facts_hash      varchar(16)   NOT NULL,                          -- 글을 쓸 때 본 숫자의 지문. 숫자가 바뀌면 글을 새로 쓴다
     prompt_version  varchar(40)   NOT NULL,
     generated_at    timestamptz   NOT NULL
 );

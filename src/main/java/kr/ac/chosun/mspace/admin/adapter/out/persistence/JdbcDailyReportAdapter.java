@@ -81,26 +81,27 @@ class JdbcDailyReportAdapter implements DailyReportPort {
 
     @Override
     public Optional<Saved> saved(LocalDate date) {
-        return jdbc.sql("SELECT lines, writer, generated_at FROM daily_report WHERE report_date = :d")
+        return jdbc.sql("SELECT lines, writer, facts_hash, generated_at FROM daily_report WHERE report_date = :d")
                 .param("d", Date.valueOf(date))
                 .query((rs, n) -> new Saved(Arrays.asList((String[]) rs.getArray("lines").getArray()),
-                        rs.getString("writer"), rs.getTimestamp("generated_at").toInstant()))
+                        rs.getString("writer"), rs.getString("facts_hash"), rs.getTimestamp("generated_at").toInstant()))
                 .optional();
     }
 
     @Override
-    public void save(LocalDate date, List<String> lines, String writer, String promptVersion, Instant generatedAt) {
+    public void save(LocalDate date, List<String> lines, String writer, String promptVersion, String factsHash,
+                     Instant generatedAt) {
         // 관리자 둘이 같이 열면 둘 다 만들 수 있다. 더 늦게 만든 글만 남긴다
         jdbc.sql("""
-                        INSERT INTO daily_report (report_date, lines, writer, prompt_version, generated_at)
-                        VALUES (:d, :lines, :writer, :version, :at)
+                        INSERT INTO daily_report (report_date, lines, writer, prompt_version, facts_hash, generated_at)
+                        VALUES (:d, :lines, :writer, :version, :hash, :at)
                         ON CONFLICT (report_date) DO UPDATE
                         SET lines = EXCLUDED.lines, writer = EXCLUDED.writer, prompt_version = EXCLUDED.prompt_version,
-                            generated_at = EXCLUDED.generated_at
+                            facts_hash = EXCLUDED.facts_hash, generated_at = EXCLUDED.generated_at
                         WHERE daily_report.generated_at < EXCLUDED.generated_at
                         """)
                 .param("d", Date.valueOf(date)).param("lines", lines.toArray(String[]::new)).param("writer", writer)
-                .param("version", promptVersion).param("at", Timestamp.from(generatedAt))
+                .param("version", promptVersion).param("hash", factsHash).param("at", Timestamp.from(generatedAt))
                 .update();
     }
 }
