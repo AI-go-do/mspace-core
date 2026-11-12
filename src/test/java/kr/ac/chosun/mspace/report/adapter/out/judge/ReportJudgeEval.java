@@ -85,7 +85,8 @@ class ReportJudgeEval {
         Map<String, List<List<Row>>> results = new LinkedHashMap<>();
         results.put(RuleReportJudge.NAME, List.of(run(new RuleReportJudge(TIDY), samples, 0)));
 
-        String key = System.getenv("GEMINI_API_KEY");
+        // 측정용 키를 먼저 쓴다(서버 키와 한도를 나누지 않게, 11/12 지영). 없으면 GEMINI_API_KEY
+        String key = System.getenv().getOrDefault("GEMINI_EVAL_API_KEY", System.getenv("GEMINI_API_KEY"));
         String model = System.getenv().getOrDefault("GEMINI_MODEL", "gemini-3.5-flash-lite");
         if (key != null && !key.isBlank()) {
             var props = new GeminiReportJudgeProperties(null, model, key, Duration.ofSeconds(20));
