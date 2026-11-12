@@ -31,7 +31,7 @@ class GeminiDailyReportWriter implements DailyReportWriter {
     static final String FALLBACK = DailyReportWriter.FALLBACK;
 
     private static final Logger log = LoggerFactory.getLogger(GeminiDailyReportWriter.class);
-    private static final Pattern LONG_NUMBER = Pattern.compile("\\d(?:[\\s-]?\\d){6,}");
+    private static final Pattern LONG_NUMBER = Pattern.compile("\\d(?:[\\s-]?+\\d){6,}+");
     private static final int LINE_MAX = 150;
 
     private final GeminiDailyReportProperties props;

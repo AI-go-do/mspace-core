@@ -28,7 +28,7 @@ class JdbcLightLeftOnAdapter implements LightLeftOnPort {
                   AND NOT EXISTS (SELECT 1 FROM reservation r
                                   WHERE r.room_id = p.room_id AND r.status IN ('BOOKED', 'IN_USE')
                                     AND r.start_at <= :now AND r.end_at > :now)
-                """).param("now", Timestamp.from(now)).query(Integer.class).list());
+                """).param("now", Timestamp.from(now)).query((rs, n) -> rs.getInt(1)).list());
     }
 
     @Override
@@ -50,6 +50,6 @@ class JdbcLightLeftOnAdapter implements LightLeftOnPort {
                                 SELECT user_id FROM reservation_participant
                                 WHERE reservation_id = :id
                                 ORDER BY is_owner DESC, user_id
-                                """).param("id", t.reservationId()).query(Long.class).list()));
+                                """).param("id", t.reservationId()).query((rs, n) -> rs.getLong(1)).list()));
     }
 }
