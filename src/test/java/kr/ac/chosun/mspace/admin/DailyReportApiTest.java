@@ -188,6 +188,10 @@ class DailyReportApiTest {
         MvcTestResult fresh = get(ADMIN, "");
         assertThat(fresh).bodyJson().extractingPath("$.lines[0]").isEqualTo("30분 전 요약");
         assertThat(fresh).bodyJson().extractingPath("$.facts.partial").isEqualTo(true);
+        // 어제(DAY) 예약·신고·경고는 오늘 숫자에 섞이지 않는다
+        assertThat(fresh).bodyJson().extractingPath("$.facts.total.reservations.total").isEqualTo(0);
+        assertThat(fresh).bodyJson().extractingPath("$.facts.reports").asMap().isEmpty();
+        assertThat(fresh).bodyJson().extractingPath("$.facts.warnings").asMap().isEmpty();
 
         // given: 숫자가 바뀐 채 2시간 전 요약 → 새로 쓴다
         stored(TODAY, "2시간 전 요약", "gemini:test", "changed", CLOCK.instant().minusSeconds(7200));
