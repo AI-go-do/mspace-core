@@ -30,7 +30,7 @@ import tools.jackson.databind.json.JsonMapper;
  */
 class GeminiWarningReviewer implements WarningReviewer {
 
-    static final String VERSION = "gemini-v4";
+    static final String VERSION = "gemini-v6";
     static final Set<String> EVIDENCE = Set.of("TIDY_CHECK", "REPORT", "APPEAL");
 
     private static final Logger log = LoggerFactory.getLogger(GeminiWarningReviewer.class);
@@ -214,14 +214,15 @@ class GeminiWarningReviewer implements WarningReviewer {
                이름을 못 붙인 물건은 unknown(확신도 0.5)이다.
                단, 학생이 기한 안에 찾으러 왔는데 QR·문이 열리지 않아 못 가져갔다고 하면 장치 탓이라 WITHDRAWN이다. 다음 예약이 차 있었다는 것은 이유가 되지 않는다(찾으러 가는 QR은 다음 팀이 써도 열린다).
             3. reportSource가 USER면: 너는 사진을 볼 수 없다. checkInPhotoExists·checkOutPhotoExists는 사진이 있었는지만 알려 준다.
-               단, 학생이 studentAppeal에서 신고된 행동을 스스로 인정하면 사실이 확인된 것이다. KEPT, confidence 0.9 이상으로 준다.
+               단, 학생이 studentAppeal에서 신고 글이 문제 삼은 결과를 스스로 인정하면 사실이 확인된 것이다. KEPT, confidence 0.9 이상으로 준다.
                인정한 뒤 "처음이니 봐 달라", "그게 경고까지 받을 일이냐"처럼 벌칙이 과하다고만 하는 것은 부인이 아니다.
                인정이란 신고 글이 문제 삼은 결과(시끄러웠다, 어질러 두고 나왔다, 열어 둔 채 나왔다, 망가뜨렸다)를 인정하는 것이다.
                그 자체로는 문제없는 행동(통화를 했다, 창문을 열었다가 닫았다)만 인정하고 문제 된 결과는 부인하면 인정이 아니다.
-               어질러짐(MESSY) 신고에 "먹었다·쏟았다"는 인정해도 "치웠다·닦았다·정리하고 나왔다"고 하면 어질러 둔 결과를 부인한 것이라 인정이 아니다.
+               어질러짐(MESSY) 신고에 학생이 방에서 음식이나 음료를 먹었다·마셨다·쏟았다고 말하면 음식·음료 반입 금지를 어긴 것이라, 치웠다·닦았다고 해도 인정이다(KEPT).
                소음(NOISE) 신고에 "떠들었다·음악을 틀었다·언성이 높아졌다"는 인정해도 "크지 않았다·우리만 들리게·많이는 아니다"라고 하면 시끄러웠다는 결과를 부인한 것이라 인정이 아니다.
                "약간", "조금", "많이는 아니다"처럼 소리의 정도를 줄여 말하면 시끄러웠다고 인정한 것이 아니다.
                망가뜨림(BROKEN) 신고에 "쓰다가 덜렁거렸다·쓰다가 빠졌다"처럼 자기가 쓰는 동안 그렇게 됐다고 하면 정도를 줄여 말해도 인정이다. "원래부터·쓰기 전부터·우리가 들어갔을 때부터·예약하기 전부터 그랬다"면 이미 그런 상태였다는 말이라 인정이 아니다.
+               "앉았다·썼다"처럼 사용한 것만 말하고 망가뜨린 것은 부인하면 인정이 아니다. "원래·이미 그랬다"는 말이 있으면 그쪽을 따른다.
                인정이 없고 신고 글과 학생 사유만으로 사실을 확인할 수 없으면 WITHDRAWN이다. 확인할 수 없으면 벌칙을 주지 않는 것이 원칙이다.
             4. warningReason이 FALSE_REPORT면 학생이 한 신고가 허위로 판정된 경고다. 너는 이 학생의 지난 신고 횟수를 모르므로 처음 받은 허위 신고 경고로 본다.
                학생이 "일부러 거짓 신고했다"고 스스로 인정하지 않으면 WITHDRAWN이다. "내 기준엔 시끄러웠다", "봐 달라"는 거짓을 인정한 것이 아니다.

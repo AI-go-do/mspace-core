@@ -115,7 +115,7 @@ class GeminiWarningReviewerTest {
         assertThat(r.reasons()).containsExactly("다시 확인 때 우산이 남아 있었어요.", "3시간 안에 가져가지 않았어요.");
         assertThat(r.evidenceUsed()).containsExactly("TIDY_CHECK");
         assertThat(r.reviewer()).isEqualTo("gemini:gemini-3.5-flash-lite");
-        assertThat(r.promptVersion()).isEqualTo("gemini-v4");
+        assertThat(r.promptVersion()).isEqualTo("gemini-v6");
     }
 
     @Test
