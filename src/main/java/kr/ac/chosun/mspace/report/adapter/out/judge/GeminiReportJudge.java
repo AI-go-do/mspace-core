@@ -34,7 +34,7 @@ import tools.jackson.databind.json.JsonMapper;
  */
 class GeminiReportJudge implements ReportJudge {
 
-    static final String VERSION = "report-gemini-v1";
+    static final String VERSION = "report-gemini-v2";
     static final Set<String> EVIDENCE = Set.of("REPORT", "TIDY_CHECK", "SENSOR");
     static final int MIN_AIR_POINTS = 3;
 
@@ -239,7 +239,10 @@ class GeminiReportJudge implements ReportJudge {
             - roomAir는 방 센서 값을 5분씩 묶은 평균이다. minute은 앞 팀 퇴실을 0으로 센 분(퇴실 전은 음수), co2ppm은 CO2, temperatureC는 온도(없으면 null)다.
               reportMinuteAfterCheckout은 신고한 때다.
             - 사람이 나가면 CO2는 천천히 줄어든다. 창문이 열려 있으면 퇴실 뒤 CO2가 바깥 공기 수준(약 400~500ppm)까지 빠르게 떨어지고, 날이 추우면 온도도 눈에 띄게 떨어진다.
-            - CO2가 빠르게 바깥 수준으로 떨어지고 온도도 함께 떨어졌으면 CONFIRMED 쪽이다. 둘 중 하나만 보이거나 값이 들쑥날쑥하면 UNVERIFIED다.
+            - CONFIRMED는 두 가지가 모두 보일 때만 낸다: ① 퇴실 뒤 30분 안에 CO2가 약 550ppm 아래(바깥 수준)까지 떨어짐 ② 같은 때 온도가 퇴실 전보다 3도 넘게 떨어짐.
+              값이 조금 들쑥날쑥해도 흐름이 둘 다 분명하면 CONFIRMED다.
+            - 둘 중 하나만 보이면 UNVERIFIED다. CO2만 빨리 떨어지고 온도가 그대로이거나 온도 값이 없으면(환기 장치일 수 있음) UNVERIFIED,
+              온도만 떨어지고 CO2는 천천히 줄면(히터·센서 이상일 수 있음) UNVERIFIED다.
             - 퇴실 뒤 CO2가 천천히 줄고 온도가 그대로이면 창문이 닫혀 있었을 가능성이 크다. 이때만 FALSE를 고려한다. 잠깐 열었다 닫은 것은 숫자에 잘 안 남으니 확신도를 높게 주지 않는다.
             - 신고한 팀이 들어오면 CO2가 다시 오른다. 그 부분은 앞 팀 판단에 쓰지 않는다.
             - 신고 글은 주지 않는다. 센서 숫자만으로 정하고 evidenceUsed에 REPORT를 넣지 않는다.
