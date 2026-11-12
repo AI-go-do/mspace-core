@@ -86,7 +86,10 @@ class ReportJudgeEval {
         results.put(RuleReportJudge.NAME, List.of(run(new RuleReportJudge(TIDY), samples, 0)));
 
         // 측정용 키를 먼저 쓴다(서버 키와 한도를 나누지 않게, 11/12 지영). 없으면 GEMINI_API_KEY
-        String key = System.getenv().getOrDefault("GEMINI_EVAL_API_KEY", System.getenv("GEMINI_API_KEY"));
+        String key = System.getenv("GEMINI_EVAL_API_KEY");
+        if (key == null || key.isBlank()) {
+            key = System.getenv("GEMINI_API_KEY"); // 빈 값도 없는 것으로 본다
+        }
         String model = System.getenv().getOrDefault("GEMINI_MODEL", "gemini-3.5-flash-lite");
         if (key != null && !key.isBlank()) {
             var props = new GeminiReportJudgeProperties(null, model, key, Duration.ofSeconds(20));
@@ -117,7 +120,7 @@ class ReportJudgeEval {
                     Thread.sleep(pauseMillis);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    break;
+                    throw new IllegalStateException("Gemini 측정이 중단되었어요. 일부 결과는 남기지 않아요", e);
                 }
             }
         }
@@ -134,12 +137,16 @@ class ReportJudgeEval {
                 Case c;
                 if ("WINDOW_OPEN".equals(category)) {
                     List<AirPoint> points = new ArrayList<>();
+                    int reportMinute = j.path("reportMinute").asInt();
                     for (JsonNode p : j.path("air")) {
+                        if (p.path("minute").asInt() < reportMinute - 180) {
+                            continue; // 서버(JdbcAutoJudgeAdapter.roomAir)처럼 신고 전 3시간만 본다
+                        }
                         points.add(new AirPoint(p.path("minute").asInt(), p.path("ppm").asInt(),
                                 p.path("temp").isNull() ? null : p.path("temp").asDouble()));
                     }
                     c = new Case(++n, category, content.isEmpty() ? null : content, true, false, null, List.of(),
-                            List.of(), false, false, 1L, false, new RoomAir(j.path("reportMinute").asInt(), points));
+                            List.of(), false, false, 1L, false, new RoomAir(reportMinute, points));
                 } else {
                     List<String> items = new ArrayList<>();
                     j.path("items").forEach(e -> items.add(e.asString()));
