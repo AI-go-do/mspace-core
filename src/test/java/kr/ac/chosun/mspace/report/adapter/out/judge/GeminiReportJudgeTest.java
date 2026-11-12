@@ -163,7 +163,12 @@ class GeminiReportJudgeTest {
         assertThat(j.verdict()).isEqualTo(ReportVerdict.UNVERIFIED);
         JsonNode facts = JsonMapper.builder().build().readTree(JsonMapper.builder().build().readTree(sentBody.get())
                 .path("contents").path(0).path("parts").path(0).path("text").asString());
-        assertThat(facts.path("cameraItems").path(0).path("name").asString()).isEqualTo("cup");
+        // 물건 이름은 보내지 않고 "남아 있나"와 확신도만 (11/12 지영)
+        assertThat(facts.has("cameraItems")).isFalse();
+        assertThat(sentBody.get()).doesNotContain("cup").doesNotContain("bottle");
+        assertThat(facts.path("cameraItemCount").asInt()).isEqualTo(2);
+        assertThat(facts.path("cameraLeftConfidence").asDouble()).isEqualTo(MESSY.previousConfidences().stream()
+                .mapToDouble(Double::doubleValue).max().orElseThrow());
         assertThat(facts.path("reportContent").asString()).isEqualTo("컵이랑 병이 있어요 [숫자 가림]");
         assertThat(facts.has("roomAir")).isFalse();
     }

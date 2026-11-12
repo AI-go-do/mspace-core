@@ -34,7 +34,7 @@ import tools.jackson.databind.json.JsonMapper;
  */
 class GeminiReportJudge implements ReportJudge {
 
-    static final String VERSION = "report-gemini-v3";
+    static final String VERSION = "report-gemini-v4";
     static final Set<String> EVIDENCE = Set.of("REPORT", "TIDY_CHECK", "SENSOR");
     static final int MIN_AIR_POINTS = 3;
 
@@ -129,14 +129,10 @@ class GeminiReportJudge implements ReportJudge {
             facts.put("reportContent", mask(c.content()));
             facts.put("cameraResult", c.previousTidyResult());
             facts.put("cameraIsRecheck", c.previousRechecked());
-            List<Map<String, Object>> items = new ArrayList<>();
-            for (int i = 0; i < c.previousItems().size(); i++) {
-                Map<String, Object> item = new LinkedHashMap<>();
-                item.put("name", c.previousItems().get(i));
-                item.put("confidence", i < c.previousConfidences().size() ? c.previousConfidences().get(i) : null);
-                items.add(item);
-            }
-            facts.put("cameraItems", items);
+            // 물건 이름은 보내지 않는다 (11/12 지영 "그냥 물건 두고 갔어요"). 카메라는 "물건이 남아 있나"와
+            // 그 확신도(device #65: 물건이 실제로 남아 있을 확률)만 알려 준다
+            facts.put("cameraItemCount", c.previousItems().size());
+            facts.put("cameraLeftConfidence", c.previousConfidences().stream().mapToDouble(Double::doubleValue).max().orElse(0));
             facts.put("warnMinConfidence", tidy.warnMinConfidence());
         }
         if (c.roomAir() != null) {
@@ -248,10 +244,12 @@ class GeminiReportJudge implements ReportJudge {
             - 신고 글은 주지 않는다. 센서 숫자만으로 정하고 evidenceUsed에 REPORT를 넣지 않는다.
 
             category가 MESSY(앞 팀이 방을 어질러 두고 나갔다는 신고)이면:
-            - cameraResult·cameraItems는 앞 팀 퇴실 뒤 방 카메라가 본 결과다(LEFT_ITEMS=남은 물건 있음, CLEAN=없음). 이름은 영어 물체 이름, unknown은 이름을 못 붙인 물건이다.
-            - 확신도가 warnMinConfidence 이상인 물건이 있고 신고 글과 맞으면 CONFIRMED 쪽이다. 신고 글이 말하는 것과 카메라가 본 물건이 전혀 다르면 UNVERIFIED다.
-            - 카메라는 물건만 본다. 신고 글이 쏟음·얼룩처럼 물건이 아닌 어지름을 말하는데 카메라엔 그와 상관없는 물건(노트북·휴대폰·가방 같은 소지품)만 있으면,
-              신고 내용은 확인되지 않은 것이니 UNVERIFIED다. 남은 물건이 있다는 것만으로 다른 내용의 신고를 사실로 만들지 않는다.
+            - cameraResult는 앞 팀 퇴실 뒤 방 카메라가 본 결과다(LEFT_ITEMS=남은 물건 있음, CLEAN=없음). cameraItemCount는 남은 물건 수,
+              cameraLeftConfidence는 물건이 실제로 남아 있을 확률이다. 카메라는 무슨 물건인지는 알려 주지 않는다.
+            - 카메라는 "물건이 남아 있다"만 확인할 수 있다. 신고 글이 남은 물건(컵·병·쓰레기·과자 봉지·책·소지품 등)을 말하거나
+              그냥 어질러졌다고만 하거나 글이 없으면, cameraLeftConfidence가 warnMinConfidence 이상일 때 CONFIRMED 쪽이다.
+            - 신고 글이 쏟음·얼룩·낙서·뒤집힌 의자처럼 물건이 남은 게 아닌 어지름을 말하면, 카메라로는 확인할 수 없으니 UNVERIFIED다.
+              물건이 남아 있다는 것만으로 다른 내용의 신고를 사실로 만들지 않는다.
             - 카메라는 틀릴 수 있다. CLEAN만으로는 FALSE를 높은 확신도로 내지 않는다.
 
             confidence는 네 판정이 맞을 확률(0~1)이다.
