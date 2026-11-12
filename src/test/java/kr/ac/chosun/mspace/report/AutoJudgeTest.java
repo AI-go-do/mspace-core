@@ -456,6 +456,24 @@ class AutoJudgeTest {
         }
 
         @Test
+        @DisplayName("창문 열림 신고: 앞 팀이 신고자보다 늦게 입실했으면 센서 값을 넘기지 않는다 (CodeRabbit)")
+        void roomAirSkippedWhenPreviousCameLater() {
+            // given: 앞 팀으로 잡히는 예약이 신고자(1시간 넘게 전 입실)보다 늦게, 50분 전 입실해 40분 전 퇴실
+            jdbc.sql("UPDATE reservation SET checked_in_at = now() - interval '50 minutes' WHERE id = :id")
+                    .param("id", previous).update();
+            report("WINDOW_OPEN", "10 minutes");
+            air("a1", 1, "now() - interval '44 minutes'", 1200, "23.4");
+            air("a2", 1, "now() - interval '33 minutes'", 600, "23.0");
+            air("a3", 1, "now() - interval '23 minutes'", 450, "19.5");
+
+            // when
+            judge.judgeOpen();
+
+            // then
+            assertThat(SEEN.get().roomAir()).isNull();
+        }
+
+        @Test
         @DisplayName("판정기가 허위라 해도 apply-false가 꺼져 있으면 확인 불가, 신고자는 경고받지 않고 기록에는 허위로 남는다")
         void falseOnlyRecorded() {
             // given
