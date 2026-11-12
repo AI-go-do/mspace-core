@@ -10,6 +10,9 @@ import java.util.List;
  */
 public interface OpsAutoUseCase {
 
+    /** 1분마다 부른다. 새로 처리한 일 수 */
+    int check();
+
     /** 관리자 "AI가 처리한 일": 그날(서울) 처리한 일, 최근 것부터. 관리자만 */
     List<OpsAction> actions(long adminId, LocalDate date);
 
