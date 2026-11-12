@@ -70,7 +70,7 @@ class DailyReportService implements DailyReportUseCase {
     /**
      * 보관한 글을 그대로 써도 되나.
      * <ul>
-     *   <li>Gemini 실패로 대신 쓴 글: refresh 안에서만 (지난 날도 refresh가 지나면 Gemini로 다시 써 본다)</li>
+     *   <li>Gemini 실패로 대신 쓴 글: refresh 안이고 숫자도 같을 때만 (지난 날도 refresh가 지나면 Gemini로 다시 써 본다)</li>
      *   <li>글을 쓸 때 본 숫자와 지금 숫자가 같으면: 그대로 (외부 AI를 다시 부르지 않음)</li>
      *   <li>숫자가 바뀌었으면: 오늘은 refresh(1시간) 안에서만 그대로 두고(무료 한도), 지난 날은 바로 새로 쓴다</li>
      * </ul>
@@ -79,7 +79,7 @@ class DailyReportService implements DailyReportUseCase {
     private boolean reusable(Saved saved, String hash, boolean today, Instant now) {
         boolean withinRefresh = !saved.generatedAt().plus(policy.refresh()).isBefore(now);
         if (DailyReportWriter.FALLBACK.equals(saved.writer())) {
-            return withinRefresh;
+            return withinRefresh && saved.factsHash().equals(hash);
         }
         if (saved.factsHash().equals(hash)) {
             return true;

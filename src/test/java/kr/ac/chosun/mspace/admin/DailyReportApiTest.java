@@ -173,6 +173,9 @@ class DailyReportApiTest {
 
         // when / then: 1시간 안이면 그대로(실패 직후 또 부르지 않음), 지나면 다시 써 본다
         assertThat(first("?date=" + DAY)).isEqualTo("대신 쓴 요약");
+        // 숫자가 바뀌었으면 1시간 안이어도 새로 쓴다
+        stored(DAY, "대신 쓴 요약", "template:fallback", "changed", CLOCK.instant().minusSeconds(1800));
+        assertThat(first("?date=" + DAY)).startsWith("11월 11일 예약 2건");
         stored(DAY, "대신 쓴 요약", "template:fallback", null, CLOCK.instant().minusSeconds(7200));
         assertThat(first("?date=" + DAY)).startsWith("11월 11일 예약 2건");
     }
