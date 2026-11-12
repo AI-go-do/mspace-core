@@ -117,11 +117,14 @@ class JdbcUsageStatsAdapter implements UsageStatsPort {
                                 WHERE room_id = rm.id AND kind = 'OCCUPANCY' AND observed_at < :from
                                 ORDER BY observed_at DESC LIMIT 1) last
                         ), seg AS (
-                            SELECT room_id, occupied,
-                                   greatest(observed_at, CAST(:from AS timestamptz)) AS a,
-                                   coalesce(lead(observed_at) OVER (PARTITION BY room_id ORDER BY observed_at, id),
-                                            CAST(:cap AS timestamptz)) AS b
-                            FROM ev
+                            -- 마지막 상태는 센서가 마지막으로 신호를 보낸 때까지만 센다. 끊긴 센서의 마지막 "있음"이
+                            -- 지금까지 이어져 "예약 없이 있던 시간"이 부풀던 것을 막는다 (신호 기록이 없으면 :cap까지)
+                            SELECT ev.room_id, ev.occupied,
+                                   greatest(ev.observed_at, CAST(:from AS timestamptz)) AS a,
+                                   coalesce(lead(ev.observed_at) OVER (PARTITION BY ev.room_id ORDER BY ev.observed_at, ev.id),
+                                            least(CAST(:cap AS timestamptz),
+                                                  coalesce(rp.last_received_at, CAST(:cap AS timestamptz)))) AS b
+                            FROM ev LEFT JOIN room_presence rp ON rp.room_id = ev.room_id
                         ), occ AS (
                             SELECT room_id, range_agg(tstzrange(a, b)) AS r FROM seg
                             WHERE occupied AND b > a GROUP BY room_id
