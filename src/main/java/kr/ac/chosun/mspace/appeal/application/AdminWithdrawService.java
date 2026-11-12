@@ -54,7 +54,7 @@ class AdminWithdrawService implements AdminWithdrawUseCase {
             throw new BusinessException(ErrorCode.ADMIN_ONLY);
         }
         String why = reason == null ? "" : reason.strip();
-        if (why.isEmpty() || why.length() > REASON_MAX) {
+        if (why.isEmpty() || why.codePointCount(0, why.length()) > REASON_MAX) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST, "철회 이유는 1–" + REASON_MAX + "자로 적어 주세요");
         }
         Result r = Objects.requireNonNull(tx.execute(st -> apply(adminId, warningId, why)));

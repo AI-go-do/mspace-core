@@ -103,6 +103,7 @@ class PenaltyListApiTest {
         json.extractingPath("$.warnings[1].reason").isEqualTo("VIOLATION");
         json.extractingPath("$.warnings[1].reservationId").isEqualTo(1);
         json.extractingPath("$.warnings[1].createdAt").asString().endsWith("+09:00");
+        json.extractingPath("$.warnings[1].withdrawnAt").isNull();
         json.extractingPath("$.suspensions.length()").isEqualTo(2);
         json.extractingPath("$.suspensions[0].scope").isEqualTo("REPORT");
         json.extractingPath("$.suspensions[0].reason").isEqualTo("FALSE_REPORT");
@@ -110,6 +111,22 @@ class PenaltyListApiTest {
         json.extractingPath("$.suspensions[1].scope").isEqualTo("USE");
         json.extractingPath("$.suspensions[1].reason").isEqualTo("WARNINGS");
         json.extractingPath("$.suspensions[1].member.name").isEqualTo("회원2");
+    }
+
+    @Test
+    @DisplayName("철회된 경고도 목록에 남고 withdrawnAt(+09:00)이 붙는다")
+    void withdrawnWarningShowsTime() {
+        // given: 2번 회원의 오늘 위반 경고가 철회됨
+        jdbc.sql("UPDATE user_warning SET withdrawn_at = now() WHERE id = 1").update();
+
+        // when
+        var json = assertThat(list(ADMIN, "")).bodyJson();
+
+        // then
+        json.extractingPath("$.warnings.length()").isEqualTo(2);
+        json.extractingPath("$.warnings[1].id").isEqualTo(1);
+        json.extractingPath("$.warnings[1].withdrawnAt").asString().endsWith("+09:00");
+        json.extractingPath("$.warnings[0].withdrawnAt").isNull();
     }
 
     @Test

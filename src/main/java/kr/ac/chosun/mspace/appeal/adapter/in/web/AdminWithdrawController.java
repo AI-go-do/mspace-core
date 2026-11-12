@@ -21,7 +21,7 @@ class AdminWithdrawController {
     /**
      * 경고 하나를 철회한다. 그 경고로 걸린 정지도 풀고, 학생에게 알리고, 대기 중인 철회 요청은 철회로 닫는다.
      * 예: POST /api/admin/warnings/12/withdraw {"reason": "카메라 오인으로 확인됨"}.
-     * 관리자가 아니면 403 ADMIN_ONLY, 경고가 없으면 404, 이미 철회됐으면 409 WARNING_ALREADY_WITHDRAWN, 이유가 비거나 500자 넘으면 400
+     * 관리자가 아니면 403 ADMIN_ONLY, 경고가 없으면 404, 이미 철회됐으면 409 WARNING_ALREADY_WITHDRAWN, 이유가 비거나 200자 넘으면 400
      */
     @PostMapping("/api/admin/warnings/{id}/withdraw")
     Withdrawn withdraw(LoginUser user, @PathVariable long id, @RequestBody WithdrawRequest request) {

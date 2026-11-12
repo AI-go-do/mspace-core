@@ -353,19 +353,22 @@ class WarningAppealApiTest {
     }
 
     @Test
-    @DisplayName("관리자 철회: 관리자가 아니면 403, 없는 경고 404, 두 번째는 409, 이유가 없으면 400")
+    @DisplayName("관리자 철회: 관리자가 아니면 403, 없는 경고 404, 두 번째는 409, 이유가 없거나 200자 넘으면 400(이모지는 1자)")
     void adminWithdrawErrors() {
         long admin = admin();
         long w = userReportWarning("1 hour");
 
         assertThat(adminWithdraw(1, w, "내가 풀래요")).hasStatus(HttpStatus.FORBIDDEN);
         assertThat(adminWithdraw(admin, w, "  ")).hasStatus(HttpStatus.BAD_REQUEST);
+        assertThat(adminWithdraw(admin, w, "가".repeat(201))).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(adminWithdraw(admin, 9999, "없음")).hasStatus(HttpStatus.NOT_FOUND);
-        assertThat(adminWithdraw(admin, w, "첫 번째")).hasStatusOk();
+        // 이모지 100개 + 5자 = 105자. String.length()로 세면 205라 막혔을 것
+        String first = "😀".repeat(100) + "첫 번째";
+        assertThat(adminWithdraw(admin, w, first)).hasStatusOk();
         MvcTestResult again = adminWithdraw(admin, w, "두 번째");
         assertThat(again).hasStatus(HttpStatus.CONFLICT);
         assertThat(again).bodyJson().extractingPath("$.code").isEqualTo("WARNING_ALREADY_WITHDRAWN");
         assertThat(jdbc.sql("SELECT withdraw_reason FROM user_warning WHERE id = :id").param("id", w).query(String.class)
-                .single()).isEqualTo("첫 번째");
+                .single()).isEqualTo(first);
     }
 }

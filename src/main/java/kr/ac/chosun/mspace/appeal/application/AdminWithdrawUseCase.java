@@ -9,10 +9,10 @@ import java.time.Instant;
  */
 public interface AdminWithdrawUseCase {
 
-    int REASON_MAX = 500;
+    int REASON_MAX = 200;
 
     /**
-     * @param reason 필수, 1–500자. 학생 알림에도 붙는다
+     * @param reason 필수, 1–200자(글자 수, 이모지도 1자). 학생 알림에도 붙는다
      * @throws kr.ac.chosun.mspace.common.error.BusinessException 관리자가 아니면 403 ADMIN_ONLY, 경고가 없으면
      *         404 WARNING_NOT_FOUND, 이미 철회됐으면 409 WARNING_ALREADY_WITHDRAWN, 이유가 비거나 길면 400
      */
