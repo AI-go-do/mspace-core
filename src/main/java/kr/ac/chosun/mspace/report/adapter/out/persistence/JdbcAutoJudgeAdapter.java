@@ -3,6 +3,7 @@ package kr.ac.chosun.mspace.report.adapter.out.persistence;
 import java.sql.Array;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -16,6 +17,9 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 class JdbcAutoJudgeAdapter implements AutoJudgePort {
+
+    private static final Duration AIR_BEFORE_OUT = Duration.ofMinutes(15);
+    private static final Duration AIR_MAX = Duration.ofHours(3);
 
     private final JdbcClient jdbc;
 
@@ -51,7 +55,8 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
     public Optional<ReportJudge.Case> loadCase(long reportId) {
         // 앞 팀 = 경고 받을 예약과 같은 규칙(FR-RPT-104): 신고 전에 그 방에 입실한 예약 중 가장 늦은 것, 신고자 예약 제외
         return jdbc.sql("""
-                        SELECT p.id, p.category, p.content, prev.id AS prev_id,
+                        SELECT p.id, p.category, p.content, p.room_id, p.created_at, prev.id AS prev_id, prev.checked_out_at AS prev_out,
+                               COALESCE(prev.checked_in_at <= mine.checked_in_at, false) AS prev_first,
                                EXISTS (SELECT 1 FROM reservation_photo f
                                        WHERE f.reservation_id = p.reporter_reservation_id AND f.kind = 'CHECK_IN') AS check_in,
                                EXISTS (SELECT 1 FROM reservation_photo f
@@ -63,7 +68,7 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
                                        WHERE q.reservation_id = prev.id AND q.first_used_at IS NOT NULL) AS prev_retrieved
                         FROM report p
                         LEFT JOIN LATERAL (
-                            SELECT r.id FROM reservation r
+                            SELECT r.id, r.checked_in_at, r.checked_out_at FROM reservation r
                             WHERE r.room_id = p.room_id
                               AND r.id IS DISTINCT FROM p.reporter_reservation_id
                               AND r.checked_in_at IS NOT NULL AND r.checked_in_at <= p.created_at
@@ -82,6 +87,11 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
                         """)
                 .param("id", reportId)
                 .query((rs, n) -> {
+                    // 앞 팀이 신고자보다 늦게 입실했으면(다음 예약 조기 입실) 센서 구간에 신고자가 있던 때가 섞여
+                    // 앞 팀 탓인지 알 수 없다 → 카메라 결과와 같이 센서 값도 넘기지 않는다 (CodeRabbit #121)
+                    Timestamp prevOut = rs.getBoolean("prev_first") ? rs.getTimestamp("prev_out") : null;
+                    RoomRow room = new RoomRow(rs.getInt("room_id"), rs.getTimestamp("created_at").toInstant(),
+                            prevOut == null ? null : prevOut.toInstant());
                     Array conf = rs.getArray("confidences");
                     List<Double> confidences = new ArrayList<>();
                     if (conf != null) {
@@ -89,13 +99,53 @@ class JdbcAutoJudgeAdapter implements AutoJudgePort {
                             confidences.add(f == null ? null : f.doubleValue());
                         }
                     }
-                    return new ReportJudge.Case(rs.getLong("id"), rs.getString("category"), rs.getString("content"),
+                    return new Row(rs.getLong("id"), rs.getString("category"), rs.getString("content"),
                             rs.getBoolean("check_in"), rs.getBoolean("prev_check_out"), rs.getString("result"),
                             Arrays.asList(strings(rs.getArray("items"))), confidences,
                             rs.getBoolean("prev_warned"), rs.getBoolean("prev_retrieved"),
-                            rs.getObject("prev_id", Long.class), rs.getBoolean("rechecked"));
+                            rs.getObject("prev_id", Long.class), rs.getBoolean("rechecked"), room);
                 })
-                .optional();
+                .optional()
+                .map(r -> new ReportJudge.Case(r.id, r.category, r.content, r.checkIn, r.prevCheckOut, r.result,
+                        r.items, r.confidences, r.prevWarned, r.prevRetrieved, r.prevId, r.rechecked,
+                        "WINDOW_OPEN".equals(r.category) ? roomAir(r.room) : null));
+    }
+
+    private record Row(long id, String category, String content, boolean checkIn, boolean prevCheckOut, String result,
+                       List<String> items, List<Double> confidences, boolean prevWarned, boolean prevRetrieved,
+                       Long prevId, boolean rechecked, RoomRow room) {
+    }
+
+    private record RoomRow(int roomId, Instant reportedAt, Instant previousOut) {
+    }
+
+    /**
+     * 창문 열림 판정용 방 CO2·온도 (FR-RPT-103, 11/12 지영 "창문 열림이랑 어질러짐"). 앞 팀 퇴실 15분 전부터 신고 때까지
+     * 5분씩 평균, 최대 3시간. 앞 팀이 없거나, 신고자보다 늦게 입실했거나, 신고 때 아직 퇴실 전이면 null
+     */
+    private ReportJudge.RoomAir roomAir(RoomRow room) {
+        if (room.previousOut() == null || room.previousOut().isAfter(room.reportedAt())) {
+            return null;
+        }
+        Instant from = room.previousOut().minus(AIR_BEFORE_OUT);
+        if (from.isBefore(room.reportedAt().minus(AIR_MAX))) {
+            from = room.reportedAt().minus(AIR_MAX);
+        }
+        // 인덱스 sensor_event_room_recent (room_id, kind, observed_at DESC)로 그 방 CO2 기록만 읽는다
+        List<ReportJudge.AirPoint> points = jdbc.sql("""
+                        SELECT (floor(extract(epoch FROM observed_at - :out) / 300) * 5)::int AS minute,
+                               round(avg(ppm))::int AS ppm, round(avg(temperature_c), 1)::float8 AS temp
+                        FROM sensor_event
+                        WHERE room_id = :room AND kind = 'CO2' AND observed_at >= :from AND observed_at <= :at
+                        GROUP BY 1 ORDER BY 1
+                        """)
+                .param("out", Timestamp.from(room.previousOut())).param("room", room.roomId())
+                .param("from", Timestamp.from(from)).param("at", Timestamp.from(room.reportedAt()))
+                .query((rs, n) -> new ReportJudge.AirPoint(rs.getInt("minute"), rs.getInt("ppm"),
+                        rs.getObject("temp", Double.class)))
+                .list();
+        int reportMinute = (int) Duration.between(room.previousOut(), room.reportedAt()).toMinutes();
+        return new ReportJudge.RoomAir(reportMinute, List.copyOf(points));
     }
 
     @Override

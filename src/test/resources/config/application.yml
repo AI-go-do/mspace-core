@@ -12,6 +12,14 @@ mspace:
     reminder:
       # 정리와 같은 이유로 끈다. 알림은 테스트가 SendRemindersUseCase.sendDue()를 직접 불러서 본다 (ReminderTest)
       enabled: false
+  report:
+    gemini:
+      # GEMINI_API_KEY가 있는 곳(서버·키를 넣은 개발 환경)에서 테스트가 진짜 Gemini를 부르지 않게 비운다.
+      # Gemini 판정기는 가짜 서버로 GeminiReportJudgeTest가 본다
+      api-key: ""
+  appeal:
+    gemini:
+      api-key: ""
   admin:
     daily-report:
       gemini:

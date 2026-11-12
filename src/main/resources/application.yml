@@ -151,6 +151,12 @@ mspace:
       min-confidence: 0.8    # 사실·허위라도 확신도가 0.8보다 낮으면 확인 불가(벌칙 없음)
       batch-size: 10
       interval: PT1M         # 1분마다
+      apply-false: false     # 판정기가 "허위"라 해도 신고자에게 경고하지 않고 확인 불가로 (기록에는 허위로 남음). 맞는지 잰 뒤 켬
+      apply-window-confirmed: false  # 창문 열림 "사실"도 앞 팀에게 경고하지 않고 확인 불가로 (기록에는 사실로 남음). 실제 센서로 잰 뒤 켬
+    gemini:                  # Gemini 신고 판정기 (11/12 지영: 창문 열림·어질러짐). 키가 비면 규칙 판정기만, 실패해도 규칙으로
+      api-key: ${GEMINI_API_KEY:}             # 경고 철회 판단기와 같은 키 (서버 .env에만)
+      model: ${GEMINI_MODEL:gemini-3.5-flash-lite}
+      timeout: 20s
   admin:
     daily-report:              # 관리자 하루 운영 보고 (11/12 지영 "core 다 AI화"). GET /api/admin/daily-report
       refresh: PT1H            # 오늘 보고는 1시간마다 요약을 새로 씀 (관제 화면이 자주 열려도 무료 한도를 아끼게)
