@@ -78,7 +78,7 @@ class OpsAutoService implements OpsAutoUseCase {
             List<Point> pts = co2.getOrDefault(t.roomId(), List.of());
             if (OpsRules.ventSoon(pts, now, p)) {
                 int ppm = (int) pts.getFirst().value();
-                String body = "%s 이산화탄소가 빠르게 오르고 있어요(지금 %dppm). 곧 기준(%dppm)을 넘을 것 같아 미리 알려요. 창문이나 문을 잠깐 열어 주세요."
+                String body = "%s 이산화탄소가 빠르게 오르고 있어요(최근 %dppm). 곧 기준(%dppm)을 넘을 것 같아 미리 알려요. 창문이나 문을 잠깐 열어 주세요."
                         .formatted(t.roomName(), ppm, p.thresholdPpm());
                 done += act(VENT_SOON, t, t.startAt(), now, "CO2 %dppm, 최근 %d분 %d→%dppm".formatted(ppm,
                         p.window().toMinutes(), (int) pts.getLast().value(), ppm), t.userIds(), "곧 환기가 필요해요", body, sent);
@@ -95,9 +95,11 @@ class OpsAutoService implements OpsAutoUseCase {
             List<Point> pts = temps.getOrDefault(t.roomId(), List.of());
             if (OpsRules.roomHot(pts, now, p)) {
                 double c = pts.getFirst().value();
-                String body = "%s 지금 %.1f도로 더워요. 들어가면 에어컨이나 창문으로 온도를 낮춰 주세요.".formatted(t.roomName(), c);
+                // 판단은 시작 시각 예측이라 "지금 더워요"가 아니라 예측과 마지막 측정을 나눠 적는다 (11/12 수연 리뷰)
+                String body = "%s 예약 시작할 때쯤 %.0f도를 넘을 것 같아요(마지막 측정 %.1f도, %d분 전). 들어가면 에어컨이나 창문으로 온도를 낮춰 주세요."
+                        .formatted(t.roomName(), p.thresholdC(), c, Duration.between(pts.getFirst().at(), now).toMinutes());
                 done += act(ROOM_HOT, t, t.startAt(), now, "온도 %.1f℃, 시작 %d분 전".formatted(c,
-                        Duration.between(now, t.startAt()).toMinutes()), List.of(t.userIds().getFirst()), "방이 더워요", body, sent);
+                        Duration.between(now, t.startAt()).toMinutes()), List.of(t.userIds().getFirst()), "방이 더울 것 같아요", body, sent);
             }
         }
         return done;
