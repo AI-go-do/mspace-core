@@ -134,7 +134,7 @@ class TidyCheckService implements TidyCheckUseCase {
             }
             if (!cameraWarn) {
                 port.insert(check, null, now);
-                return new Done(new Recorded(false, null), inbox.store(stillLeftAlerts(check, sure), now));
+                return new Done(new Recorded(false, null), inbox.store(stillLeftAlerts(check), now));
             }
             Warned warned = reports.warnLeftItems(check.roomId(), check.reservationId(), content(sure),
                     "두고 간 물건을 " + recheckAfterText + " 안에 챙겨 가지 않았어요.", now);
@@ -171,7 +171,7 @@ class TidyCheckService implements TidyCheckUseCase {
     }
 
     /** 카메라 경고가 꺼져 있을 때: 다시 볼 때도 남아 있던 물건을 알리기만 한다. 경고는 없다 */
-    private List<NewNotification> stillLeftAlerts(TidyCheck check, List<Item> sure) {
+    private List<NewNotification> stillLeftAlerts(TidyCheck check) {
         String body = stillLeftBody(port.roomName(check.roomId()), recheckAfterText);
         List<NewNotification> out = new ArrayList<>();
         for (long user : port.members(check.reservationId())) {

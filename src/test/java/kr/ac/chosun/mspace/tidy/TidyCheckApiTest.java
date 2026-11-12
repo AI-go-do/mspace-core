@@ -439,7 +439,7 @@ class TidyCheckApiTest {
         assertThat(post(1, first("e20", ended, "LEFT_ITEMS", items))).hasStatusOk();
 
         assertThat(inbox("LEFT_ITEM")).hasSize(3).allSatisfy(m -> assertThat((String) m.get("body"))
-                .endsWith("에 물건을 두고 가신 것 같아요. 3시간 안에 챙겨 가 주세요.").doesNotContain("aaaa"));
+                .isEqualTo("1번 방에 물건을 두고 가신 것 같아요. 3시간 안에 챙겨 가 주세요."));
     }
 
     @Test
