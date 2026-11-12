@@ -56,11 +56,13 @@ class OpsAutoService implements OpsAutoUseCase {
         OpsPolicy.SensorDown p = policy.sensorDown();
         int done = 0;
         for (Room r : rooms) {
-            boolean other = rooms.stream().anyMatch(o -> o.id() != r.id() && o.lastReceivedAt() != null
-                    && now.isBefore(o.lastReceivedAt().plus(p.after())));
+            // 신호를 보내 본 다른 방이 없으면(센서가 이 방에만 있음) "모두 끊김"을 알 수 없어 고장으로 본다 (11/12 수연 리뷰)
+            List<Room> others = rooms.stream().filter(o -> o.id() != r.id() && o.lastReceivedAt() != null).toList();
+            boolean other = others.isEmpty()
+                    || others.stream().anyMatch(o -> now.isBefore(o.lastReceivedAt().plus(p.after())));
             if (OpsRules.sensorDown(r.lastReceivedAt(), now, other, p)) {
-                String detail = "마지막 신호 %d분 전, 다른 방은 신호 있음".formatted(
-                        Duration.between(r.lastReceivedAt(), now).toMinutes());
+                String detail = "마지막 신호 %d분 전%s".formatted(Duration.between(r.lastReceivedAt(), now).toMinutes(),
+                        others.isEmpty() ? "" : ", 다른 방은 신호 있음");
                 done += Boolean.TRUE.equals(tx.execute(s -> port.record(SENSOR_DOWN, r.id(), null, r.lastReceivedAt(),
                         now, detail))) ? 1 : 0;
             }
