@@ -14,6 +14,8 @@ import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.modelscore.application.ModelScoreUseCase;
 import kr.ac.chosun.mspace.modelscore.application.ModelScoreUseCase.Kind;
 import kr.ac.chosun.mspace.modelscore.application.ModelScoreUseCase.Score;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -52,9 +54,11 @@ class ModelScoreController {
 
     /** 예: GET /api/admin/model-scores?kind=TIDY → {"items":[{"kind":"TIDY","model":"yolov8s","accuracy":0.766,…}]} */
     @GetMapping("/api/admin/model-scores")
-    ListResponse list(LoginUser user, @RequestParam(required = false) String kind) {
-        return new ListResponse(service.recent(user.id(), kind(kind == null ? "TIDY" : kind)).stream()
-                .map(ItemResponse::from).toList());
+    ResponseEntity<ListResponse> list(LoginUser user, @RequestParam(required = false) String kind) {
+        // 관리자만 보는 값이라 브라우저 뒤로 가기로 다른 계정에 남지 않게 (MyPenaltyController와 같음)
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(new ListResponse(service.recent(user.id(), kind(kind == null ? "TIDY" : kind)).stream()
+                        .map(ItemResponse::from).toList()));
     }
 
     private static Kind kind(String value) {
@@ -87,7 +91,8 @@ class ModelScoreController {
             if (cases == null || cases < 1 || (serious != null && serious < 0)) {
                 throw invalid("cases는 1 이상, serious는 0 이상이어야 합니다");
             }
-            if (medianSeconds == null || !Double.isFinite(medianSeconds) || medianSeconds < 0) {
+            // float로 줄인 뒤에도 유한해야 한다(1e100은 double로는 유한이지만 float로는 무한대)
+            if (medianSeconds == null || medianSeconds < 0 || !Float.isFinite(medianSeconds.floatValue())) {
                 throw invalid("medianSeconds는 0 이상이어야 합니다");
             }
             return new Score(eventId, k, model, accuracy.floatValue(),

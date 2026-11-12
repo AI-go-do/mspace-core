@@ -74,6 +74,8 @@ class ModelScoreApiTest {
         assertThat(r).hasStatusOk().bodyJson().extractingPath("$.result").isEqualTo("STORED");
         assertThat(jdbc.sql("SELECT room_id, model, cases FROM model_score").query().singleRow())
                 .containsEntry("room_id", 1).containsEntry("model", "yolov8s").containsEntry("cases", 47);
+        assertThat(jdbc.sql("SELECT received_at IS NOT NULL AND received_at > now() - interval '1 minute' FROM model_score")
+                .query((rs, n) -> rs.getBoolean(1)).single()).as("받은 시각을 남긴다").isTrue();
     }
 
     @Test
@@ -83,11 +85,13 @@ class ModelScoreApiTest {
         assertThat(post(1, CAMERA1, score("ms-d", "yolov8s", 0.766, "2026-11-11T21:00:00+09:00"))).hasStatusOk();
 
         // when
-        MvcTestResult r = post(1, CAMERA1, score("ms-d", "yolov8s", 0.87, "2026-11-12T21:00:00+09:00"));
+        MvcTestResult r = post(1, CAMERA1, score("ms-d", "yolov8s", 0.87, "2026-11-12T10:00:00+09:00"));
 
         // then
         assertThat(r).hasStatusOk().bodyJson().extractingPath("$.result").isEqualTo("DUPLICATE");
         assertThat(count()).isEqualTo(1);
+        assertThat(jdbc.sql("SELECT accuracy FROM model_score WHERE event_id = 'ms-d'")
+                .query((rs, n) -> rs.getFloat(1)).single()).as("처음 보낸 값을 덮지 않는다").isEqualTo(0.766f);
     }
 
     @Test
@@ -102,7 +106,7 @@ class ModelScoreApiTest {
     }
 
     @Test
-    @DisplayName("형식이 틀리면 400: 정확도 1 초과(퍼센트로 보냄), cases 0, kind 오타, 오프셋 없는 시각")
+    @DisplayName("형식이 틀리면 400: 정확도 1 초과(퍼센트로 보냄), cases 0, kind 오타, 오프셋 없는 시각, float 범위 밖, 먼 미래 시각")
     void invalid() {
         assertThat(post(1, CAMERA1, score("ms-x1", "yolov8s", 76.6, "2026-11-11T21:00:00+09:00")))
                 .hasStatus(400).bodyJson().extractingPath("$.code").isEqualTo("INVALID_REQUEST");
@@ -111,6 +115,10 @@ class ModelScoreApiTest {
         assertThat(post(1, CAMERA1, score("ms-x3", "yolov8s", 0.7, "2026-11-11T21:00:00+09:00")
                 .replace("TIDY", "tidy"))).hasStatus(400);
         assertThat(post(1, CAMERA1, score("ms-x4", "yolov8s", 0.7, "2026-11-11T21:00:00"))).hasStatus(400);
+        assertThat(post(1, CAMERA1, score("ms-x5", "yolov8s", 0.7, "2026-11-11T21:00:00+09:00")
+                .replace("\"medianSeconds\":3.0", "\"medianSeconds\":1e100"))).as("float로 무한대").hasStatus(400);
+        assertThat(post(1, CAMERA1, score("ms-x6", "yolov8s", 0.7, "2099-01-01T00:00:00+09:00")))
+                .as("장치 시계가 틀린 먼 미래").hasStatus(400);
         assertThat(count()).isZero();
     }
 
@@ -118,7 +126,7 @@ class ModelScoreApiTest {
     @DisplayName("관리자 목록: 채점 시각 최근 순, 세 가지 정확도·심각 오류도 같이 준다. 보낸 순서와 상관없다")
     void adminListNewestFirst() {
         // given: 87% 판을 먼저 받고, 그보다 앞서 채점한 76.6% 판을 나중에 받았다
-        assertThat(post(1, CAMERA1, score("ms-b", "yolov8m", 0.87, "2026-11-12T21:00:00+09:00"))).hasStatusOk();
+        assertThat(post(1, CAMERA1, score("ms-b", "yolov8m", 0.87, "2026-11-12T10:00:00+09:00"))).hasStatusOk();
         assertThat(post(1, CAMERA1, score("ms-a", "yolov8s", 0.766, "2026-11-11T21:00:00+09:00"))).hasStatusOk();
 
         // when·then
@@ -126,7 +134,7 @@ class ModelScoreApiTest {
             j.assertThat().extractingPath("$.items.length()").isEqualTo(2);
             j.assertThat().extractingPath("$.items[0].model").isEqualTo("yolov8m");
             j.assertThat().extractingPath("$.items[0].accuracy").isEqualTo(0.87);
-            j.assertThat().extractingPath("$.items[0].measuredAt").isEqualTo("2026-11-12T21:00:00+09:00");
+            j.assertThat().extractingPath("$.items[0].measuredAt").isEqualTo("2026-11-12T10:00:00+09:00");
             j.assertThat().extractingPath("$.items[1].kind").isEqualTo("TIDY");
             j.assertThat().extractingPath("$.items[1].accuracy").isEqualTo(0.766);
             j.assertThat().extractingPath("$.items[1].accuracy3").isEqualTo(0.574);
@@ -137,9 +145,10 @@ class ModelScoreApiTest {
     }
 
     @Test
-    @DisplayName("관리자 목록: 학생은 403 ADMIN_ONLY, 아직 없으면 빈 목록")
+    @DisplayName("관리자 목록: 학생은 403 ADMIN_ONLY, 아직 없으면 빈 목록, 브라우저에 남지 않게 no-store")
     void adminGuards() {
         assertThat(list(STUDENT)).hasStatus(403).bodyJson().extractingPath("$.code").isEqualTo("ADMIN_ONLY");
-        assertThat(list(ADMIN)).hasStatusOk().bodyJson().extractingPath("$.items.length()").isEqualTo(0);
+        assertThat(list(ADMIN)).hasStatusOk().hasHeader("Cache-Control", "no-store")
+                .bodyJson().extractingPath("$.items.length()").isEqualTo(0);
     }
 }
