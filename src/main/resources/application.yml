@@ -156,6 +156,13 @@ mspace:
       min-confidence: 0.8    # 사실·허위라도 확신도가 0.8보다 낮으면 확인 불가(벌칙 없음)
       batch-size: 10
       interval: PT1M         # 1분마다
+  admin:
+    daily-report:              # 관리자 하루 운영 보고 (11/12 지영 "core 다 AI화"). GET /api/admin/daily-report
+      refresh: PT1H            # 오늘 보고는 1시간마다 요약을 새로 씀 (관제 화면이 자주 열려도 무료 한도를 아끼게)
+      gemini:                  # 키가 비면 정해진 틀(template)로만, Gemini가 실패해도 틀로 씀
+        api-key: ${GEMINI_API_KEY:}             # 판정기들과 같은 키 (서버 .env에만)
+        model: ${GEMINI_MODEL:gemini-3.5-flash-lite}
+        timeout: 20s
   appeal:                    # 경고 철회 요청 (FR-RPT-105, Q-24 11/10 지영 "추천대로")
     days: 7                  # 경고를 받은 뒤 7일 안, 경고마다 1번
     min-confidence: 0.8      # 판단기가 "유지"라도 확신도가 0.8보다 낮으면 철회 (확인 불가 = 철회)

@@ -42,10 +42,11 @@ public interface RoomEnvironmentUseCase {
     record Light(int raw, ZonedDateTime at) {
     }
 
-    /** @param detected 움직임 있음 */
+    /** @param since 빈 방에서 불 켜짐을 처음 본 시각 */
     record LightLeftOn(ZonedDateTime since) {
     }
 
+    /** @param detected 움직임 있음 */
     record Pir(boolean detected, ZonedDateTime at) {
     }
 

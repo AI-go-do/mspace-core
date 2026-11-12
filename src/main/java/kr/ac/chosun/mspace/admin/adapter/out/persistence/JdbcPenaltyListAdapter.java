@@ -30,7 +30,7 @@ class JdbcPenaltyListAdapter implements PenaltyListPort {
     @Override
     public List<Warning> warnings(Instant since) {
         return jdbc.sql("""
-                        SELECT w.id, w.reason, w.report_id, w.reservation_id, w.created_at,
+                        SELECT w.id, w.reason, w.report_id, w.reservation_id, w.created_at, w.withdrawn_at,
                                u.id AS user_id, u.student_id, u.name
                         FROM user_warning w JOIN users u ON u.id = w.user_id
                         WHERE w.created_at > :since
@@ -39,7 +39,8 @@ class JdbcPenaltyListAdapter implements PenaltyListPort {
                 .param("since", Timestamp.from(since))
                 // reservation_id는 허위 신고 경고면 NULL. wasNull()은 마지막에 읽은 칸만 보니 getObject로 바로 읽는다 (CodeRabbit)
                 .query((rs, n) -> new Warning(rs.getLong("id"), member(rs), rs.getString("reason"), rs.getLong("report_id"),
-                        rs.getObject("reservation_id", Long.class), rs.getTimestamp("created_at").toInstant()))
+                        rs.getObject("reservation_id", Long.class), rs.getTimestamp("created_at").toInstant(),
+                        instant(rs.getTimestamp("withdrawn_at"))))
                 .list();
     }
 
@@ -63,6 +64,10 @@ class JdbcPenaltyListAdapter implements PenaltyListPort {
                             starts, ends, !now.isBefore(starts) && now.isBefore(ends));
                 })
                 .list();
+    }
+
+    private static Instant instant(Timestamp t) {
+        return t == null ? null : t.toInstant();
     }
 
     private static Member member(ResultSet rs) throws SQLException {
