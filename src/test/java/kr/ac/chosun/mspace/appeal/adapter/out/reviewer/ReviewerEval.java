@@ -63,8 +63,15 @@ class ReviewerEval {
         //   | fresh2(11/11 밤 Claude가 새로 쓴 30개, 지시문 고칠 때 안 봄)
         //   | excluded(실제로 안 생기거나 사진을 봐야 정할 수 있어 점수에서 뺀 것, 직접 골라야만 잼) | all(excluded 빼고 전부). 쉼표로 여러 개 (예: team,team2)
         String set = System.getenv().getOrDefault("EVAL_SET", "dev");
-        List<String> sets = List.of(set.split(","));
-        List<Sample> samples = load().stream().filter(s -> sets.contains(s.set()) || ("all".equals(set) && !"excluded".equals(s.set()))).toList();
+        List<String> sets = java.util.Arrays.stream(set.split(",")).map(String::trim).filter(x -> !x.isEmpty()).toList();
+        if (sets.isEmpty()) {
+            throw new IllegalArgumentException("EVAL_SET이 비었어요: " + set);
+        }
+        boolean all = sets.contains("all");
+        List<Sample> samples = load().stream().filter(s -> sets.contains(s.set()) || (all && !"excluded".equals(s.set()))).toList();
+        if (samples.isEmpty()) {
+            throw new IllegalArgumentException("EVAL_SET에 맞는 사례가 없어요: " + set);
+        }
         Map<String, List<Row>> results = new LinkedHashMap<>();
         results.put(RuleWarningReviewer.NAME, run(new RuleWarningReviewer(TIDY), samples, 0));
 

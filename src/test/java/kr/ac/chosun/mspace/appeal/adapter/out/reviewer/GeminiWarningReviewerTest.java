@@ -183,6 +183,8 @@ class GeminiWarningReviewerTest {
         reply = "{}";
         GeminiWarningReviewer r = reviewer();
         r.retryWaitMillis = 10_000;
+        java.util.concurrent.CountDownLatch waiting = new java.util.concurrent.CountDownLatch(1);
+        r.beforeRetryWait = waiting::countDown;
         java.util.concurrent.atomic.AtomicReference<Throwable> thrown = new java.util.concurrent.atomic.AtomicReference<>();
         Thread worker = new Thread(() -> {
             try {
@@ -194,11 +196,7 @@ class GeminiWarningReviewerTest {
 
         // when: 첫 요청이 503을 받은 뒤 대기에 들어가면 인터럽트
         worker.start();
-        long until = System.currentTimeMillis() + 5_000;
-        while (calls.get() < 1 && System.currentTimeMillis() < until) {
-            Thread.onSpinWait();
-        }
-        Thread.sleep(200);
+        assertThat(waiting.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
         worker.interrupt();
         worker.join(5_000);
 

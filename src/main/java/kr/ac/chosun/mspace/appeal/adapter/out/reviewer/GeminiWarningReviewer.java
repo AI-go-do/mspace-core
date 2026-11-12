@@ -46,6 +46,8 @@ class GeminiWarningReviewer implements WarningReviewer {
     private final RestClient http;
     private final JsonMapper json = JsonMapper.builder().build();
     long retryWaitMillis = 1000;
+    /** 다시 시도 대기에 들어가기 직전에 부른다. 테스트가 대기 중 인터럽트를 정확히 맞추려고 쓴다 */
+    Runnable beforeRetryWait = () -> { };
 
     GeminiWarningReviewer(GeminiReviewerProperties props, TidyPolicy tidy, WarningReviewer fallback) {
         this.props = props;
@@ -89,6 +91,7 @@ class GeminiWarningReviewer implements WarningReviewer {
                 if (attempt >= RETRIES) {
                     throw e;
                 }
+                beforeRetryWait.run();
                 try {
                     Thread.sleep(retryWaitMillis * (attempt + 1));
                 } catch (InterruptedException ie) {
