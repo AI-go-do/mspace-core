@@ -151,6 +151,11 @@ mspace:
       min-confidence: 0.8    # 사실·허위라도 확신도가 0.8보다 낮으면 확인 불가(벌칙 없음)
       batch-size: 10
       interval: PT1M         # 1분마다
+      apply-false: false     # 판정기가 "허위"라 해도 신고자에게 경고하지 않고 확인 불가로 (기록에는 허위로 남음). 맞는지 잰 뒤 켬
+    gemini:                  # Gemini 신고 판정기 (11/12 지영: 창문 열림·어질러짐). 키가 비면 규칙 판정기만, 실패해도 규칙으로
+      api-key: ${GEMINI_API_KEY:}             # 경고 철회 판단기와 같은 키 (서버 .env에만)
+      model: ${GEMINI_MODEL:gemini-3.5-flash-lite}
+      timeout: 20s
   appeal:                    # 경고 철회 요청 (FR-RPT-105, Q-24 11/10 지영 "추천대로")
     days: 7                  # 경고를 받은 뒤 7일 안, 경고마다 1번
     min-confidence: 0.8      # 판단기가 "유지"라도 확신도가 0.8보다 낮으면 철회 (확인 불가 = 철회)

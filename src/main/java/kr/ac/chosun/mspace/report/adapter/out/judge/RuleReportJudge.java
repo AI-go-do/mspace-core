@@ -5,7 +5,6 @@ import java.util.Objects;
 import kr.ac.chosun.mspace.common.config.TidyPolicy;
 import kr.ac.chosun.mspace.report.application.ReportJudge;
 import kr.ac.chosun.mspace.report.domain.ReportVerdict;
-import org.springframework.stereotype.Component;
 
 /**
  * 외부 AI 없이 정해진 규칙으로 보는 신고 판정기 (FR-RPT-103 10차, Q-28 정량 기준 추천안).
@@ -19,7 +18,6 @@ import org.springframework.stereotype.Component;
  * </ul>
  * 신고 메모는 읽지 않는다 (규칙으로 판단할 수 있는 근거만 본다).
  */
-@Component
 class RuleReportJudge implements ReportJudge {
 
     static final String NAME = "rules";

@@ -2,6 +2,7 @@ package kr.ac.chosun.mspace.report;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
 import kr.ac.chosun.mspace.TestcontainersConfiguration;
 import kr.ac.chosun.mspace.report.application.AutoJudgeUseCase;
 import org.junit.jupiter.api.BeforeEach;
@@ -383,6 +384,125 @@ class AutoJudgeTest {
             // then
             assertThat(verdict(id)).isEqualTo("UNVERIFIED");
             assertThat(warnings(1)).isZero();
+        }
+    }
+
+    /**
+     * 창문 열림 (11/12 지영 "창문 열림이랑 어질러짐"): 판정기에 앞 팀 퇴실 앞뒤 방 CO2·온도를 넘긴다.
+     * 판정기가 허위라고 해도 apply-false가 꺼져 있으면 기록에만 허위, 실제는 확인 불가
+     */
+    @Nested
+    @Import(WindowOpen.Config.class)
+    class WindowOpen {
+
+        static final java.util.concurrent.atomic.AtomicReference<ReportJudge.Case> SEEN = new java.util.concurrent.atomic.AtomicReference<>();
+
+        @TestConfiguration
+        static class Config {
+            @Bean
+            @Primary
+            ReportJudge falseJudge() {
+                return c -> {
+                    SEEN.set(c);
+                    return new ReportJudge.Judgement(kr.ac.chosun.mspace.report.domain.ReportVerdict.FALSE, 0.95,
+                            List.of("창문이 닫혀 있었어요."), List.of("SENSOR"), "test", "test-v1");
+                };
+            }
+        }
+
+        void air(String id, int room, String at, int ppm, String temp) {
+            jdbc.sql("""
+                    INSERT INTO sensor_event (event_id, room_id, device_id, kind, ppm, temperature_c, observed_at, received_at)
+                    VALUES (:id, :room, 'air-1', 'CO2', :ppm, CAST(:temp AS numeric), %s, now())
+                    """.formatted(at)).param("id", id).param("room", room).param("ppm", ppm).param("temp", temp).update();
+        }
+
+        @BeforeEach
+        void leftForty() {
+            // 앞 팀은 40분 전에 퇴실, 신고는 10분 전 → 신고는 퇴실 30분 뒤
+            jdbc.sql("UPDATE reservation SET checked_out_at = now() - interval '40 minutes' WHERE id = :id")
+                    .param("id", previous).update();
+            jdbc.sql("TRUNCATE sensor_event").update();
+            SEEN.set(null);
+        }
+
+        @Test
+        @DisplayName("창문 열림 신고: 퇴실 15분 전부터 신고 때까지 그 방 CO2·온도를 5분 평균으로 넘긴다 (다른 방·신고 뒤 값은 빼고)")
+        void roomAirGiven() {
+            // given
+            long id = jdbc.sql("""
+                    INSERT INTO report (room_id, reporter_id, reporter_reservation_id, category, content, created_at)
+                    VALUES (1, 4, :mine, 'WINDOW_OPEN', '창문이 열려 있어요', now() - interval '10 minutes') RETURNING id
+                    """).param("mine", mine).query(Long.class).single();
+            air("a0", 1, "now() - interval '60 minutes'", 1500, "24.0");   // 퇴실 20분 전: 15분보다 앞이라 뺌
+            air("a1", 1, "now() - interval '44 minutes'", 1200, "23.4");   // -4분 → -5 묶음
+            air("a2", 1, "now() - interval '42 minutes'", 1100, "23.6");   // -2분 → -5 묶음
+            air("a3", 1, "now() - interval '33 minutes'", 600, null);      // 7분 → 5 묶음
+            air("a4", 1, "now() - interval '23 minutes'", 450, "19.5");    // 17분 → 15 묶음
+            air("a5", 1, "now() - interval '5 minutes'", 900, "20.0");     // 신고 뒤 → 뺌
+            air("b1", 2, "now() - interval '30 minutes'", 2000, "25.0");   // 다른 방 → 뺌
+
+            // when
+            judge.judgeOpen();
+
+            // then
+            ReportJudge.Case c = SEEN.get();
+            assertThat(c.reportId()).isEqualTo(id);
+            assertThat(c.roomAir().reportMinute()).isEqualTo(30);
+            assertThat(c.roomAir().points()).containsExactly(
+                    new ReportJudge.AirPoint(-5, 1150, 23.5),
+                    new ReportJudge.AirPoint(5, 600, null),
+                    new ReportJudge.AirPoint(15, 450, 19.5));
+        }
+
+        @Test
+        @DisplayName("판정기가 허위라 해도 apply-false가 꺼져 있으면 확인 불가, 신고자는 경고받지 않고 기록에는 허위로 남는다")
+        void falseOnlyRecorded() {
+            // given
+            long id = report("WINDOW_OPEN", "10 minutes");
+
+            // when
+            judge.judgeOpen();
+
+            // then
+            assertThat(verdict(id)).isEqualTo("UNVERIFIED");
+            assertThat(warnings(4)).isZero();
+            assertThat(jdbc.sql("SELECT verdict || '/' || applied FROM report_judgement").query(String.class).single())
+                    .isEqualTo("FALSE/UNVERIFIED");
+        }
+
+        @Test
+        @DisplayName("어질러짐 신고는 센서 값을 넘기지 않는다")
+        void messyHasNoAir() {
+            // given
+            report("MESSY", "10 minutes");
+            jdbc.sql("UPDATE reservation SET checked_out_at = now() - interval '4 hours' WHERE id = :id")
+                    .param("id", previous).update();
+
+            // when
+            judge.judgeOpen();
+
+            // then
+            assertThat(SEEN.get().roomAir()).isNull();
+        }
+
+        @Nested
+        @TestPropertySource(properties = "mspace.report.judge.apply-false=true")
+        class ApplyFalseOn {
+
+            @Test
+            @DisplayName("apply-false를 켜면 허위가 그대로 적용돼 신고자가 경고를 받는다")
+            void falseApplied() {
+                // given
+                long id = report("WINDOW_OPEN", "10 minutes");
+
+                // when
+                judge.judgeOpen();
+
+                // then
+                assertThat(verdict(id)).isEqualTo("FALSE");
+                assertThat(warnings(4)).isEqualTo(1);
+            }
         }
     }
 

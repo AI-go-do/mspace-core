@@ -22,6 +22,7 @@ import org.springframework.transaction.support.TransactionOperations;
  * <ul>
  *   <li>판정기 호출은 트랜잭션 밖(외부 AI가 느려도 잠금을 쥐지 않게), 결과 적용만 한 트랜잭션</li>
  *   <li>사실·허위라도 확신도가 기준(0.8) 아래면 확인 불가로 정한다. 판정의 "확인 불가 = 벌칙 없음"과 같은 셈</li>
+ *   <li>허위는 mspace.report.judge.apply-false가 켜져 있을 때만 적용한다. 꺼져 있으면 기록에만 허위로 남는다</li>
  *   <li>관리자가 먼저 판정했으면 건너뛴다(조건부 UPDATE). 판정 결과 알림·경고는 관리자 판정과 같다</li>
  * </ul>
  */
@@ -81,6 +82,7 @@ class AutoJudgeService implements AutoJudgeUseCase {
             throw new IllegalStateException("판정기 결과가 올바르지 않다 (판정 없음 또는 확신도 0~1 밖)");
         }
         ReportVerdict decided = j.verdict() != ReportVerdict.UNVERIFIED && j.confidence() < policy.minConfidence()
+                || j.verdict() == ReportVerdict.FALSE && !policy.applyFalse()
                 ? ReportVerdict.UNVERIFIED : j.verdict();
         Long previous = c.get().previousReservationId();
         Optional<List<Notification>> stored = Objects.requireNonNull(tx.execute(st -> {
