@@ -5,11 +5,13 @@ import static kr.ac.chosun.mspace.common.config.TimeConfig.SEOUL;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.List;
-import kr.ac.chosun.mspace.appeal.application.WarningAppealUseCase;
 import kr.ac.chosun.mspace.appeal.application.WarningAppealUseCase.Appeal;
 import kr.ac.chosun.mspace.appeal.application.WarningAppealUseCase.WarningItem;
+import kr.ac.chosun.mspace.appeal.application.WarningAppealUseCase;
 import kr.ac.chosun.mspace.common.auth.LoginUser;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,8 +32,9 @@ class WarningAppealController {
 
     /** 예: GET /api/penalties/me/warnings?days=30 → 200 [ {id, reason, reportType, …, appealableUntil, appeal} ] */
     @GetMapping("/api/penalties/me/warnings")
-    List<WarningResponse> mine(LoginUser user, @RequestParam(defaultValue = "30") int days) {
-        return appeals.mine(user.id(), days).stream().map(WarningResponse::of).toList();
+    ResponseEntity<List<WarningResponse>> mine(LoginUser user, @RequestParam(defaultValue = "30") int days) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(appeals.mine(user.id(), days).stream().map(WarningResponse::of).toList());
     }
 
     /** 예: POST /api/warnings/41/appeal {"text":"퇴실할 때 컵은 다 버렸어요.","evidence":["CHECKOUT_PHOTO"]} → 201 목록 한 줄 */

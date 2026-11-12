@@ -142,4 +142,13 @@ class MyNoShowsApiTest {
         assertThat(list(1, "?days=91")).hasStatus(400);
         assertThat(mvc.get().uri("/api/penalties/me/no-shows").exchange()).hasStatus(401);
     }
+
+    @Test
+    @DisplayName("사람마다 다른 벌칙 응답 셋(노쇼 목록·내 벌칙·내 경고)은 저장 금지(Cache-Control: no-store)")
+    void noStore() {
+        for (String uri : new String[] {"/api/penalties/me/no-shows", "/api/penalties/me", "/api/penalties/me/warnings"}) {
+            assertThat(mvc.get().uri(uri).header("X-User-Id", "1").exchange())
+                    .hasStatus(200).headers().hasValue("Cache-Control", "no-store");
+        }
+    }
 }

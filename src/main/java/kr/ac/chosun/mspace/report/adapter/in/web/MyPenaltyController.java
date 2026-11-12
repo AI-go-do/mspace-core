@@ -5,9 +5,11 @@ import static kr.ac.chosun.mspace.common.config.TimeConfig.SEOUL;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import kr.ac.chosun.mspace.common.auth.LoginUser;
-import kr.ac.chosun.mspace.report.application.MyPenaltyUseCase;
 import kr.ac.chosun.mspace.report.application.MyPenaltyUseCase.MyPenalty;
+import kr.ac.chosun.mspace.report.application.MyPenaltyUseCase;
 import kr.ac.chosun.mspace.reservation.application.MyNoShowsUseCase.Summary;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -28,10 +30,10 @@ class MyPenaltyController {
      * 정지(suspendedUntil)는 경고·노쇼 어느 쪽으로 걸렸든 같은 칸
      */
     @GetMapping("/api/penalties/me")
-    MyPenaltyResponse mine(LoginUser user) {
+    ResponseEntity<MyPenaltyResponse> mine(LoginUser user) {
         MyPenalty p = penalties.mine(user.id());
-        return new MyPenaltyResponse(p.warnings(), p.falseReportWarnings(), p.limit(), p.windowDays(),
-                seoul(p.suspendedUntil()), seoul(p.reportSuspendedUntil()), p.noShows());
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(new MyPenaltyResponse(p.warnings(), p.falseReportWarnings(), p.limit(), p.windowDays(),
+                seoul(p.suspendedUntil()), seoul(p.reportSuspendedUntil()), p.noShows()));
     }
 
     private static ZonedDateTime seoul(Instant t) {

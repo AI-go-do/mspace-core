@@ -6,8 +6,10 @@ import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.List;
 import kr.ac.chosun.mspace.common.auth.LoginUser;
-import kr.ac.chosun.mspace.reservation.application.MyNoShowsUseCase;
 import kr.ac.chosun.mspace.reservation.application.MyNoShowsUseCase.Item;
+import kr.ac.chosun.mspace.reservation.application.MyNoShowsUseCase;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -27,8 +29,10 @@ class MyNoShowsController {
      * "startAt":"…+09:00","endAt":"…+09:00","kind":"NO_SHOW","happenedAt":"…+09:00","counted":true,"excusedAt":null}]}
      */
     @GetMapping("/api/penalties/me/no-shows")
-    ListResponse mine(LoginUser user, @RequestParam(required = false) Integer days) {
-        return new ListResponse(service.list(user.id(), days).stream().map(ItemResponse::from).toList());
+    ResponseEntity<ListResponse> mine(LoginUser user, @RequestParam(required = false) Integer days) {
+        // 로그인한 사람마다 달라서 저장 금지 (MemberController와 같은 이유)
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(new ListResponse(service.list(user.id(), days).stream().map(ItemResponse::from).toList()));
     }
 
     record ListResponse(List<ItemResponse> items) {
