@@ -40,7 +40,6 @@ import org.springframework.transaction.support.TransactionOperations;
 class TidyCheckService implements TidyCheckUseCase {
 
     static final String LEFT_ITEM_KIND = "LEFT_ITEM";
-    static final int NOTIFICATION_BODY_MAX = 300;
     private static final Set<String> ENDED = Set.of("CHECKED_OUT", "AUTO_CHECKED_OUT", "AWAY_RELEASED");
 
     private final TidyCheckPort port;
@@ -163,8 +162,7 @@ class TidyCheckService implements TidyCheckUseCase {
         if (check.result() != Result.LEFT_ITEMS) {
             return List.of();
         }
-        String body = leftItemBody(port.roomName(check.roomId()),
-                check.items().stream().map(Item::name).distinct().toList(), recheckAfterText);
+        String body = leftItemBody(port.roomName(check.roomId()), recheckAfterText);
         List<NewNotification> out = new ArrayList<>();
         for (long user : port.members(check.reservationId())) {
             out.add(new NewNotification(user, check.reservationId(), LEFT_ITEM_KIND, "두고 간 물건이 있어요", body));
@@ -174,8 +172,7 @@ class TidyCheckService implements TidyCheckUseCase {
 
     /** 카메라 경고가 꺼져 있을 때: 다시 볼 때도 남아 있던 물건을 알리기만 한다. 경고는 없다 */
     private List<NewNotification> stillLeftAlerts(TidyCheck check, List<Item> sure) {
-        String body = stillLeftBody(port.roomName(check.roomId()), sure.stream().map(Item::name).distinct().toList(),
-                recheckAfterText);
+        String body = stillLeftBody(port.roomName(check.roomId()), recheckAfterText);
         List<NewNotification> out = new ArrayList<>();
         for (long user : port.members(check.reservationId())) {
             out.add(new NewNotification(user, check.reservationId(), LEFT_ITEM_KIND, "물건이 아직 남아 있어요", body));
@@ -183,32 +180,16 @@ class TidyCheckService implements TidyCheckUseCase {
         return out;
     }
 
-    static String stillLeftBody(String room, List<String> names, String after) {
-        String head = "퇴실 " + after + " 뒤에도 " + room + "에 ";
-        String tail = "이(가) 남아 있는 것 같아요. 카메라 확인이라 경고는 없어요.";
-        for (int shown = names.size(); shown >= 1; shown--) {
-            String what = String.join("·", names.subList(0, shown))
-                    + (shown < names.size() ? " 외 " + (names.size() - shown) + "개" : "");
-            String body = head + what + tail;
-            if (body.length() <= NOTIFICATION_BODY_MAX) {
-                return body;
-            }
-        }
-        return head + "물건 " + names.size() + "개" + tail;
+    /**
+     * 알림에는 물건 이름을 쓰지 않는다 (11/12 지영 "그냥 물건 두고 갔어요"). 카메라 이름은 틀릴 수 있고,
+     * 확신도도 "이 이름일 확률"이 아니라 "물건이 남아 있을 확률"로 바뀌어서(device #65) 이름은 관리자 기록에만 남긴다
+     */
+    static String stillLeftBody(String room, String after) {
+        return "퇴실 " + after + " 뒤에도 " + room + "에 물건이 남아 있는 것 같아요. 카메라 확인이라 경고는 없어요.";
     }
 
-    /** 알림 본문은 300자(V10 notification.body). 물건이 많으면 앞에서부터 넣고 "외 N개"로 줄인다. 기한 문장은 늘 남긴다 */
-    static String leftItemBody(String room, List<String> names, String within) {
-        String tail = "을(를) 두고 가신 것 같아요. " + within + " 안에 챙겨 가 주세요.";
-        for (int shown = names.size(); shown >= 1; shown--) {
-            String what = String.join("·", names.subList(0, shown))
-                    + (shown < names.size() ? " 외 " + (names.size() - shown) + "개" : "");
-            String body = room + "에 " + what + tail;
-            if (body.length() <= NOTIFICATION_BODY_MAX) {
-                return body;
-            }
-        }
-        return room + "에 물건 " + names.size() + "개" + tail;
+    static String leftItemBody(String room, String within) {
+        return room + "에 물건을 두고 가신 것 같아요. " + within + " 안에 챙겨 가 주세요.";
     }
 
 

@@ -217,7 +217,7 @@ class TidyCheckApiTest {
 
         assertThat(inbox("LEFT_ITEM")).extracting(m -> ((Number) m.get("user_id")).longValue())
                 .containsExactly(1L, 2L, 3L);
-        assertThat(inbox("LEFT_ITEM").getFirst().get("body")).asString().contains("umbrella·cup").contains("3시간 안에");
+        assertThat(inbox("LEFT_ITEM").getFirst().get("body")).asString().contains("물건을 두고 가신").doesNotContain("umbrella").contains("3시간 안에");
         assertThat(reports()).isEmpty();
         assertThat(count("user_warning")).isZero();
         assertThat(jdbc.sql("SELECT confidences FROM tidy_check").query((rs, n) -> List.of((Float[]) rs.getArray(1).getArray()))
@@ -373,7 +373,7 @@ class TidyCheckApiTest {
                     SELECT user_id, body FROM notification WHERE kind = 'LEFT_ITEM' AND title = '물건이 아직 남아 있어요'
                     ORDER BY user_id""").query().listOfRows();
             assertThat(still).extracting(m -> ((Number) m.get("user_id")).longValue()).containsExactly(1L, 2L, 3L);
-            assertThat((String) still.getFirst().get("body")).contains("umbrella").contains("경고는 없어요");
+            assertThat((String) still.getFirst().get("body")).contains("물건이 남아").doesNotContain("umbrella").contains("경고는 없어요");
             assertThat(jdbc.sql("SELECT count(*) FROM tidy_check WHERE phase = 'RECHECK' AND report_id IS NULL")
                     .query(Long.class).single()).isEqualTo(1);
         }
