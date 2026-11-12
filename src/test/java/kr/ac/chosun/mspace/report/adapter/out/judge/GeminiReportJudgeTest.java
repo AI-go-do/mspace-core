@@ -163,9 +163,33 @@ class GeminiReportJudgeTest {
         assertThat(j.verdict()).isEqualTo(ReportVerdict.UNVERIFIED);
         JsonNode facts = JsonMapper.builder().build().readTree(JsonMapper.builder().build().readTree(sentBody.get())
                 .path("contents").path(0).path("parts").path(0).path("text").asString());
-        assertThat(facts.path("cameraItems").path(0).path("name").asString()).isEqualTo("cup");
+        // 물건 이름은 보내지 않고 "남아 있나"와 확신도만 (11/12 지영)
+        assertThat(facts.has("cameraItems")).isFalse();
+        assertThat(sentBody.get()).doesNotContain("cup").doesNotContain("bottle");
+        assertThat(facts.path("cameraItemCount").asInt()).isEqualTo(2);
+        assertThat(facts.path("cameraLeftConfidence").asDouble()).isEqualTo(MESSY.previousConfidences().stream()
+                .mapToDouble(Double::doubleValue).max().orElseThrow());
         assertThat(facts.path("reportContent").asString()).isEqualTo("컵이랑 병이 있어요 [숫자 가림]");
         assertThat(facts.has("roomAir")).isFalse();
+    }
+
+    @Test
+    @DisplayName("어질러짐: 카메라 확신도에 빈 값(null)이 섞여 있어도 Gemini에 묻고, 남아 있을 확률은 빈 값을 빼고 고른다 (리뷰 수연)")
+    void messyNullConfidenceSkipped() {
+        // given
+        reply = verdict("UNVERIFIED", 0.9);
+        Case withNull = new Case(7, "MESSY", "컵 있어요", true, true, "LEFT_ITEMS", List.of("unknown", "cup"),
+                java.util.Arrays.asList(null, 0.9), false, false, 10L, false, null);
+
+        // when
+        Judgement j = judge(CAMERA_OFF).judge(withNull);
+
+        // then
+        assertThat(calls.get()).isEqualTo(1);
+        assertThat(j.judge()).startsWith("gemini:");
+        JsonNode facts = JsonMapper.builder().build().readTree(JsonMapper.builder().build().readTree(sentBody.get())
+                .path("contents").path(0).path("parts").path(0).path("text").asString());
+        assertThat(facts.path("cameraLeftConfidence").asDouble()).isEqualTo(0.9);
     }
 
     @Test
