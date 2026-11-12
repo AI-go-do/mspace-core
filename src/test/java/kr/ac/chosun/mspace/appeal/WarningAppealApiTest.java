@@ -409,5 +409,51 @@ class WarningAppealApiTest {
         assertThat(again).bodyJson().extractingPath("$.code").isEqualTo("WARNING_ALREADY_WITHDRAWN");
         assertThat(jdbc.sql("SELECT withdraw_reason FROM user_warning WHERE id = :id").param("id", w).query(String.class)
                 .single()).isEqualTo(first);
+        // 알림 본문(300자)에도 이모지가 잘리지 않고 다 들어간다
+        assertThat(jdbc.sql("SELECT body FROM notification WHERE user_id = 1 AND kind = 'WARNING_APPEAL_RESULT'")
+                .query(String.class).single()).contains(first);
+    }
+
+    /** 판단기가 실패해도 이미 철회된 경고의 대기 요청은 판단기를 부르지 않고 닫는다 (CodeRabbit #123) */
+    @org.junit.jupiter.api.Nested
+    @org.springframework.context.annotation.Import(BrokenReviewer.Config.class)
+    class BrokenReviewer {
+
+        static final java.util.concurrent.atomic.AtomicInteger CALLS = new java.util.concurrent.atomic.AtomicInteger();
+
+        @org.springframework.boot.test.context.TestConfiguration
+        static class Config {
+            @org.springframework.context.annotation.Bean
+            @org.springframework.context.annotation.Primary
+            kr.ac.chosun.mspace.appeal.application.WarningReviewer brokenReviewer() {
+                return c -> {
+                    CALLS.incrementAndGet();
+                    throw new IllegalStateException("판단기 실패");
+                };
+            }
+        }
+
+        @Test
+        @DisplayName("관리자가 철회한 경고의 대기 요청은 판단기가 실패해도 판단기를 부르지 않고 철회로 닫는다")
+        void closedWithoutReviewer() {
+            // given
+            long admin = admin();
+            long w = userReportWarning("1 hour");
+            assertThat(adminWithdraw(admin, w, "직접 확인함")).hasStatusOk();
+            jdbc.sql("""
+                    INSERT INTO warning_appeal (warning_id, user_id, text, evidence, created_at)
+                    VALUES (:w, 1, :text, '{}', now())
+                    """).param("w", w).param("text", TEXT).update();
+            CALLS.set(0);
+
+            // when
+            int done = reviews.reviewPending();
+
+            // then
+            assertThat(done).isEqualTo(1);
+            assertThat(CALLS.get()).isZero();
+            assertThat(jdbc.sql("SELECT status || ' ' || reviewer FROM warning_appeal WHERE warning_id = :w").param("w", w)
+                    .query(String.class).single()).isEqualTo("WITHDRAWN withdrawn");
+        }
     }
 }

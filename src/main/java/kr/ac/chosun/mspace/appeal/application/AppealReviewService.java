@@ -79,6 +79,10 @@ public class AppealReviewService implements AppealReviewUseCase {
         if (c.isEmpty()) {
             return false;
         }
+        // 관리자가 이미 철회한 경고면 판단기를 부르지 않고 닫는다. 판단기가 실패해도 대기로 남아 계속 다시 부르지 않게 (CodeRabbit #123)
+        if (Boolean.TRUE.equals(tx.execute(st -> closeIfWithdrawn(id)))) {
+            return true;
+        }
         Review review = reviewer.review(c.get());
         if (review == null || review.decision() == null || !(review.confidence() >= 0 && review.confidence() <= 1)) {
             throw new IllegalStateException("판단기 결과가 올바르지 않다 (결정 없음 또는 확신도 0~1 밖)");
@@ -93,6 +97,25 @@ public class AppealReviewService implements AppealReviewUseCase {
     }
 
     static final String ALREADY_WITHDRAWN = "이미 철회된 경고예요.";
+
+    /** 판단기를 부르기 전: 요청 → 사람 순으로 잠그고 경고가 이미 철회됐으면 닫는다. 잠금 순서는 apply와 같다 */
+    private boolean closeIfWithdrawn(long appealId) {
+        Optional<WarningAppealPort.Pending> locked = port.lockPending(appealId);
+        if (locked.isEmpty()) {
+            return false;
+        }
+        penalties.lockUser(locked.get().userId());
+        return closeWithdrawn(appealId, locked.get(), clock.instant());
+    }
+
+    private boolean closeWithdrawn(long appealId, WarningAppealPort.Pending p, Instant now) {
+        if (!port.isWithdrawn(p.warningId())) {
+            return false;
+        }
+        port.decide(appealId, Decision.WITHDRAWN, ALREADY_WITHDRAWN,
+                new Review(Decision.WITHDRAWN, 1, List.of(ALREADY_WITHDRAWN), List.of(), "withdrawn", "withdrawn-v1"), now);
+        return true;
+    }
 
     /** @return 알림함에 넣은 알림. 다른 판단이 먼저 끝냈으면 빈 Optional */
     private Optional<List<Notification>> apply(long appealId, Review review) {
@@ -109,9 +132,7 @@ public class AppealReviewService implements AppealReviewUseCase {
         penalties.lockUser(p.userId());
         // 판단하는 사이 관리자가 먼저 철회했으면(관리자 철회도 같은 사람을 잠근다) 판단 결과와 상관없이 철회로 닫고
         // 알림은 보내지 않는다. 관리자 철회가 이미 알렸다 (재웅 #123)
-        if (port.isWithdrawn(p.warningId())) {
-            port.decide(appealId, Decision.WITHDRAWN, ALREADY_WITHDRAWN,
-                    new Review(Decision.WITHDRAWN, 1, List.of(ALREADY_WITHDRAWN), List.of(), "withdrawn", "withdrawn-v1"), now);
+        if (closeWithdrawn(appealId, p, now)) {
             return Optional.of(List.of());
         }
         boolean lifted = false;
@@ -135,7 +156,9 @@ public class AppealReviewService implements AppealReviewUseCase {
 
     /** 알림 본문은 300자까지 (V10). 자세한 이유는 내 경고 목록의 answer에 다 있다 */
     static String clip(String body) {
-        return body.length() <= BODY_MAX ? body : body.substring(0, BODY_MAX - 1) + "…";
+        // DB varchar는 글자(코드 포인트)로 센다. 이모지가 반으로 잘리지 않게 코드 포인트로 자른다 (CodeRabbit #123)
+        return body.codePointCount(0, body.length()) <= BODY_MAX ? body
+                : body.substring(0, body.offsetByCodePoints(0, BODY_MAX - 1)) + "…";
     }
 
     private static String answer(Review review, boolean unsure) {
