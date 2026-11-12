@@ -47,7 +47,7 @@ class TemplateDailyReportWriter implements DailyReportWriter {
             lines.add("CO2는 평균 %dppm, 가장 높을 때 %dppm, 환기 알림 %d번이에요.".formatted(t.sensor().co2AvgPpm(),
                     t.sensor().co2MaxPpm(), t.sensor().ventilationAlerts()));
         }
-        // 이용 한 줄 + 방 한 줄 + 신고·경고 한 줄은 늘 있어 3줄 아래로 내려가지 않는다 (V32 CHECK 3–5)
+        // 이용 한 줄 + 방 한 줄 + 신고·경고 한 줄은 늘 있어 3줄 아래로 내려가지 않는다 (V34 CHECK 3–5)
         return new Written(List.copyOf(lines.subList(0, Math.min(5, lines.size()))), NAME, VERSION);
     }
 
