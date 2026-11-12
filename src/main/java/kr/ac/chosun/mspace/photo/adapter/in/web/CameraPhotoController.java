@@ -67,15 +67,6 @@ class CameraPhotoController {
                 .body(p.data());
     }
 
-    /**
-     * 관리자 화면: 방마다 젯슨 카메라 사진(입실 직전 ENTRY·퇴실 뒤 FIRST·3시간 뒤 RECHECK) 가장 최근 1장씩의 정보.
-     * 사진은 각 url로 받는다. 관리자가 아니면 403 ADMIN_ONLY
-     */
-    @GetMapping("/api/admin/rooms/tidy-photos")
-    CameraPhotoUseCase.RoomPhotos latest(LoginUser user) {
-        return photos.latestByRoom(user.id());
-    }
-
     private static byte[] bytes(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             return null;

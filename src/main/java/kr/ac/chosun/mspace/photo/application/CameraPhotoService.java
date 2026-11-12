@@ -4,12 +4,8 @@ import static kr.ac.chosun.mspace.common.config.TimeConfig.SEOUL;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.Comparator;
-import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 import kr.ac.chosun.mspace.common.config.PhotoPolicy;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
@@ -24,8 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 class CameraPhotoService implements CameraPhotoUseCase {
 
     /** ENTRY = 입실 직전 빈 방(11/11 수연, Q-27). 젯슨이 퇴실 뒤 FIRST 결과를 보낸 다음 올려서 "마지막 퇴실 예약만" 규칙이 그대로 맞는다 */
-    private static final List<String> ORDER = List.of("ENTRY", "FIRST", "RECHECK");
-    private static final Set<String> PHASES = Set.copyOf(ORDER);
+    private static final Set<String> PHASES = Set.of("ENTRY", "FIRST", "RECHECK");
 
     private final CameraPhotoPort port;
     private final PhotoPort photos;
@@ -76,24 +71,6 @@ class CameraPhotoService implements CameraPhotoUseCase {
             throw new BusinessException(ErrorCode.PHOTO_NOT_FOUND);
         }
         return port.find(reservationId, p).orElseThrow(() -> new BusinessException(ErrorCode.PHOTO_NOT_FOUND));
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public RoomPhotos latestByRoom(long adminId) {
-        if (!photos.isAdmin(adminId)) {
-            throw new BusinessException(ErrorCode.ADMIN_ONLY);
-        }
-        Map<Integer, List<CameraPhotoPort.Latest>> byRoom = port.latestPerRoomAndPhase().stream()
-                .collect(Collectors.groupingBy(CameraPhotoPort.Latest::roomId));
-        List<RoomPhoto> rooms = port.rooms().stream()
-                .map(r -> new RoomPhoto(r.id(), r.name(), byRoom.getOrDefault(r.id(), List.of()).stream()
-                        .sorted(Comparator.comparingInt(l -> ORDER.indexOf(l.phase())))
-                        .map(l -> new Photo(l.reservationId(), l.phase(), l.takenAt().atZone(SEOUL),
-                                "/api/reservations/%d/tidy-photos/%s".formatted(l.reservationId(), l.phase())))
-                        .toList()))
-                .toList();
-        return new RoomPhotos(clock.instant().atZone(SEOUL), rooms);
     }
 
     private static String phase(String phase) {

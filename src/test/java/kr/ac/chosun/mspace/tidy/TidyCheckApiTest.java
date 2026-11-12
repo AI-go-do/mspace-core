@@ -617,6 +617,49 @@ class TidyCheckApiTest {
     }
 
     @Test
+    @DisplayName("관리자 정리 확인 목록: 입실 전·퇴실 뒤 사진은 카메라 것, 카메라가 못 찍었으면 학생 사진, 둘 다 없으면 null (11/12 지영)")
+    void adminListPhotos() {
+        // given: 카메라는 입실 직전(ENTRY)만 찍고 퇴실 뒤(FIRST)는 못 찍음. 학생은 입실·퇴실 사진을 둘 다 올림
+        assertThat(post(1, first("e-p", ended, "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        recheckDue();
+        assertThat(post(1, check("e-q", ended, "RECHECK", "LEFT_ITEMS", UMBRELLA))).hasStatusOk();
+        byte[] jpeg = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, 1};
+        jdbc.sql("""
+                INSERT INTO tidy_photo (reservation_id, phase, device_id, content_type, size_bytes, data, created_at)
+                VALUES (:rid, 'ENTRY', 'jetson-b', 'image/jpeg', 4, :d, now())
+                """).param("rid", ended).param("d", jpeg).update();
+        for (String kind : List.of("CHECK_IN", "CHECK_OUT")) {
+            jdbc.sql("""
+                    INSERT INTO reservation_photo (reservation_id, kind, uploaded_by, content_type, size_bytes, data)
+                    VALUES (:rid, :kind, :owner, 'image/jpeg', 4, :d)
+                    """).param("rid", ended).param("kind", kind).param("owner", OWNER).param("d", jpeg).update();
+        }
+
+        // when
+        MvcTestResult r = list(ADMIN, null);
+
+        // then: [0] RECHECK, [1] FIRST
+        assertThat(r).hasStatusOk().bodyJson().satisfies(j -> {
+            j.assertThat().extractingPath("$.items[1].before.source").isEqualTo("CAMERA");
+            j.assertThat().extractingPath("$.items[1].before.url")
+                    .isEqualTo("/api/reservations/" + ended + "/tidy-photos/ENTRY");
+            j.assertThat().extractingPath("$.items[1].after.source").isEqualTo("STUDENT");
+            j.assertThat().extractingPath("$.items[1].after.url")
+                    .isEqualTo("/api/reservations/" + ended + "/photos/CHECK_OUT");
+            j.assertThat().extractingPath("$.items[1].after.takenAt").asString().endsWith("+09:00");
+            j.assertThat().extractingPath("$.items[0].after").isNull();   // 3시간 뒤는 학생 사진으로 대신하지 않음
+        });
+
+        // 사진이 하나도 없으면 둘 다 null
+        jdbc.sql("DELETE FROM tidy_photo").update();
+        jdbc.sql("DELETE FROM reservation_photo").update();
+        assertThat(list(ADMIN, null)).hasStatusOk().bodyJson().satisfies(j -> {
+            j.assertThat().extractingPath("$.items[1].before").isNull();
+            j.assertThat().extractingPath("$.items[1].after").isNull();
+        });
+    }
+
+    @Test
     @DisplayName("관리자 정리 확인 목록: 11/10 전 기록(확신도 없음, 귀중품 칸)도 그대로 보인다")
     void adminListLegacyRow() {
         jdbc.sql("""

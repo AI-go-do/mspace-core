@@ -2,7 +2,6 @@ package kr.ac.chosun.mspace.photo.adapter.out.persistence;
 
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 import kr.ac.chosun.mspace.photo.application.CameraPhotoPort;
 import kr.ac.chosun.mspace.photo.application.PhotoPort.StoredPhoto;
@@ -58,24 +57,5 @@ class JdbcCameraPhotoAdapter implements CameraPhotoPort {
                 .param("id", reservationId).param("phase", phase)
                 .query((rs, n) -> new StoredPhoto(rs.getString("content_type"), rs.getBytes("data")))
                 .optional();
-    }
-
-    @Override
-    public List<Room> rooms() {
-        return jdbc.sql("SELECT id, name FROM rooms WHERE is_active ORDER BY id")
-                .query((rs, n) -> new Room(rs.getInt("id"), rs.getString("name"))).list();
-    }
-
-    /** 30일치만 남는 작은 표라 방·단계별 최신 1장을 DISTINCT ON으로 바로 고른다. data(bytea)는 읽지 않는다 */
-    @Override
-    public List<Latest> latestPerRoomAndPhase() {
-        return jdbc.sql("""
-                        SELECT DISTINCT ON (r.room_id, t.phase) r.room_id, t.reservation_id, t.phase, t.created_at
-                        FROM tidy_photo t JOIN reservation r ON r.id = t.reservation_id
-                        ORDER BY r.room_id, t.phase, t.created_at DESC, t.id DESC
-                        """)
-                .query((rs, n) -> new Latest(rs.getInt("room_id"), rs.getLong("reservation_id"), rs.getString("phase"),
-                        rs.getTimestamp("created_at").toInstant()))
-                .list();
     }
 }
