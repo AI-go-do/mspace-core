@@ -235,4 +235,16 @@ class OpsAutoTest {
 
         assertThat(ops.check()).isZero();
     }
+
+    @Test
+    @DisplayName("센서를 보내는 방이 하나뿐이면 그 방이 끊겼을 때 센서 고장으로 남긴다")
+    void onlyRoomDownIsSensorFault() {
+        now("10:00");
+        presence(1, false, -60, -6);
+
+        assertThat(ops.check()).isEqualTo(1);
+        assertThat(recorded()).containsExactly("SENSOR_DOWN:1:0");
+        assertThat(jdbc.sql("SELECT detail FROM ops_action").query((rs, n) -> rs.getString(1)).single())
+                .isEqualTo("마지막 신호 6분 전");
+    }
 }
