@@ -25,9 +25,12 @@ public record OpsPolicy(Duration interval, VentSoon ventSoon, Hot hot, SensorDow
      * @param floorPpm     지금 값이 이 아래면 보지 않는다 (막 들어와 빨리 오르는 때 헛알림 막기)
      * @param fit          true: 모든 값으로 기울기(최소제곱), false: 첫 값과 마지막 값 두 개로
      * @param smooth       true: 지금 값을 최근 3개의 가운데 값으로 (센서 앞에서 숨 쉬어 튄 값 하나에 안 흔들리게)
+     * @param nearPpm      0보다 크면: 지금 값이 이 이상이고 오르는 중이면 nearLookahead 안에 넘을 때 알림 (천천히 오르는 방)
+     * @param nearLookahead nearPpm 때 보는 시간
+     * @param fastPerMin   0보다 크면: nearPpm 아래에서는 분당 이만큼 넘게 빨리 오를 때만 lookahead로 예측해 알림
      */
     public record VentSoon(int thresholdPpm, Duration lookahead, Duration window, int minPoints, int floorPpm,
-                           boolean fit, boolean smooth) {
+                           boolean fit, boolean smooth, int nearPpm, Duration nearLookahead, double fastPerMin) {
     }
 
     /**

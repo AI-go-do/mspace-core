@@ -17,7 +17,7 @@ class OpsRulesTest {
 
     static final Instant NOW = Instant.parse("2030-03-05T01:00:00Z");
     static final OpsPolicy.VentSoon VENT = new OpsPolicy.VentSoon(1000, Duration.ofMinutes(8), Duration.ofMinutes(5), 2,
-            800, true, true);
+            800, true, true, 0, null, 0);
     static final OpsPolicy.Hot HOT = new OpsPolicy.Hot(28, Duration.ofMinutes(10), 3, Duration.ofMinutes(60), true,
             true, true);
     static final OpsPolicy.SensorDown DOWN = new OpsPolicy.SensorDown(Duration.ofMinutes(5), true);
