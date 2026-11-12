@@ -1,6 +1,7 @@
 package kr.ac.chosun.mspace.photo.application;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 /** 표는 V28__tidy_photo.sql. 구현: JdbcCameraPhotoAdapter */
@@ -17,4 +18,16 @@ public interface CameraPhotoPort {
                            Instant uploadedAt);
 
     Optional<PhotoPort.StoredPhoto> find(long reservationId, String phase);
+
+    /** 쓸 수 있는 방 전부(번호 순) */
+    List<Room> rooms();
+
+    /** 방·단계마다 가장 최근 사진 1장의 정보(사진 내용은 안 읽음) */
+    List<Latest> latestPerRoomAndPhase();
+
+    record Room(int id, String name) {
+    }
+
+    record Latest(int roomId, long reservationId, String phase, Instant takenAt) {
+    }
 }

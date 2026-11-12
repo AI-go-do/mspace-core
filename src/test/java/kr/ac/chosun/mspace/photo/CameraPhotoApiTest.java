@@ -140,6 +140,35 @@ class CameraPhotoApiTest {
     }
 
     @Test
+    @DisplayName("관리자는 방마다 단계별 가장 최근 카메라 사진 정보와 주소를 받고, 학생은 403 (11/12 지영)")
+    void adminLatestByRoom() {
+        // given: 지난 예약 FIRST는 표에 바로 넣고(그땐 마지막 퇴실 예약이었음), 마지막 예약은 ENTRY·FIRST를 올림
+        jdbc.sql("""
+                INSERT INTO tidy_photo (reservation_id, phase, device_id, content_type, size_bytes, data, created_at)
+                VALUES (:id, 'FIRST', 'jetson-b', 'image/jpeg', :n, :data, now() - interval '3 hours')
+                """).param("id", older).param("n", JPEG.length).param("data", JPEG).update();
+        assertThat(upload(TOKEN, 1, latest, "FIRST", JPEG)).hasStatus(201);
+        assertThat(upload(TOKEN, 1, latest, "ENTRY", JPEG)).hasStatus(201);
+
+        // when
+        MvcTestResult r = mvc.get().uri("/api/admin/rooms/tidy-photos").header("X-User-Id", "7").exchange();
+
+        // then
+        assertThat(r).hasStatusOk().bodyJson().satisfies(j -> {
+            assertThat(j).extractingPath("$.rooms[0].roomId").isEqualTo(1);
+            assertThat(j).extractingPath("$.rooms[0].photos.length()").isEqualTo(2);
+            assertThat(j).extractingPath("$.rooms[0].photos[0].phase").isEqualTo("ENTRY");
+            assertThat(j).extractingPath("$.rooms[0].photos[1].phase").isEqualTo("FIRST");
+            assertThat(j).extractingPath("$.rooms[0].photos[1].reservationId").isEqualTo((int) latest);
+            assertThat(j).extractingPath("$.rooms[0].photos[1].url")
+                    .isEqualTo("/api/reservations/" + latest + "/tidy-photos/FIRST");
+            assertThat(j).extractingPath("$.rooms[1].photos").asArray().isEmpty();
+        });
+        assertThat(mvc.get().uri("/api/admin/rooms/tidy-photos").header("X-User-Id", "4").exchange())
+                .hasStatus(403).bodyJson().extractingPath("$.code").isEqualTo("ADMIN_ONLY");
+    }
+
+    @Test
     @DisplayName("같은 단계 두 번째는 409, 지난 예약에는 409 TIDY_CHECK_NOT_LATEST, 다른 방 예약은 404")
     void rejects() {
         // given
