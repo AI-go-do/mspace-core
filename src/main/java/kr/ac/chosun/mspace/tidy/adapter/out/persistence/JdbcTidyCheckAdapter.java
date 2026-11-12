@@ -17,6 +17,7 @@ import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.LastEnded;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.LeftItem;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Listed;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Phase;
+import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.PhotoRef;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Result;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.TidyCheck;
 import org.springframework.dao.DuplicateKeyException;
@@ -163,7 +164,16 @@ class JdbcTidyCheckAdapter implements TidyCheckPort {
     public List<Listed> receivedSince(Instant since) {
         return jdbc.sql("""
                         SELECT t.reservation_id, t.room_id, ro.name, r.checked_out_at, t.phase, t.result, t.items,
-                               t.confidences, t.left_items, t.report_id, t.observed_at
+                               t.confidences, t.left_items, t.report_id, t.observed_at,
+                               (SELECT p.created_at FROM tidy_photo p
+                                WHERE p.reservation_id = t.reservation_id AND p.phase = 'ENTRY') AS camera_before,
+                               (SELECT p.created_at FROM reservation_photo p
+                                WHERE p.reservation_id = t.reservation_id AND p.kind = 'CHECK_IN') AS student_before,
+                               (SELECT p.created_at FROM tidy_photo p
+                                WHERE p.reservation_id = t.reservation_id AND p.phase = t.phase) AS camera_after,
+                               (SELECT p.created_at FROM reservation_photo p
+                                WHERE p.reservation_id = t.reservation_id AND p.kind = 'CHECK_OUT'
+                                  AND t.phase = 'FIRST') AS student_after
                         FROM tidy_check t
                         JOIN reservation r ON r.id = t.reservation_id
                         JOIN rooms ro ON ro.id = t.room_id
@@ -177,9 +187,19 @@ class JdbcTidyCheckAdapter implements TidyCheckPort {
                             ended == null ? null : ended.toInstant(), Phase.valueOf(rs.getString(5)),
                             Result.valueOf(rs.getString(6)), items(rs.getArray(7), rs.getArray(8)),
                             Arrays.stream((String[]) rs.getArray(9).getArray()).map(LeftItem::valueOf).toList(),
-                            rs.getObject(10, Long.class), rs.getTimestamp(11).toInstant());
+                            rs.getObject(10, Long.class), rs.getTimestamp(11).toInstant(),
+                            photo(rs.getTimestamp(12), "ENTRY", rs.getTimestamp(13), "CHECK_IN"),
+                            photo(rs.getTimestamp(14), rs.getString(5), rs.getTimestamp(15), "CHECK_OUT"));
                 })
                 .list();
+    }
+
+    /** 방 카메라 사진이 있으면 그것, 없으면 학생 사진, 둘 다 없으면 null (11/12 지영). 사진 내용(bytea)은 읽지 않는다 */
+    private static PhotoRef photo(Timestamp camera, String cameraKind, Timestamp student, String studentKind) {
+        if (camera != null) {
+            return new PhotoRef("CAMERA", cameraKind, camera.toInstant());
+        }
+        return student == null ? null : new PhotoRef("STUDENT", studentKind, student.toInstant());
     }
 
     /** 이름과 확신도를 짝지어 되돌린다. 11/10 전 기록은 확신도가 없어(NULL) 모두 null */
