@@ -58,9 +58,20 @@ public interface TidyCheckUseCase {
      * 관리자 정리 확인 목록의 한 줄.
      * @param endedAt  그 예약이 퇴실한 시각
      * @param reportId 11/10 전 NEEDS_CLEANING 기록이 자동으로 만든 신고. 그 밖에는 null
+     * @param before   입실 전 사진: 방 카메라 ENTRY, 없으면 학생 입실 사진(CHECK_IN), 둘 다 없으면 null
+     * @param after    이 단계 사진: 방 카메라(FIRST·RECHECK), FIRST인데 없으면 학생 퇴실 사진(CHECK_OUT), 없으면 null
      */
     record Listed(long reservationId, int roomId, String roomName, Instant endedAt, Phase phase, Result result,
-                  List<Item> items, List<LeftItem> leftItems, Long reportId, Instant observedAt) {
+                  List<Item> items, List<LeftItem> leftItems, Long reportId, Instant observedAt,
+                  PhotoRef before, PhotoRef after) {
+    }
+
+    /**
+     * 사진 하나 (11/12 지영 "관리자 화면에 입퇴실 사진, 카메라가 못 찍었으면 학생 사진으로 대신").
+     * @param source CAMERA(젯슨) 또는 STUDENT(학생이 올린 입실·퇴실 사진)
+     * @param kind   CAMERA면 ENTRY·FIRST·RECHECK, STUDENT면 CHECK_IN·CHECK_OUT. 사진 주소를 만들 때 쓴다
+     */
+    record PhotoRef(String source, String kind, Instant takenAt) {
     }
 
     /** 관리자만(403 ADMIN_ONLY). 최근 days일(1–{@value MAX_DAYS}, 기본 {@value DEFAULT_DAYS})에 받은 결과, 최근 순 */
