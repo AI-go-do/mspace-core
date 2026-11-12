@@ -86,6 +86,6 @@ class AdminWithdrawService implements AdminWithdrawUseCase {
     }
 
     private static String clip(String s, int max) {
-        return s.length() <= max ? s : s.substring(0, max - 1) + "…";
+        return s.codePointCount(0, s.length()) <= max ? s : s.substring(0, s.offsetByCodePoints(0, max - 1)) + "…";
     }
 }
