@@ -32,7 +32,8 @@ class PenaltyListController {
         Penalties p = penalties.list(user.id(), days);
         return new PenaltiesResponse(p.days(),
                 p.warnings().stream().map(w -> new WarningResponse(w.id(), w.member(), w.reason(), w.reportId(),
-                        w.reservationId(), seoul(w.createdAt()))).toList(),
+                        w.reservationId(), seoul(w.createdAt()),
+                        w.withdrawnAt() == null ? null : seoul(w.withdrawnAt()))).toList(),
                 p.suspensions().stream().map(s -> new SuspensionResponse(s.scope(), s.id(), s.member(), s.reason(),
                         seoul(s.startsAt()), seoul(s.endsAt()), s.active())).toList());
     }
@@ -45,7 +46,7 @@ class PenaltyListController {
     }
 
     record WarningResponse(long id, Member member, String reason, long reportId, Long reservationId,
-                           ZonedDateTime createdAt) {
+                           ZonedDateTime createdAt, ZonedDateTime withdrawnAt) {
     }
 
     record SuspensionResponse(String scope, long id, Member member, String reason, ZonedDateTime startsAt,
