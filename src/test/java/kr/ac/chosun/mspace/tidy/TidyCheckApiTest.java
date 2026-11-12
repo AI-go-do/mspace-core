@@ -430,7 +430,7 @@ class TidyCheckApiTest {
     }
 
     @Test
-    @DisplayName("물건 이름이 길고 많아도 알림 본문은 300자 안, 기한 문장은 남는다")
+    @DisplayName("물건 이름이 길고 많아도 알림 본문엔 이름 없이 '물건'으로만 쓰고 기한 문장을 남긴다")
     void longItemNamesFitNotification() {
         String items = java.util.stream.IntStream.range(0, 8)
                 .mapToObj(i -> "{\"name\":\"" + String.valueOf((char) ('a' + i)).repeat(50) + "\",\"confidence\":0.9}")
@@ -439,7 +439,7 @@ class TidyCheckApiTest {
         assertThat(post(1, first("e20", ended, "LEFT_ITEMS", items))).hasStatusOk();
 
         assertThat(inbox("LEFT_ITEM")).hasSize(3).allSatisfy(m -> assertThat((String) m.get("body"))
-                .hasSizeLessThanOrEqualTo(300).contains(" 외 ").endsWith("3시간 안에 챙겨 가 주세요."));
+                .endsWith("에 물건을 두고 가신 것 같아요. 3시간 안에 챙겨 가 주세요.").doesNotContain("aaaa"));
     }
 
     @Test
