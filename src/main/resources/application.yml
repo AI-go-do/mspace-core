@@ -105,6 +105,37 @@ mspace:
       after: PT10M                 # 켜짐이 10분 이어져야 "불 켜짐" (나가며 끄는 사이엔 안 알림)
       team-within: PT30M           # 처음 켜짐을 보기 30분 안에 퇴실한 마지막 팀에게만 알림 (예약마다 1번)
       interval: PT1M               # 1분마다 본다
+  ops:                       # AI 자동 처리 5개 (11/12 지영). 숫자는 가짜 사례 측정으로 고름 (README "실험 기록: 자동 처리 규칙")
+    interval: PT1M                 # 1분마다 본다 (예약 정리 스위치를 따름)
+    vent-soon:                     # 미리 환기 6판: 사용 중 팀 전원에게 예약마다 1번
+      threshold-ppm: 1000
+      lookahead: PT8M              # 8분 안에 1000을 넘을 것 같으면
+      window: PT5M                 # 최근 5분 값으로 기울기
+      min-points: 2
+      floor-ppm: 800               # 지금 800 아래면 안 봄
+      fit: true                    # 모든 값으로 기울기(최소제곱)
+      smooth: true                 # 지금 값 = 최근 3개 가운데 값
+    hot:                           # 예약 전 더움 7판: 대표자에게 예약마다 1번
+      threshold-c: 28
+      before: PT10M                # 시작 10분 전
+      median: 3
+      fresh: PT60M                 # 60분 안 값만 믿음
+      trend: true                  # 기울기로 시작 시각 온도 예측
+      robust: true                 # 기울기 = 최근 3개 가운데 값 − 오래된 3개 가운데 값
+      since-last: true             # 마지막 값이 오래됐으면 그 시각부터 예측
+    sensor-down:                   # 센서 고장 3판: 관리자 기록만
+      after: PT5M                  # 5분 안 오면
+      skip-when-all-down: true     # 모든 방이 같이 끊기면 네트워크 문제라 안 봄
+    overtime:                      # 시간 넘김 2판: 자동 퇴실된 팀 전원에게 예약마다 1번
+      after: PT5M                  # 끝나고 5분 지나도 "있음"
+      within: PT15M                # 끝나고 15분까지만 봄
+      continuous: true             # 끝나기 전부터 계속 "있음"일 때만
+      at-end: false                # (3판 측정용. 2판과 1개 차이라 단순한 2판을 씀)
+      next-grace: PT10M            # 다음 예약이 10분 안에 시작하면 안 알림 (다음 팀일 수 있음)
+    unbooked:                      # 예약 없는 사용 5판: 관리자 기록만
+      after: PT10M                 # "있음"이 10분 이어져야
+      early-grace: PT10M           # 예약 10분 전부터는 그 팀
+      late-grace: PT30M            # 예약 끝나고 30분까지는 그 팀
   rules:                     # 이용 규칙 GET /api/rules (FR-WEB-003). 화면과 비서가 같은 내용을 쓴다. 원본은 docs 요구사항 3.1
     no-show-minutes: 15        # 미리 예약은 시작 15분 안에 입실. DB 트리거(V1 checkin_deadline)와 같은 값이라 바꾸면 Flyway도
     instant-no-show-minutes: 10  # 즉시 시작은 10분. 위와 같음

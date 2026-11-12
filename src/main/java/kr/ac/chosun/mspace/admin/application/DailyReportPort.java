@@ -22,6 +22,9 @@ public interface DailyReportPort {
 
     Map<String, Long> deviceFaults(Instant from, Instant to);
 
+    /** AI 자동 처리 종류 → 건수 (ops_action, 처리한 시각 기준) */
+    Map<String, Long> aiActions(Instant from, Instant to);
+
     Optional<Saved> saved(LocalDate date);
 
     void save(LocalDate date, List<String> lines, String writer, String promptVersion, String factsHash, Instant generatedAt);

@@ -70,6 +70,12 @@ class JdbcDailyReportAdapter implements DailyReportPort {
                 from, to);
     }
 
+    @Override
+    public Map<String, Long> aiActions(Instant from, Instant to) {
+        return counts("SELECT kind AS k, count(*) AS n FROM ops_action WHERE detected_at >= :from AND detected_at < :to GROUP BY kind",
+                from, to);
+    }
+
     private Map<String, Long> counts(String sql, Instant from, Instant to) {
         Map<String, Long> out = new TreeMap<>();
         jdbc.sql(sql).param("from", Timestamp.from(from)).param("to", Timestamp.from(to))
