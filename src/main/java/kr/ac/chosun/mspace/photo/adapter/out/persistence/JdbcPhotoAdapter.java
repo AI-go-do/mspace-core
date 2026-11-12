@@ -73,7 +73,11 @@ class JdbcPhotoAdapter implements PhotoPort {
 
     @Override
     public int deleteUploadedBefore(Instant cutoff) {
-        return jdbc.sql("DELETE FROM reservation_photo WHERE created_at < :cutoff")
+        // 학생 사진과 방 카메라 사진(V28 tidy_photo)을 같은 30일로 지운다
+        int students = jdbc.sql("DELETE FROM reservation_photo WHERE created_at < :cutoff")
                 .param("cutoff", Timestamp.from(cutoff)).update();
+        int camera = jdbc.sql("DELETE FROM tidy_photo WHERE created_at < :cutoff")
+                .param("cutoff", Timestamp.from(cutoff)).update();
+        return students + camera;
     }
 }

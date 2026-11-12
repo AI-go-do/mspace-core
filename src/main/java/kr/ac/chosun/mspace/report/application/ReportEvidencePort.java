@@ -2,6 +2,7 @@ package kr.ac.chosun.mspace.report.application;
 
 import java.time.Instant;
 import java.util.Optional;
+import kr.ac.chosun.mspace.report.application.ReportEvidenceUseCase.Tidy;
 
 /** 증거 사진 조회. 사진 내용(bytea)은 읽지 않고 있는지와 올린 시각만. 구현: JdbcReportEvidenceAdapter */
 public interface ReportEvidencePort {
@@ -14,4 +15,7 @@ public interface ReportEvidencePort {
 
     record Times(Instant checkedInAt, Instant checkedOutAt) {
     }
+
+    /** 그 예약의 퇴실 직후(FIRST) 정리 확인 결과 */
+    Optional<Tidy> tidyCheck(long reservationId);
 }

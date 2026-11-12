@@ -21,6 +21,22 @@ public interface UsageStatsPort {
     /** 방별 센서 값. 키 = 방 id */
     Map<Integer, SensorRow> sensors(Instant from, Instant cap, int thresholdPpm);
 
+    /**
+     * 방별 알림 효과. 키 = 방 id (모든 방이 들어 있다). 알림·예약은 기간 [from, to) 안의 것,
+     * 결과가 났는지(입실 마감·확인 시간이 지났는지)는 지금(now) 기준. 지난 기간 끝 무렵 알림도 빠지지 않게
+     */
+    Map<Integer, AlertRow> alerts(Instant from, Instant to, Instant now, int thresholdPpm, int resolvedWithinMinutes);
+
+    /**
+     * @param noShowWarned       노쇼 직전 알림(FR-NTF-104)을 받은 예약 중 결과가 난 것 (입실했거나 입실 마감이 지남). 시작 시각이 기간 안
+     * @param noShowCheckedIn    그중 입실한 예약
+     * @param ventilationChecked 환기 알림(FR-DEV-104) 중 확인 시간이 다 지난 것
+     * @param ventilationResolved 그중 확인 시간 안에 CO2가 기준 이하로 내려간 것
+     */
+    record AlertRow(long noShowWarned, long noShowCheckedIn, long ventilationChecked, long ventilationResolved) {
+        static final AlertRow EMPTY = new AlertRow(0, 0, 0, 0);
+    }
+
     record RoomRow(int roomId, String roomName, long total, long canceled, long pending, long noShow, long used,
                    long forced, long awayReleased, long autoCheckedOut, long bookedMinutes, long usedMinutes,
                    long shortUses) {

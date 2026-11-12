@@ -169,6 +169,36 @@ class MyReservationsAndCancelApiTest {
     }
 
     @Test
+    @DisplayName("내 예약에 입실·퇴실 시각을 준다: 퇴실한 예약은 둘 다, 노쇼는 둘 다 null")
+    void checkedInAndOutTimes() {
+        // given
+        long used = reservation(1, -3, "CHECKED_OUT", 1, 2, 3);
+        reservation(1, -6, "NO_SHOW", 1, 2, 3);
+        String in = jdbc.sql("""
+                        SELECT to_char(checked_in_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD"T"HH24:MI:SS"+09:00"')
+                        FROM reservation WHERE id = :id
+                        """)
+                .param("id", used).query(String.class).single();
+        String out = jdbc.sql("""
+                        SELECT to_char(checked_out_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD"T"HH24:MI:SS"+09:00"')
+                        FROM reservation WHERE id = :id
+                        """)
+                .param("id", used).query(String.class).single();
+
+        // when / then: 끝난 예약은 최근 것부터라 [0]이 퇴실, [1]이 노쇼. 참여자도 같은 값
+        for (long uid : new long[] {1, 2}) {
+            assertThat(mine(uid)).hasStatusOk().bodyJson().satisfies(json -> {
+                json.assertThat().extractingPath("$[0].status").isEqualTo("CHECKED_OUT");
+                json.assertThat().extractingPath("$[0].checkedInAt").isEqualTo(in);
+                json.assertThat().extractingPath("$[0].checkedOutAt").isEqualTo(out);
+                json.assertThat().extractingPath("$[1].status").isEqualTo("NO_SHOW");
+                json.assertThat().extractingPath("$[1].checkedInAt").isNull();
+                json.assertThat().extractingPath("$[1].checkedOutAt").isNull();
+            });
+        }
+    }
+
+    @Test
     @DisplayName("수용 기준: 키패드 번호·입실 QR 글자는 대표자에게만, 참여자에게는 null. 참여자 이름은 가린다(홍*동)")
     void accessCodeOnlyForOwner() {
         reservation(1, 24, "BOOKED", 1, 2, 5);

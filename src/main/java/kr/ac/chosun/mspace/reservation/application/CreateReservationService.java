@@ -5,10 +5,12 @@ import static kr.ac.chosun.mspace.common.config.TimeConfig.SEOUL;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -16,7 +18,11 @@ import kr.ac.chosun.mspace.common.config.ExtensionPolicy;
 import kr.ac.chosun.mspace.common.config.ReservationPolicy;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
+import kr.ac.chosun.mspace.common.privacy.MaskedName;
 import kr.ac.chosun.mspace.friend.application.FriendCheck;
+import kr.ac.chosun.mspace.notification.application.Notification;
+import kr.ac.chosun.mspace.notification.application.NotificationInbox;
+import kr.ac.chosun.mspace.notification.application.NotificationInbox.NewNotification;
 import kr.ac.chosun.mspace.reservation.application.ReservationCommandPort.KeyedReservation;
 import kr.ac.chosun.mspace.reservation.application.ReservationCommandPort.NewReservation;
 import kr.ac.chosun.mspace.reservation.domain.ReservationStatus;
@@ -42,6 +48,9 @@ import org.springframework.transaction.support.TransactionOperations;
  * 만들기 전에 지난 예약 정리(노쇼·자동 퇴실)를 한 번 돌린다. 1분 정리를 기다리지 않고, 끝났는데 아직 IN_USE인 내 예약이나
  * 마감이 지났는데 아직 BOOKED인 예약 때문에 409가 나지 않게 하려고 (끝나자마자 이어서 다시 잡을 때, FR-RSV-104).
  * 사용 중에 이어 쓰는 것은 "연장하기"({@link ContinueReservationService}, FR-RSV-105)가 따로 한다.
+ * <p>
+ * 새로 만들면 대표자를 뺀 참여자에게 알림 {@value #PARTICIPANT_KIND}를 보낸다(11/9 지영). 알림함 저장은 예약과 같은 트랜잭션,
+ * 메일 같은 바깥 채널은 커밋 뒤. 같은 키로 다시 보낸 요청(replayed)은 새로 만든 게 아니라 보내지 않는다.
  */
 @Service
 public class CreateReservationService implements CreateReservationUseCase {
@@ -54,6 +63,13 @@ public class CreateReservationService implements CreateReservationUseCase {
     /** 정지 끝나는 시각 표시: "11/18 14:30" */
     static final DateTimeFormatter UNTIL = DateTimeFormatter.ofPattern("M/d HH:mm");
 
+    /** 참여자 알림 종류 */
+    static final String PARTICIPANT_KIND = "RESERVATION_INVITED";
+
+    /** 참여자 알림 시각: "11/10(화) 14:00" */
+    private static final DateTimeFormatter START = DateTimeFormatter.ofPattern("M/d(E) HH:mm", Locale.KOREAN);
+    private static final DateTimeFormatter END = DateTimeFormatter.ofPattern("HH:mm");
+
     private final ReservationCommandPort port;
     private final RoomQuery rooms;
     private final AccessCodeIssuer codes;
@@ -65,13 +81,20 @@ public class CreateReservationService implements CreateReservationUseCase {
     private final ExtensionPolicy extension;
     private final SuspensionPort suspensions;
     private final FriendCheck friends;
+    private final RelayPort relays;
+    private final RelayUseCase relay;
+    private final NotificationInbox inbox;
 
     public CreateReservationService(ReservationCommandPort port, RoomQuery rooms, AccessCodeIssuer codes,
                                     ReservationPolicy policy, Clock clock, TransactionOperations tx,
                                     SweepReservationsUseCase sweeps, UsageChainPort chains,
                                     ExtensionPolicy extension, SuspensionPort suspensions,
-                                    FriendCheck friends) {
+                                    FriendCheck friends, RelayPort relays, RelayUseCase relay,
+                                    NotificationInbox inbox) {
         this.friends = friends;
+        this.relays = relays;
+        this.relay = relay;
+        this.inbox = inbox;
         this.suspensions = suspensions;
         this.sweeps = sweeps;
         this.chains = chains;
@@ -118,15 +141,33 @@ public class CreateReservationService implements CreateReservationUseCase {
         }
     }
 
+    /** 릴레이 다음 사람 찾기. 부가 작업이라 실패해도 예약은 그대로 (1분 정리가 다시 한다) */
+    private void advanceQuietly() {
+        try {
+            relay.advance(clock.instant());
+        } catch (RuntimeException e) {
+            log.warn("릴레이 넘기기 실패({}), 1분 정리가 다시 함", e.getClass().getSimpleName());
+        }
+    }
+
     private Created make(long ownerId, Command command, boolean instant) {
         Optional<Created> earlier = replay(ownerId, command, instant);
         if (earlier.isPresent()) {
             return earlier.get();
         }
+        if (instant && command.relayOfferId() != null) {
+            // 넘겨받은 자리는 시작 30분 전보다 이른 미리 예약 구간이라 즉시 시작으로 받을 일이 없다
+            throw new BusinessException(ErrorCode.RELAY_OFFER_INVALID);
+        }
         sweepQuietly();
         for (int attempt = 1; ; attempt++) {
             try {
-                return tx.execute(status -> createOnce(ownerId, command, instant));
+                Made made = tx.execute(status -> createOnce(ownerId, command, instant));
+                inbox.publish(made.notified());
+                if (command.relayOfferId() != null) {
+                    advanceQuietly();  // 받으면서 풀린 내 다른 넘김을 다음 사람에게
+                }
+                return made.created();
             } catch (PessimisticLockingFailureException e) {
                 // 40P01(교착)은 Spring이 이 예외로 바꿔 준다. 트랜잭션은 이미 되돌려졌다
                 if (attempt >= MAX_ATTEMPTS) {
@@ -184,8 +225,12 @@ public class CreateReservationService implements CreateReservationUseCase {
                         .equals(c.participantStudentIds().stream().sorted().toList());
     }
 
+    /** 한 번 시도의 결과: 만든 예약과, 커밋 뒤 바깥 채널로 내보낼 참여자 알림 */
+    private record Made(Created created, List<Notification> notified) {
+    }
+
     /** 한 번 시도: 서버 검사(시각 → 방 → 대표자 → 참여자 → 인원)를 통과하면 DB에 저장한다. 트랜잭션 안에서 불린다 */
-    private Created createOnce(long ownerId, Command command, boolean instant) {
+    private Made createOnce(long ownerId, Command command, boolean instant) {
         ReservationTime time = instant
                 ? ReservationTime.instant(clock.instant(), command.endAt(), policy)
                 : ReservationTime.of(command.startAt(), command.endAt(), policy, clock.instant());
@@ -244,10 +289,41 @@ public class CreateReservationService implements CreateReservationUseCase {
         participantIds.add(ownerId);
         others.forEach(s -> participantIds.add(ids.get(s)));
 
+        // 빈방 릴레이로 넘겨받은 자리 (Q-18): 내 것이고, 받을 시간이 남았고, 같은 방, 넘어온 구간 안이어야 한다
+        Long offerId = command.relayOfferId();
+        if (offerId != null) {
+            boolean ok = relays.findOffer(offerId)
+                    .filter(o -> o.userId() == ownerId && "OPEN".equals(o.status()) && o.expiresAt().isAfter(now)
+                            && o.roomId() == room.id()
+                            && !time.start().isBefore(o.startAt()) && !time.end().isAfter(o.endAt()))
+                    .isPresent();
+            if (!ok) {
+                throw new BusinessException(ErrorCode.RELAY_OFFER_INVALID);
+            }
+        }
+
         String accessCode = codes.issue();
         long id = port.insert(new NewReservation(room.id(), ownerId, time.start(), time.end(), accessCode,
-                participantIds, command.idempotencyKey(), instant, command.createdVia()));
-        return new Created(id, room.id(), time.start().atZone(SEOUL), time.end().atZone(SEOUL),
-                ReservationStatus.BOOKED, headcount, accessCode, false);
+                participantIds, command.idempotencyKey(), instant, command.createdVia(), false, null, offerId, now));
+        // 받은 넘김 표시. 같은 트랜잭션이라 저장이 실패하면 넘김도 그대로 남는다
+        // 방 잠금을 기다리는 사이 5분이 지났을 수 있어 지금 시각으로 다시 본다
+        if (offerId != null && !relays.take(offerId, ownerId, id, clock.instant())) {
+            throw new BusinessException(ErrorCode.RELAY_OFFER_INVALID);
+        }
+
+        // 참여자 알림 (11/9 지영 카드 선택: 영준 docs #80 안). 대표자 이름은 가려서(홍*동) 넣는다. 친구끼리만 참여자가 되고
+        // 가린 이름은 내 예약 화면에도 이미 보인다. 학번·입실 번호는 넣지 않는다
+        ZonedDateTime from = time.start().atZone(SEOUL);
+        ZonedDateTime to = time.end().atZone(SEOUL);
+        String owner = port.findName(ownerId).map(MaskedName::of).filter(n -> !n.isEmpty()).orElse("대표자");
+        String body = "%s님이 %s–%s %s에 함께 예약했어요.".formatted(owner, START.format(from),
+                (from.toLocalDate().equals(to.toLocalDate()) ? END : START).format(to), room.name());
+        List<NewNotification> items = ids.values().stream()
+                .map(u -> new NewNotification(u, id, PARTICIPANT_KIND, "함께 쓰는 예약이 생겼어요", body))
+                .toList();
+        List<Notification> notified = inbox.store(items, now);
+
+        return new Made(new Created(id, room.id(), time.start().atZone(SEOUL), time.end().atZone(SEOUL),
+                ReservationStatus.BOOKED, headcount, accessCode, false), notified);
     }
 }

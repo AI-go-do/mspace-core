@@ -28,10 +28,12 @@ class JdbcReportAdapter implements ReportPort, ReportJudgePort {
     }
 
     @Override
-    public Optional<Long> findBasisReservation(long userId, int roomId) {
+    public Optional<Basis> findBasisReservation(long userId, int roomId) {
         // 참여자 줄에는 대표자도 들어 있다(is_owner). 한 사람은 같은 시간에 두 방에 못 들어가서(no_person_overlap) 보통 한 줄이다
         return jdbc.sql("""
-                        SELECT r.id
+                        SELECT r.id, r.room_id, r.checked_in_at, r.continued_from_id IS NOT NULL AS continued,
+                               EXISTS (SELECT 1 FROM reservation_photo ph
+                                       WHERE ph.reservation_id = r.id AND ph.kind = 'CHECK_IN') AS has_photo
                         FROM reservation r
                         JOIN reservation_participant p ON p.reservation_id = r.id AND p.user_id = :user
                         WHERE r.status = 'IN_USE'
@@ -43,7 +45,11 @@ class JdbcReportAdapter implements ReportPort, ReportJudgePort {
                         """)
                 .param("user", userId)
                 .param("room", roomId)
-                .query(Long.class)
+                .query((rs, n) -> {
+                    Timestamp in = rs.getTimestamp("checked_in_at");
+                    return new Basis(rs.getLong("id"), rs.getInt("room_id"), in == null ? null : in.toInstant(),
+                            rs.getBoolean("continued"), rs.getBoolean("has_photo"));
+                })
                 .optional();
     }
 
@@ -102,7 +108,7 @@ class JdbcReportAdapter implements ReportPort, ReportJudgePort {
     }
 
     @Override
-    public Optional<ReportItem> judgeIfOpen(long reportId, long adminId, ReportVerdict verdict) {
+    public Optional<ReportItem> judgeIfOpen(long reportId, Long adminId, ReportVerdict verdict) {
         return jdbc.sql("UPDATE report SET verdict = :verdict, judged_by = :admin, judged_at = now()"
                         + " WHERE id = :id AND verdict = 'OPEN' AND category <> 'NOISE' RETURNING " + COLUMNS)
                 .param("verdict", verdict.name())

@@ -2,8 +2,10 @@ package kr.ac.chosun.mspace.report.adapter.out.persistence;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import kr.ac.chosun.mspace.report.application.ReportEvidencePort;
+import kr.ac.chosun.mspace.report.application.ReportEvidenceUseCase.Tidy;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
@@ -33,6 +35,19 @@ class JdbcReportEvidenceAdapter implements ReportEvidencePort {
                     Timestamp out = rs.getTimestamp(2);
                     return new Times(in == null ? null : in.toInstant(), out == null ? null : out.toInstant());
                 })
+                .optional();
+    }
+
+    @Override
+    public Optional<Tidy> tidyCheck(long reservationId) {
+        // 다음 팀 신고의 근거는 퇴실 직후(FIRST) 모습. RECHECK(3시간 뒤)는 두고 간 물건 경고용
+        return jdbc.sql("""
+                        SELECT result, items, left_items, observed_at FROM tidy_check
+                        WHERE reservation_id = :id AND phase = 'FIRST'
+                        """)
+                .param("id", reservationId)
+                .query((rs, n) -> new Tidy(rs.getString(1), List.of((String[]) rs.getArray(2).getArray()),
+                        List.of((String[]) rs.getArray(3).getArray()), rs.getTimestamp(4).toInstant()))
                 .optional();
     }
 }

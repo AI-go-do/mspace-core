@@ -36,7 +36,8 @@ class ReportEvidenceService implements ReportEvidenceUseCase {
 
         Previous previous = penalties.findViolator(reportId).map(v -> {
             Times t = photos.times(v.reservationId()).orElse(new Times(null, null));
-            return new Previous(v.reservationId(), t.checkedInAt(), t.checkedOutAt(), photo(v.reservationId(), CHECK_OUT));
+            return new Previous(v.reservationId(), t.checkedInAt(), t.checkedOutAt(), photo(v.reservationId(), CHECK_OUT),
+                    photos.tidyCheck(v.reservationId()).orElse(null));
         }).orElse(null);
         if (previous == null) {
             notes.add("신고 전에 이 방을 쓴 예약이 없어요.");

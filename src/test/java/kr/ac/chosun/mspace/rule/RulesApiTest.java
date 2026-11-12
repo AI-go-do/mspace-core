@@ -67,6 +67,7 @@ class RulesApiTest {
         // 노쇼 숫자는 문구에 박지 않고 설정값(입실 기한·노쇼 벌칙)으로 채운다
         json.extractingPath("$.conduct[3].rule").isEqualTo("시작 15분 안에 키패드로 입실해요(지금 바로 쓰기는 10분)");
         json.extractingPath("$.conduct[3].penalty").asString().contains("30일 안에 2번이면 14일");
+        json.extractingPath("$.conduct[7].penalty").asString().contains("3시간 뒤에도 남아 있으면");
         json.extractingPath("$.reminders.checkin").isEqualTo("음식물은 반입 금지예요");
         json.extractingPath("$.reminders.checkout").isEqualTo("자리 정리하셨나요?");
     }

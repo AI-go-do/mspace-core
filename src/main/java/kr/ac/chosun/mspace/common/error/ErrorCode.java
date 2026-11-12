@@ -8,6 +8,18 @@ public enum ErrorCode {
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다"),
     ROOM_DATE_OUT_OF_RANGE(HttpStatus.BAD_REQUEST, "오늘부터 예약 가능한 기간 안의 날짜만 조회할 수 있습니다"),
     ROOM_NOT_FOUND(HttpStatus.NOT_FOUND, "없거나 지금 사용할 수 없는 방입니다"),
+    ROOM_BLOCKED(HttpStatus.CONFLICT, "관리자가 막아 둔 시간이라 예약할 수 없습니다"),
+    ROOM_BLOCK_INVALID(HttpStatus.BAD_REQUEST, "막을 기간이 올바르지 않습니다"),
+    ROOM_BLOCK_OVERLAP(HttpStatus.CONFLICT, "이 방은 이미 그 시간에 막혀 있습니다. 먼저 풀거나 시간을 바꿔 주세요"),
+    ROOM_BLOCK_NOT_FOUND(HttpStatus.NOT_FOUND, "없는 기간 막기입니다"),
+    ROOM_WATCH_FREE(HttpStatus.CONFLICT, "지금 비어 있어요. 바로 예약해 주세요"),
+    RELAY_WAIT_LIMIT(HttpStatus.CONFLICT, "기다리기는 한 사람당 동시에 3개까지예요"),
+    RELAY_TOO_LATE(HttpStatus.CONFLICT, "시작 30분 전부터는 기다리기를 걸 수 없어요"),
+    RELAY_SLOT_FREE(HttpStatus.CONFLICT, "그 시간은 비어 있어요. 바로 예약해 주세요"),
+    RELAY_WAIT_NOT_FOUND(HttpStatus.NOT_FOUND, "없는 기다리기예요"),
+    RELAY_OFFER_NOT_FOUND(HttpStatus.NOT_FOUND, "받을 수 있는 자리가 아니에요"),
+    RELAY_OFFER_INVALID(HttpStatus.CONFLICT, "넘겨받은 자리의 받을 시간이 지났거나 구간이 달라요"),
+    RELAY_HELD(HttpStatus.CONFLICT, "기다리던 학생에게 먼저 넘겨진 자리예요"),
 
     // 참여자 학번 검색 (FR-RSV-004). 가입 안 한 학번과 학생 인증 전 회원은 같은 404 (어느 쪽인지 알려 주지 않으려고)
     MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "학생 인증을 마친 회원 중 그 학번이 없습니다"),
@@ -71,6 +83,9 @@ public enum ErrorCode {
     // 신고 (FR-RPT-101)
     REPORT_NOISE_NOT_CONFIRMED(HttpStatus.BAD_REQUEST, "소음 신고는 \"정말 소란인가요?\"를 체크해야 보낼 수 있습니다"),
     REPORT_NOT_ALLOWED(HttpStatus.FORBIDDEN, "지금 그 방이나 옆 방을 사용 중인 예약자만 신고할 수 있습니다"),
+    REPORT_MESSY_OWN_ROOM_ONLY(HttpStatus.FORBIDDEN, "어질러짐은 지금 쓰고 있는 방만 신고할 수 있습니다"),
+    REPORT_MESSY_TOO_LATE(HttpStatus.CONFLICT, "어질러짐은 입실한 뒤 바로만 신고할 수 있습니다"),
+    REPORT_CHECKIN_PHOTO_REQUIRED(HttpStatus.CONFLICT, "어질러짐을 신고하려면 입실 사진을 먼저 올려 주세요"),
     // 관리자 판정 (FR-RPT-103)
     REPORT_NOT_FOUND(HttpStatus.NOT_FOUND, "찾을 수 없는 신고입니다"),
     REPORT_NOT_JUDGEABLE(HttpStatus.CONFLICT, "소음 신고는 판정 대상이 아닙니다"),
@@ -78,6 +93,16 @@ public enum ErrorCode {
     RESERVATION_NOT_ENDED(HttpStatus.CONFLICT, "아직 끝나지 않았거나 입실하지 않은 예약입니다"),
     TIDY_CHECK_EXISTS(HttpStatus.CONFLICT, "이 예약의 정리 확인 결과가 이미 있습니다"),
     TIDY_CHECK_NOT_LATEST(HttpStatus.CONFLICT, "이 방에서 방금 끝난 예약이 아닙니다"),
+    WARNING_NOT_FOUND(HttpStatus.NOT_FOUND, "찾을 수 없는 경고입니다"),
+    WARNING_APPEAL_EXPIRED(HttpStatus.CONFLICT, "철회 요청 기간이 지났습니다"),
+    WARNING_APPEAL_DUPLICATE(HttpStatus.CONFLICT, "이 경고는 이미 철회를 요청했습니다"),
+    WARNING_ALREADY_WITHDRAWN(HttpStatus.CONFLICT, "이미 철회된 경고입니다"),
+    TIDY_RECHECK_NOT_NEEDED(HttpStatus.CONFLICT, "이 예약은 다시 확인할 것이 없습니다"),
+    TIDY_RECHECK_TOO_EARLY(HttpStatus.CONFLICT, "아직 다시 확인할 시각이 아닙니다"),
+    // 찾으러 갈게요 10분 QR (11/10 지영)
+    RETRIEVE_NOT_NEEDED(HttpStatus.CONFLICT, "방 카메라가 두고 간 물건을 찾지 않은 예약입니다"),
+    RETRIEVE_TOO_LATE(HttpStatus.CONFLICT, "찾으러 올 수 있는 시간이 지났습니다"),
+    RETRIEVE_ALREADY_USED(HttpStatus.CONFLICT, "이미 찾으러 와서 문을 열었어요. 새 QR은 받을 수 없어요"),
     // 허위 신고 경고가 쌓이면 (FR-RPT-103 벌칙, 11/6)
     REPORT_SUSPENDED(HttpStatus.FORBIDDEN, "허위 신고 경고가 쌓여 신고가 정지되었습니다"),
 
@@ -86,11 +111,14 @@ public enum ErrorCode {
 
     // 키패드 (FR-ACC-001)
     DEVICE_UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "장치 토큰이 없거나 맞지 않습니다"),
+    DEVICE_ROOM_MISMATCH(HttpStatus.FORBIDDEN, "이 장치 토큰은 다른 방에 등록되어 있습니다"),
+    DEVICE_ID_MISMATCH(HttpStatus.FORBIDDEN, "이 장치 토큰은 다른 장치 이름(deviceId)으로 등록되어 있습니다"),
     // 내부용: 새로 뽑은 번호가 같은 방 다른 예약 번호와 겹침 → 서비스가 새 번호로 다시 한다 (응답으로 나가지 않음)
     ACCESS_CODE_TAKEN(HttpStatus.CONFLICT, "키패드 번호가 겹쳤습니다"),
 
     // 로그인 (FR-AUTH-001)
     SCHOOL_EMAIL_ONLY(HttpStatus.BAD_REQUEST, "학교 메일(@chosun.ac.kr)만 사용할 수 있습니다"),
+    DEVICE_FAULT_TOO_MANY(HttpStatus.TOO_MANY_REQUESTS, "이 방 장치 오류 번호를 하루에 너무 많이 보냈어요"),
     EMAIL_CODE_TOO_SOON(HttpStatus.TOO_MANY_REQUESTS, "인증번호는 1분에 한 번만 보낼 수 있습니다"),
     EMAIL_CODE_NOT_FOUND(HttpStatus.BAD_REQUEST, "인증번호를 먼저 받아 주세요"),
     EMAIL_CODE_EXPIRED(HttpStatus.BAD_REQUEST, "인증번호가 만료되었습니다. 다시 받아 주세요"),

@@ -1,6 +1,7 @@
 package kr.ac.chosun.mspace.reservation.application;
 
 import java.time.Clock;
+import kr.ac.chosun.mspace.room.application.RoomWatchUseCase;
 import java.time.Instant;
 import java.util.function.ToIntFunction;
 import org.slf4j.Logger;
@@ -19,10 +20,17 @@ class SweepReservationsService implements SweepReservationsUseCase {
     private static final Logger log = LoggerFactory.getLogger(SweepReservationsService.class);
 
     private final ReservationSweepPort sweeps;
+    private final ExcuseNoShowsUseCase excuses;
+    private final RelayUseCase relay;
+    private final RoomWatchUseCase watches;
     private final Clock clock;
 
-    SweepReservationsService(ReservationSweepPort sweeps, Clock clock) {
+    SweepReservationsService(ReservationSweepPort sweeps, ExcuseNoShowsUseCase excuses, RelayUseCase relay,
+                             RoomWatchUseCase watches, Clock clock) {
         this.sweeps = sweeps;
+        this.excuses = excuses;
+        this.relay = relay;
+        this.watches = watches;
         this.clock = clock;
     }
 
@@ -33,8 +41,27 @@ class SweepReservationsService implements SweepReservationsUseCase {
         // 자동 퇴실을 자리 비움보다 먼저: 끝 시각이 된 예약은 자리 비움으로 세지 않는다 (자리 비움 쪽도 end_at > now만 본다)
         // 한쪽이 잠금 대기 상한을 넘어도 다른 쪽은 돌고, 넘은 쪽은 다음 번(1분 뒤)에 다시 한다
         int noShows = step("노쇼", sweeps::markNoShows, now);
+        // 장치 오류가 노쇼 처리보다 먼저 왔으면 방금 노쇼가 된 예약을 여기서 무른다 (방의 사과, Q-19)
+        // 알림함 저장 등 잠금 말고 다른 오류가 나도 뒤 단계(자동 퇴실·자리 비움)는 돌게 여기서 막는다. 다음 번(1분 뒤)에 다시 한다
+        try {
+            step("장치 오류 노쇼 무르기", excuses::excuse, now);
+        } catch (RuntimeException e) {
+            log.error("예약 정리(장치 오류 노쇼 무르기) 실패, 다음 번에 다시", e);
+        }
         int autoCheckedOut = step("자동 퇴실", sweeps::autoCheckout, now);
         var swept = new Swept(noShows, autoCheckedOut, step("자리 비움", sweeps::releaseAway, now));
+        // 빈방 릴레이: 받을 시간(5분)이 지난 넘김을 다음 사람에게 (Q-18). 알림함 저장 등 다른 오류가 나도 정리 결과는 돌려준다
+        try {
+            step("릴레이 넘기기", relay::advance, now);
+        } catch (RuntimeException e) {
+            log.error("예약 정리(릴레이 넘기기) 실패, 다음 번에 다시", e);
+        }
+        // 빈방 알림: 퇴실·노쇼 등으로 방금 빈 방을 지켜보던 사람에게 (위 단계들 뒤라 이번에 빈 방도 잡힌다)
+        try {
+            step("빈방 알림", watches::notifyFreed, now);
+        } catch (RuntimeException e) {
+            log.error("예약 정리(빈방 알림) 실패, 다음 번에 다시", e);
+        }
         if (swept.noShows() > 0 || swept.autoCheckedOut() > 0 || swept.awayReleased() > 0) {
             log.info("예약 정리: 노쇼 {}건, 자동 퇴실 {}건, 자리 비움 퇴실 {}건",
                     swept.noShows(), swept.autoCheckedOut(), swept.awayReleased());

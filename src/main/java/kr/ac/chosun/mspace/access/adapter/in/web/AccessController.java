@@ -30,24 +30,25 @@ class AccessController {
      * 예: POST /api/access/verify, Authorization: Bearer 장치토큰
      * {"eventId":"1-48213-18","roomId":1,"deviceId":"keypad-1","code":"123456"}
      * → 200 {"result":"OPENED"} 또는 {"result":"DENIED","reason":"WRONG_CODE"|"NOT_YET"|"LOCKED"}.
+     * 두고 간 물건 찾으러 온 10분 QR(POST /api/reservations/{id}/retrieve-pass)이면 {"result":"OPENED","purpose":"RETRIEVE"}.
      * 거절도 200이다: 장치는 result만 보고 LED를 켠다. 401은 토큰 문제, 400은 요청 형식 문제.
      */
     @PostMapping("/api/access/verify")
     VerifyResponse verify(@RequestHeader(name = "Authorization", required = false) String authorization,
                           @RequestBody VerifyRequest request) {
-        devices.verify(authorization);
+        devices.verify(authorization, request.roomId(), request.deviceId());
         if (request.eventId() == null || request.eventId().isBlank() || request.eventId().length() > 64
                 || request.roomId() == null || (request.deviceId() != null && request.deviceId().length() > 50)) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
         Verdict v = service.verify(request.eventId(), request.roomId(), request.deviceId(), request.code());
-        return new VerifyResponse(v.result(), v.reason());
+        return new VerifyResponse(v.result(), v.reason(), v.purpose());
     }
 
     record VerifyRequest(String eventId, Integer roomId, String deviceId, String code) {
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    record VerifyResponse(String result, String reason) {
+    record VerifyResponse(String result, String reason, String purpose) {
     }
 }

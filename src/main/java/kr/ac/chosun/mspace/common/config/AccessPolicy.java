@@ -8,8 +8,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param openBeforeMinutes 시작 몇 분 전부터 번호가 맞나 (10)
  * @param lockAfterFailures 몇 번 연속 틀리면 잠그나 (5)
  * @param lockSeconds       몇 초 잠그나 (60)
- * @param deviceToken       키패드가 Authorization: Bearer 로 보내는 장치 토큰. 비어 있으면 모든 장치 요청을 401로 막는다
+ * @param deviceToken       예전 공용 장치 토큰(모든 방). 장치별 토큰으로 옮기는 동안만 쓴다. 비우면 받지 않는다
+ * @param devices           장치별 토큰 "deviceId:roomId:토큰"을 쉼표로 이은 한 줄(MSPACE_DEVICES). 토큰이 그 방에 묶인다
  */
 @ConfigurationProperties("mspace.access")
-public record AccessPolicy(int openBeforeMinutes, int lockAfterFailures, int lockSeconds, String deviceToken) {
+public record AccessPolicy(int openBeforeMinutes, int lockAfterFailures, int lockSeconds, String deviceToken,
+                           String devices) {
 }

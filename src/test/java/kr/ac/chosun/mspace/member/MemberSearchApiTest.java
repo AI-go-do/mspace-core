@@ -97,4 +97,27 @@ class MemberSearchApiTest {
                 .bodyJson().extractingPath("$.me").isEqualTo(true);
         assertThat(other).hasStatusOk().bodyJson().extractingPath("$.me").isEqualTo(false);
     }
+
+    @Test
+    @DisplayName("내 정보: 로그인한 본인의 학번과 이름(가리지 않음)만, 이메일·회원 id는 안 나간다")
+    void myProfile() {
+        // when
+        MvcTestResult result = mvc.get().uri("/api/members/me").header("X-User-Id", "2").exchange();
+
+        // then
+        assertThat(result).hasStatusOk().hasHeader("Cache-Control", "no-store").bodyJson().satisfies(json -> {
+            json.assertThat().extractingPath("$.studentId").isEqualTo("20230002");
+            json.assertThat().extractingPath("$.name").isEqualTo("이몽룡");
+            json.assertThat().doesNotHavePath("$.email");
+            json.assertThat().doesNotHavePath("$.id");
+        });
+    }
+
+    @Test
+    @DisplayName("내 정보: 로그인 안 하면 401, 없는 회원이면 404")
+    void myProfileNeedsMember() {
+        assertThat(mvc.get().uri("/api/members/me").exchange()).hasStatus(401);
+        assertThat(mvc.get().uri("/api/members/me").header("X-User-Id", "99").exchange()).hasStatus(404)
+                .bodyJson().extractingPath("$.code").isEqualTo("MEMBER_NOT_FOUND");
+    }
 }

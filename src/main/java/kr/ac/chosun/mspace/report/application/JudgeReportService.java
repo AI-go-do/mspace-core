@@ -119,6 +119,34 @@ public class JudgeReportService implements JudgeReportUseCase {
         return out;
     }
 
+    /**
+     * 사람 없이 core가 사실로 정한 카메라 신고 (두고 간 물건을 기한 안에 안 가져감, FR-DEV-105 11/10).
+     * 부르는 쪽 트랜잭션 안에서 판정·경고·정지를 남기고, 알림함에 넣을 알림을 돌려준다.
+     *
+     * @param why 경고 알림 첫 문장
+     */
+    List<NewNotification> confirmBySystem(long reportId, String why, Instant now) {
+        ReportItem report = reports.judgeIfOpen(reportId, null, ReportVerdict.CONFIRMED)
+                .orElseThrow(() -> new IllegalStateException("방금 만든 카메라 신고가 판정 대기가 아니다: " + reportId));
+        List<NewNotification> out = new ArrayList<>();
+        penalties.findViolator(report.id()).ifPresent(v -> {
+            Penalty p = warn(v.userId(), WarningReason.VIOLATION, report.id(), v.reservationId(), now);
+            out.add(new NewNotification(v.userId(), v.reservationId(), "WARNING",
+                    p.suspendedUntil == null ? "경고를 받았어요" : "이용이 정지됐어요", why + " " + p.describe("예약·참여")));
+        });
+        return out;
+    }
+
+    /**
+     * 사람 없이 판정기가 정한 학생 신고 (FR-RPT-103 10차: AI 판정, 관리자는 판정하지 않음).
+     * 부르는 쪽 트랜잭션 안에서 판정·경고·정지를 남긴다. 결과 알림은 관리자 판정과 같다.
+     *
+     * @return 알림함에 넣을 알림. 이미 판정됐거나(관리자·다른 판정) 소음이면 빈 값
+     */
+    Optional<List<NewNotification>> judgeBySystem(long reportId, ReportVerdict verdict, Instant now) {
+        return reports.judgeIfOpen(reportId, null, verdict).map(report -> penalize(report, now));
+    }
+
     /** @param suspendedUntil 이번 경고로 정지가 걸렸으면 끝나는 시각, 아니면 null */
     private record Penalty(int warnings, int limit, int windowDays, int suspendDays, Instant suspendedUntil) {
         String describe(String blocked) {

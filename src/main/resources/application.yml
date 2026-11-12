@@ -63,6 +63,10 @@ mspace:
       open-before-minutes: 10  # 종료 10분 전부터 종료 전까지
       max-minutes: 120       # 한 번에 늘리는 시간은 원래 종료부터 30분 단위, 최대 2시간
       chain-gap-minutes: 30  # 직전 예약이 끝난 뒤 30분 안에 시작하면 이어진 사용으로 본다
+    relay:                   # 빈방 릴레이 (Q-18, 11/9 지영)
+      max-waits: 3           # 한 사람이 기다리기 3개까지 (하나 받으면 나머지는 풀림)
+      hold-minutes: 5        # 넘겨받은 사람만 5분 동안 예약 가능, 지나면 다음 사람
+      stop-before-minutes: 30  # 시작 30분 전부터는 넘기지 않고 빈 칸으로 푼다
     instant-cancel:          # 즉시 시작 취소 (FR-RSV-007, 11/6 팀 결정 3–5분)
       minutes: 5             # 누른 뒤 5분 안, 입실 전이면 대표자가 취소. 0이면 끔(최대 10 = 입실 마감)
     no-show-penalty:         # 노쇼 벌칙 (FR-RSV-106, 11/4 지영 결정)
@@ -95,6 +99,12 @@ mspace:
       max-gap-seconds: 90
       min-span-seconds: 100        # 첫 값과 마지막 값이 100초 이상 떨어져야
       alert-every-minutes: 30      # 같은 방 30분에 한 번
+      resolved-within-minutes: 15  # 관리자 통계: 환기 알림 뒤 15분 안에 기준 이하로 내려가면 알림 효과 있음
+    light-left-on:           # 빈 방 불 켜짐 (11/12 지영). 마지막 팀에게 알림 + 관리자 "지금" 탭에 표시
+      threshold: 600               # 조도 원시값(0–1023) 이 값 이상이면 켜짐. 햇빛과 구분 못 해서 수연이 재고 맞춤
+      after: PT10M                 # 켜짐이 10분 이어져야 "불 켜짐" (나가며 끄는 사이엔 안 알림)
+      team-within: PT30M           # 처음 켜짐을 보기 30분 안에 퇴실한 마지막 팀에게만 알림 (예약마다 1번)
+      interval: PT1M               # 1분마다 본다
   rules:                     # 이용 규칙 GET /api/rules (FR-WEB-003). 화면과 비서가 같은 내용을 쓴다. 원본은 docs 요구사항 3.1
     no-show-minutes: 15        # 미리 예약은 시작 15분 안에 입실. DB 트리거(V1 checkin_deadline)와 같은 값이라 바꾸면 Flyway도
     instant-no-show-minutes: 10  # 즉시 시작은 10분. 위와 같음
@@ -132,13 +142,47 @@ mspace:
         penalty: 무단 사용이 확인되면 그 예약 대표자에게 경고
       - key: BELONGINGS
         title: 소지품
-        rule: 퇴실 전에 챙겨요. 잠깐 나갈 때도 귀중품은 들고 나가요
-        penalty: 예약이 끝나 문이 잠기면 다시 예약해야 들어갈 수 있어요
+        rule: 퇴실 전에 챙겨요. 쓰레기도 두고 간 물건이에요. 잠깐 나갈 때도 귀중품은 들고 나가요
+        penalty: 퇴실 뒤 방 카메라가 두고 간 물건을 보면 알림이 가요. {leftItemsWithin} 뒤에도 남아 있으면 대표자에게 경고 1번 (시간은 mspace.tidy.recheck-after-minutes)
   report:
     penalty:                 # 신고 판정 뒤 벌칙 (FR-RPT-103·104, 11/6 지영 "docs 제안대로")
       count: 3               # 30일 안에 경고 3번이면 (사실 판정 → 이용 정지, 허위 신고 → 신고 정지. 따로 센다)
       window-days: 30
       suspend-days: 14
+    messy:                   # 어질러짐 신고 (FR-RPT-101, 11/8 지영). 자기 방만, 입실 사진이 있어야, 연장한 예약은 안 됨
+      window-minutes: 5      # 입실 뒤 5분 안에만
+    judge:                   # 신고 자동 판정 (FR-RPT-103 10차: 관리자 대신 판정기, Q-28)
+      wait-after: PT5M       # 신고 5분 뒤에 판정 (앞 팀 퇴실 직후 방 카메라 결과가 들어올 시간)
+      min-confidence: 0.8    # 사실·허위라도 확신도가 0.8보다 낮으면 확인 불가(벌칙 없음)
+      batch-size: 10
+      interval: PT1M         # 1분마다
+      apply-false: false     # 판정기가 "허위"라 해도 신고자에게 경고하지 않고 확인 불가로 (기록에는 허위로 남음). 맞는지 잰 뒤 켬
+      apply-window-confirmed: false  # 창문 열림 "사실"도 앞 팀에게 경고하지 않고 확인 불가로 (기록에는 사실로 남음). 실제 센서로 잰 뒤 켬
+    gemini:                  # Gemini 신고 판정기 (11/12 지영: 창문 열림·어질러짐). 키가 비면 규칙 판정기만, 실패해도 규칙으로
+      api-key: ${GEMINI_API_KEY:}             # 경고 철회 판단기와 같은 키 (서버 .env에만)
+      model: ${GEMINI_MODEL:gemini-3.5-flash-lite}
+      timeout: 20s
+  admin:
+    daily-report:              # 관리자 하루 운영 보고 (11/12 지영 "core 다 AI화"). GET /api/admin/daily-report
+      refresh: PT1H            # 오늘 보고는 1시간마다 요약을 새로 씀 (관제 화면이 자주 열려도 무료 한도를 아끼게)
+      gemini:                  # 키가 비면 정해진 틀(template)로만, Gemini가 실패해도 틀로 씀
+        api-key: ${GEMINI_API_KEY:}             # 판정기들과 같은 키 (서버 .env에만)
+        model: ${GEMINI_MODEL:gemini-3.5-flash-lite}
+        timeout: 20s
+  appeal:                    # 경고 철회 요청 (FR-RPT-105, Q-24 11/10 지영 "추천대로")
+    days: 7                  # 경고를 받은 뒤 7일 안, 경고마다 1번
+    min-confidence: 0.8      # 판단기가 "유지"라도 확신도가 0.8보다 낮으면 철회 (확인 불가 = 철회)
+    batch-size: 10           # 한 번에 판단할 요청 수
+    review-interval: PT1M    # 대기 중인 요청을 1분마다 판단한다
+    gemini:                  # Gemini 판단기 (11/10 지영). 키가 비어 있으면 규칙 판단기(rules)만 쓴다. Gemini가 실패해도 rules로 본다
+      api-key: ${GEMINI_API_KEY:}             # 비밀값: 서버 .env에만 (AI Studio 무료 키, 결제 연결 안 함)
+      model: ${GEMINI_MODEL:gemini-3.5-flash-lite}   # 비서(assistant)와 같은 모델
+      timeout: 20s
+  tidy:                      # 두고 간 물건 (FR-DEV-105, 11/10 10차 회의)
+    recheck-after-minutes: 180   # 퇴실 뒤 3시간에 방 카메라가 다시 본다. 그 전에 다음 예약이 입실하면 다시 보지 않는다
+    warn-min-confidence: 0.8     # 다시 볼 때 확신도 0.8 이상인 물건이 남아 있으면 대표자 경고 (모델 비교 뒤 조정)
+    retrieve-pass-minutes: 10    # "찾으러 갈게요"를 누르면 주는 입실 QR이 10분 동안 열림 (11/10 지영). 어질러짐 자동 판정은 퇴실 + 3시간 + 이 시간 뒤
+    camera-warn: false           # 방 카메라 결과만으로 경고·사실 판정할지. 11/11 지영: 정확도 51%라 끄고 알림만 (오르면 true)
   photo:                     # 사진 체크인·아웃 (FR-RPT-102, 11/5 지영). 저장은 core DB
     max-bytes: 2097152       # 1장 최대 2MB (JPEG·PNG만)
     checkout-grace-minutes: 30   # 퇴실 사진은 퇴실 뒤 30분 안까지
@@ -148,7 +192,10 @@ mspace:
     open-before-minutes: 10  # 번호는 시작 10분 전부터 끝나기 전까지 (FR-ACC-001)
     lock-after-failures: 5   # 5번 연속 틀리면
     lock-seconds: 60         # 그 방 키패드 1분 잠금
-    # 키패드가 Authorization: Bearer 로 보내는 토큰. 비어 있으면 장치 요청을 모두 401로 막는다. 값은 .env에만
+    # 장치별 토큰: "deviceId:roomId:토큰"을 쉼표로 (예: keypad-1:1:aaa,qr-1:1:bbb). 토큰이 그 방에 묶여
+    # 다른 방 이름으로 보내면 403 DEVICE_ROOM_MISMATCH. 값은 .env에만
+    devices: ${MSPACE_DEVICES:}
+    # 예전 공용 토큰(모든 방). 장치를 하나씩 옮기는 동안만 두고, 다 옮기면 비운다. 둘 다 비면 장치 요청은 모두 401
     device-token: ${MSPACE_DEVICE_TOKEN:}
   auth:
     # 임시: 로그인이 붙기 전까지 X-User-Id 헤더로 회원을 받는다. 운영에서는 꼭 false

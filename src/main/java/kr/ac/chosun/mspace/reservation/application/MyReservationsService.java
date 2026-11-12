@@ -2,6 +2,8 @@ package kr.ac.chosun.mspace.reservation.application;
 
 import static kr.ac.chosun.mspace.common.config.TimeConfig.SEOUL;
 
+import java.time.Instant;
+import java.time.ZonedDateTime;
 import java.util.Comparator;
 import java.util.List;
 import kr.ac.chosun.mspace.common.privacy.MaskedName;
@@ -37,7 +39,8 @@ public class MyReservationsService implements MyReservationsUseCase {
                             .toList();
                     return new MyReservation(r.id(), r.roomId(), r.roomName(), r.startAt().atZone(SEOUL),
                             r.endAt().atZone(SEOUL), r.status(), owner, codeFor(owner, r.status(), r.accessCode()),
-                            r.checkinDeadline().atZone(SEOUL), r.cancelableUntil().atZone(SEOUL), people);
+                            r.checkinDeadline().atZone(SEOUL), r.cancelableUntil().atZone(SEOUL), people,
+                            seoul(r.checkedInAt()), seoul(r.checkedOutAt()));
                 })
                 .toList();
     }
@@ -48,5 +51,9 @@ public class MyReservationsService implements MyReservationsUseCase {
      */
     private static String codeFor(boolean owner, ReservationStatus status, String code) {
         return owner && status.isActive() ? code : null;
+    }
+
+    private static ZonedDateTime seoul(Instant t) {
+        return t == null ? null : t.atZone(SEOUL);
     }
 }

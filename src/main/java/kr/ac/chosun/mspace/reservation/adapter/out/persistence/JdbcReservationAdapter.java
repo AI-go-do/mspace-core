@@ -15,6 +15,7 @@ import kr.ac.chosun.mspace.reservation.application.ContinuationPort;
 import kr.ac.chosun.mspace.reservation.application.ReservationCommandPort;
 import kr.ac.chosun.mspace.reservation.application.UsageChainPort;
 import kr.ac.chosun.mspace.reservation.domain.ReservationStatus;
+import kr.ac.chosun.mspace.room.application.BlockReason;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.ServerErrorMessage;
 import org.springframework.beans.factory.annotation.Value;
@@ -66,6 +67,11 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
                 .optional();
     }
 
+    @Override
+    public Optional<String> findName(long userId) {
+        return jdbc.sql("SELECT name FROM users WHERE id = :id").param("id", userId).query((rs, n) -> rs.getString(1)).optional();
+    }
+
     /**
      * 학번 목록을 회원 id로 바꾼다. 인증을 마친 회원만 담기므로, 결과 크기가 입력보다 작으면 못 찾은 학번이 있다는 뜻이다.
      *
@@ -97,6 +103,8 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
     public long insert(NewReservation r) {
         try {
             lockInOrder(r);
+            rejectIfBlocked(r);
+            rejectIfHeld(r);
             long id = jdbc.sql("""
                             INSERT INTO reservation (room_id, owner_id, start_at, end_at, headcount, access_code,
                                                      idempotency_key, is_instant, created_via,
@@ -160,6 +168,29 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
             }
             throw e;
         }
+    }
+
+    /**
+     * 관리자가 막아 둔 칸이면 409 ROOM_BLOCKED (Q-23, core #95). 미리 예약·즉시 시작·연장이 모두 이 insert를 지난다.
+     * 방 잠금을 잡은 뒤에 보므로, 같은 방을 막는 관리자 요청(같은 잠금)과 엇갈려 둘 다 통과하는 일이 없다.
+     * room_block의 EXCLUDE 인덱스(방 + 기간, 풀리지 않은 것만)를 탄다
+     */
+    private void rejectIfBlocked(NewReservation r) {
+        jdbc.sql("""
+                        SELECT reason, end_at FROM room_block
+                        WHERE room_id = :room AND released_at IS NULL
+                          AND tstzrange(start_at, end_at) && tstzrange(:start, :end)
+                        ORDER BY end_at DESC LIMIT 1
+                        """)
+                .param("room", r.roomId())
+                .param("start", Timestamp.from(r.startAt()))
+                .param("end", Timestamp.from(r.endAt()))
+                .query((rs, n) -> BlockReason.valueOf(rs.getString("reason"))
+                        .blockedMessage(rs.getTimestamp("end_at").toInstant()))
+                .optional()
+                .ifPresent(message -> {
+                    throw new BusinessException(ErrorCode.ROOM_BLOCKED, message);
+                });
     }
 
     /** 멱등 키로 찾기. 제약 one_reservation_per_key(owner_id, idempotency_key)의 인덱스를 탄다 */
@@ -272,6 +303,30 @@ class JdbcReservationAdapter implements ReservationCommandPort, ContinuationPort
         lockWithin(-(long) r.roomId(), deadline);
         for (Long userId : r.participantIds().stream().sorted().toList()) {
             lockWithin(userId, deadline);
+        }
+    }
+
+    /**
+     * 빈방 릴레이(Q-18): 취소된 자리를 기다리던 학생에게 넘겨 두었으면, 받을 시간(5분)이 끝날 때까지 그 학생만 잡을 수 있다.
+     * 방 잠금 뒤에 보므로 넘김 만들기(같은 방 잠금)와 엇갈리지 않는다. 새 예약·즉시 시작·연장이 모두 여기를 지난다
+     */
+    private void rejectIfHeld(NewReservation r) {
+        boolean held = jdbc.sql("""
+                        SELECT EXISTS (SELECT 1 FROM relay_offer o
+                                       WHERE o.room_id = :room AND o.status = 'OPEN'
+                                         AND o.expires_at > COALESCE(CAST(:at AS timestamptz), now())
+                                         AND tstzrange(o.start_at, o.end_at) && tstzrange(:start, :end)
+                                         AND NOT (o.id = COALESCE(:offer, -1) AND o.user_id = :owner))
+                        """)
+                .param("room", r.roomId())
+                .param("at", r.at() == null ? null : Timestamp.from(r.at()), java.sql.Types.TIMESTAMP)
+                .param("start", Timestamp.from(r.startAt()))
+                .param("end", Timestamp.from(r.endAt()))
+                .param("offer", r.relayOfferId(), java.sql.Types.BIGINT)
+                .param("owner", r.ownerId())
+                .query((rs, n) -> rs.getBoolean(1)).single();
+        if (held) {
+            throw new BusinessException(ErrorCode.RELAY_HELD);
         }
     }
 

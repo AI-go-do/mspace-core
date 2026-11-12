@@ -66,14 +66,15 @@ class JdbcReportPenaltyAdapter implements ReportPenaltyPort {
     @Override
     public int countWarnings(long userId, WarningReason reason, Instant now, int windowDays) {
         String lastSuspension = reason == WarningReason.VIOLATION
-                ? "SELECT max(warning_id) FROM user_suspension WHERE user_id = :user AND reason = 'WARNINGS'"
-                : "SELECT max(warning_id) FROM report_suspension WHERE user_id = :user";
+                ? "SELECT max(warning_id) FROM user_suspension WHERE user_id = :user AND reason = 'WARNINGS' AND lifted_at IS NULL"
+                : "SELECT max(warning_id) FROM report_suspension WHERE user_id = :user AND lifted_at IS NULL";
         // 지난 정지를 건 경고와 그 앞은 이미 벌칙을 받았으니 다시 세지 않는다. 시각으로 자르면 경고와 정지가 같은 now로
         // 들어가 겹치고, now는 잠금 전에 읽혀 늦게 줄 선 경고가 더 이른 시각을 가질 수 있다 → 정지에 남긴 경고 id로 자른다.
-        // id는 회원 잠금 아래에서 붙어서 같은 사람 안에서는 처리 순서와 같다
+        // id는 회원 잠금 아래에서 붙어서 같은 사람 안에서는 처리 순서와 같다.
+        // 철회된 경고는 세지 않고, 철회로 푼 정지는 경계로 쓰지 않는다 (FR-RPT-105, V29): 남은 경고는 다시 센다
         return jdbc.sql("""
                         SELECT count(*) FROM user_warning
-                        WHERE user_id = :user AND reason = :reason
+                        WHERE user_id = :user AND reason = :reason AND withdrawn_at IS NULL
                           AND created_at > CAST(:now AS timestamptz) - make_interval(days => :days)
                           AND id > coalesce((%s), 0)
                         """.formatted(lastSuspension))
@@ -101,5 +102,15 @@ class JdbcReportPenaltyAdapter implements ReportPenaltyPort {
                         """)
                 .param("user", userId).param("now", Timestamp.from(now))
                 .query(Timestamp.class).optional().map(Timestamp::toInstant);
+    }
+
+    @Override
+    public Optional<Instant> useSuspendedUntil(long userId, Instant now) {
+        return jdbc.sql("""
+                        SELECT max(ends_at) FROM user_suspension
+                        WHERE user_id = :user AND starts_at <= :now AND ends_at > :now
+                        """)
+                .param("user", userId).param("now", Timestamp.from(now))
+                .query((rs, n) -> rs.getTimestamp(1)).optional().map(Timestamp::toInstant);
     }
 }

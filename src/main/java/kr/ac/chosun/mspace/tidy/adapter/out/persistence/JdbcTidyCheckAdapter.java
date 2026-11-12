@@ -1,20 +1,30 @@
 package kr.ac.chosun.mspace.tidy.adapter.out.persistence;
 
+import java.sql.Array;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import kr.ac.chosun.mspace.common.error.BusinessException;
 import kr.ac.chosun.mspace.common.error.ErrorCode;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckPort;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.CurrentReservation;
+import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Item;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.LastEnded;
+import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.LeftItem;
+import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Listed;
+import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Phase;
+import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.PhotoRef;
+import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.Result;
 import kr.ac.chosun.mspace.tidy.application.TidyCheckUseCase.TidyCheck;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
-/** 표는 V19__tidy_check.sql. 트랜잭션은 서비스가 연다. 조회는 모두 RowMapper (query(X.class)는 SonarQube S2259) */
+/** 표는 V19__tidy_check.sql, V26__tidy_recheck.sql. 트랜잭션은 서비스가 연다. 조회는 모두 RowMapper (query(X.class)는 SonarQube S2259) */
 @Component
 class JdbcTidyCheckAdapter implements TidyCheckPort {
 
@@ -63,6 +73,36 @@ class JdbcTidyCheckAdapter implements TidyCheckPort {
     }
 
     @Override
+    public boolean leftItemsSettled(long reservationId) {
+        return jdbc.sql("""
+                        SELECT EXISTS (SELECT 1 FROM retrieve_pass WHERE reservation_id = :id AND first_used_at IS NOT NULL)
+                            OR EXISTS (SELECT 1 FROM user_warning w JOIN report r ON r.id = w.report_id
+                                       WHERE w.reservation_id = :id AND r.category = 'MESSY')
+                        """)
+                .param("id", reservationId).query((rs, n) -> rs.getBoolean(1)).single();
+    }
+
+    @Override
+    public Optional<Instant> retrievedAt(long reservationId) {
+        return jdbc.sql("""
+                        SELECT first_used_at FROM retrieve_pass
+                        WHERE reservation_id = :id AND first_used_at IS NOT NULL
+                        ORDER BY first_used_at LIMIT 1
+                        """)
+                .param("id", reservationId).query((rs, n) -> rs.getTimestamp(1).toInstant()).optional();
+    }
+
+    @Override
+    public boolean enteredSince(int roomId, long reservationId, Instant since) {
+        return jdbc.sql("""
+                        SELECT EXISTS (SELECT 1 FROM reservation
+                                       WHERE room_id = :room AND id <> :id AND checked_in_at >= :since)
+                        """)
+                .param("room", roomId).param("id", reservationId).param("since", Timestamp.from(since))
+                .query((rs, n) -> rs.getBoolean(1)).single();
+    }
+
+    @Override
     public Optional<String> lockReservation(int roomId, long reservationId) {
         return jdbc.sql("SELECT status FROM reservation WHERE id = :id AND room_id = :room FOR UPDATE")
                 .param("id", reservationId).param("room", roomId)
@@ -71,14 +111,16 @@ class JdbcTidyCheckAdapter implements TidyCheckPort {
 
     @Override
     public Optional<Existing> findByEvent(String eventId) {
-        return jdbc.sql("SELECT reservation_id, report_id FROM tidy_check WHERE event_id = :id").param("id", eventId)
-                .query((rs, n) -> new Existing(rs.getLong(1), rs.getObject(2, Long.class))).optional();
+        return jdbc.sql("SELECT reservation_id, phase, report_id FROM tidy_check WHERE event_id = :id").param("id", eventId)
+                .query((rs, n) -> new Existing(rs.getLong(1), Phase.valueOf(rs.getString(2)), rs.getObject(3, Long.class)))
+                .optional();
     }
 
     @Override
-    public boolean existsForReservation(long reservationId) {
-        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM tidy_check WHERE reservation_id = :id)")
-                .param("id", reservationId).query((rs, n) -> rs.getBoolean(1)).single();
+    public Optional<Result> result(long reservationId, Phase phase) {
+        return jdbc.sql("SELECT result FROM tidy_check WHERE reservation_id = :id AND phase = :phase")
+                .param("id", reservationId).param("phase", phase.name())
+                .query((rs, n) -> Result.valueOf(rs.getString(1))).optional();
     }
 
     @Override
@@ -93,14 +135,15 @@ class JdbcTidyCheckAdapter implements TidyCheckPort {
 
     private void insertRow(TidyCheck c, Long reportId, Instant receivedAt) {
         jdbc.sql("""
-                        INSERT INTO tidy_check (event_id, reservation_id, room_id, device_id, result, items, left_items,
-                                                report_id, observed_at, received_at)
-                        VALUES (:event, :reservation, :room, :device, :result, :items, :left, :report, :observed, :received)
+                        INSERT INTO tidy_check (event_id, reservation_id, room_id, device_id, phase, result, items,
+                                                confidences, left_items, report_id, observed_at, received_at)
+                        VALUES (:event, :reservation, :room, :device, :phase, :result, :items, :confidences, '{}',
+                                :report, :observed, :received)
                         """)
                 .param("event", c.eventId()).param("reservation", c.reservationId()).param("room", c.roomId())
-                .param("device", c.deviceId()).param("result", c.result().name())
-                .param("items", c.items().toArray(String[]::new))
-                .param("left", c.leftItems().stream().map(Enum::name).distinct().toArray(String[]::new))
+                .param("device", c.deviceId()).param("phase", c.phase().name()).param("result", c.result().name())
+                .param("items", c.items().stream().map(Item::name).toArray(String[]::new))
+                .param("confidences", c.items().stream().map(Item::confidence).toArray(Float[]::new))
                 .param("report", reportId)
                 .param("observed", Timestamp.from(c.observedAt())).param("received", Timestamp.from(receivedAt))
                 .update();
@@ -119,5 +162,71 @@ class JdbcTidyCheckAdapter implements TidyCheckPort {
     public String roomName(int roomId) {
         return jdbc.sql("SELECT name FROM rooms WHERE id = :room").param("room", roomId)
                 .query((rs, n) -> rs.getString(1)).single();
+    }
+
+    @Override
+    public boolean isAdmin(long userId) {
+        return jdbc.sql("SELECT role = 'ADMIN' FROM users WHERE id = :id").param("id", userId)
+                .query((rs, n) -> rs.getBoolean(1)).optional().orElse(false);
+    }
+
+    @Override
+    public List<Listed> receivedSince(Instant since) {
+        return jdbc.sql("""
+                        SELECT t.reservation_id, t.room_id, ro.name, r.checked_out_at, t.phase, t.result, t.items,
+                               t.confidences, t.left_items, t.report_id, t.observed_at,
+                               (SELECT p.created_at FROM tidy_photo p
+                                WHERE p.reservation_id = t.reservation_id AND p.phase = 'ENTRY') AS camera_before,
+                               (SELECT p.created_at FROM reservation_photo p
+                                WHERE p.reservation_id = t.reservation_id AND p.kind = 'CHECK_IN') AS student_before,
+                               (SELECT p.created_at FROM tidy_photo p
+                                WHERE p.reservation_id = t.reservation_id AND p.phase = t.phase) AS camera_after,
+                               (SELECT p.created_at FROM reservation_photo p
+                                WHERE p.reservation_id = t.reservation_id AND p.kind = 'CHECK_OUT'
+                                  AND t.phase = 'FIRST') AS student_after,
+                               (SELECT min(q.first_used_at) FROM retrieve_pass q
+                                WHERE q.reservation_id = t.reservation_id) AS retrieved_at
+                        FROM tidy_check t
+                        JOIN reservation r ON r.id = t.reservation_id
+                        JOIN rooms ro ON ro.id = t.room_id
+                        WHERE t.received_at >= :since
+                        ORDER BY t.received_at DESC, t.id DESC
+                        """)
+                .param("since", Timestamp.from(since))
+                .query((rs, n) -> {
+                    Timestamp ended = rs.getTimestamp(4);
+                    return new Listed(rs.getLong(1), rs.getInt(2), rs.getString(3),
+                            ended == null ? null : ended.toInstant(), Phase.valueOf(rs.getString(5)),
+                            Result.valueOf(rs.getString(6)), items(rs.getArray(7), rs.getArray(8)),
+                            Arrays.stream((String[]) rs.getArray(9).getArray()).map(LeftItem::valueOf).toList(),
+                            rs.getObject(10, Long.class), rs.getTimestamp(11).toInstant(),
+                            photo(rs.getTimestamp(12), "ENTRY", rs.getTimestamp(13), "CHECK_IN"),
+                            photo(rs.getTimestamp(14), rs.getString(5), rs.getTimestamp(15), "CHECK_OUT"),
+                            instant(rs.getTimestamp(16)));
+                })
+                .list();
+    }
+
+    private static Instant instant(Timestamp t) {
+        return t == null ? null : t.toInstant();
+    }
+
+    /** 방 카메라 사진이 있으면 그것, 없으면 학생 사진, 둘 다 없으면 null (11/12 지영). 사진 내용(bytea)은 읽지 않는다 */
+    private static PhotoRef photo(Timestamp camera, String cameraKind, Timestamp student, String studentKind) {
+        if (camera != null) {
+            return new PhotoRef("CAMERA", cameraKind, camera.toInstant());
+        }
+        return student == null ? null : new PhotoRef("STUDENT", studentKind, student.toInstant());
+    }
+
+    /** 이름과 확신도를 짝지어 되돌린다. 11/10 전 기록은 확신도가 없어(NULL) 모두 null */
+    static List<Item> items(Array names, Array confidences) throws SQLException {
+        String[] n = (String[]) names.getArray();
+        Float[] c = confidences == null ? new Float[n.length] : (Float[]) confidences.getArray();
+        List<Item> out = new ArrayList<>(n.length);
+        for (int i = 0; i < n.length; i++) {
+            out.add(new Item(n[i], c[i]));
+        }
+        return out;
     }
 }

@@ -37,18 +37,20 @@ class SensorEventController {
      * 예: POST /api/sensor-events, Authorization: Bearer 장치토큰
      * {"eventId":"…","roomId":1,"deviceId":"sensor-1","kind":"OCCUPANCY","occupied":false,
      *  "sources":{"pir":false,"radar":false},"observedAt":"2026-11-04T14:05:00+09:00"}
-     * {"eventId":"…","roomId":1,"deviceId":"sensor-1","kind":"CO2","ppm":1080,"source":"scd40","observedAt":"…"}
+     * {"eventId":"…","roomId":1,"deviceId":"sensor-1","kind":"CO2","ppm":1080,"source":"scd40",
+     *  "temperatureC":25.4,"humidityPct":47,"observedAt":"…"}   (온도·습도는 선택, CO2에만)
      * → 200 {"result":"STORED"} 또는 {"result":"DUPLICATE"}. 401 토큰 문제, 400 형식 문제(장치는 다시 안 보냄).
      */
     @PostMapping("/api/sensor-events")
     SensorEventResponse record(@RequestHeader(name = "Authorization", required = false) String authorization,
                                @RequestBody SensorEventRequest request) {
-        devices.verify(authorization);
+        devices.verify(authorization, request.roomId(), request.deviceId());
         return new SensorEventResponse(service.record(request.toEvent()).name());
     }
 
     record SensorEventRequest(String eventId, Integer roomId, String deviceId, String kind, Boolean occupied,
-                              JsonNode sources, Integer ppm, String source, String observedAt) {
+                              JsonNode sources, Integer ppm, String source, Double temperatureC, Double humidityPct,
+                              String observedAt) {
 
         SensorEvent toEvent() {
             if (eventId == null || eventId.isBlank() || eventId.length() > 64 || roomId == null
@@ -61,7 +63,26 @@ class SensorEventController {
             if (sourcesJson != null && sourcesJson.length() > MAX_SOURCES_LENGTH) {
                 throw new BusinessException(ErrorCode.INVALID_REQUEST);
             }
-            return new SensorEvent(eventId, roomId, deviceId, parsedKind(), occupied, sourcesJson, ppm, source, observed());
+            return new SensorEvent(eventId, roomId, deviceId, parsedKind(), occupied, sourcesJson, ppm, source,
+                    oneDecimal(temperatureC), oneDecimal(humidityPct), observed(), light(), pir());
+        }
+
+        /** sources.light: 우노 조도 원시값 0–1023 (mspace-device gateway). 숫자가 아니거나 범위 밖이면 없는 것으로 */
+        private Integer light() {
+            JsonNode v = sources == null ? null : sources.get("light");
+            return v != null && v.isNumber() && v.asDouble() >= 0 && v.asDouble() <= 1023
+                    ? (int) Math.round(v.asDouble()) : null;
+        }
+
+        /** sources.pir: PIR 움직임 감지. 참/거짓이 아니면 없는 것으로 */
+        private Boolean pir() {
+            JsonNode v = sources == null ? null : sources.get("pir");
+            return v != null && v.isBoolean() ? v.booleanValue() : null;
+        }
+
+        /** DB 칸이 소수 한 자리라 반올림해 둔다 (25.46 → 25.5) */
+        private static Double oneDecimal(Double v) {
+            return v == null ? null : Math.round(v * 10) / 10.0;
         }
 
         private Kind parsedKind() {

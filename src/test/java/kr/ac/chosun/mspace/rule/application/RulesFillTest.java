@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 /** 이용 수칙 문구의 {이름} 자리 채우기. 오타가 있으면 응답에 그대로 나가지 않게 시작할 때 멈춘다 */
 class RulesFillTest {
 
-    final Map<String, Integer> numbers = Map.of("noShowMinutes", 15, "suspendDays", 14);
+    final Map<String, String> numbers = Map.of("noShowMinutes", "15", "suspendDays", "14");
 
     @Test
     @DisplayName("아는 이름은 모두 숫자로 채운다")

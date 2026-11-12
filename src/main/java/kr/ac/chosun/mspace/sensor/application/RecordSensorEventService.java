@@ -41,14 +41,16 @@ class RecordSensorEventService implements RecordSensorEventUseCase {
     private final SensorPolicy policy;
     private final TransactionOperations tx;
     private final Clock clock;
+    private final LatestRoomSignals signals;
 
     RecordSensorEventService(SensorEventPort port, NotificationInbox inbox, SensorPolicy policy,
-                             TransactionOperations tx, Clock clock) {
+                             TransactionOperations tx, Clock clock, LatestRoomSignals signals) {
         this.port = port;
         this.inbox = inbox;
         this.policy = policy;
         this.tx = tx;
         this.clock = clock;
+        this.signals = signals;
     }
 
     private record Outcome(Result result, List<Notification> notifications) {
@@ -63,14 +65,21 @@ class RecordSensorEventService implements RecordSensorEventUseCase {
         Outcome outcome = tx.execute(status -> port.exists(e.eventId()) ? Outcome.DUPLICATE
                 : e.kind() == Kind.OCCUPANCY ? occupancy(e, now) : co2(e, now));
         inbox.publish(outcome.notifications());
+        if (e.kind() == Kind.OCCUPANCY && outcome.result() == Result.STORED) {
+            signals.observe(e.roomId(), e.light(), e.pir(), e.observedAt());   // 조도·PIR 최신 값 (DB엔 안 남김)
+        }
         return outcome.result();
     }
 
     private void validate(SensorEvent e, Instant now) {
         boolean shape = switch (e.kind()) {
             case OCCUPANCY -> e.occupied() != null && e.ppm() == null;
-            case CO2 -> e.ppm() != null && e.ppm() >= 0 && e.ppm() <= 10_000 && e.occupied() == null;
+            case CO2 -> e.ppm() != null && e.ppm() >= 0 && e.ppm() <= 10_000 && e.occupied() == null
+                    && in(e.temperatureC(), -40, 85) && in(e.humidityPct(), 0, 100);
         };
+        if (e.kind() == Kind.OCCUPANCY && (e.temperatureC() != null || e.humidityPct() != null)) {
+            shape = false;   // 온도·습도는 CO2 이벤트에만 (V21 climate_only_with_co2)
+        }
         if (!shape || !port.roomExists(e.roomId()) || e.observedAt().isAfter(now.plus(Duration.ofMinutes(policy.futureToleranceMinutes())))) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST);
         }
@@ -133,6 +142,11 @@ class RecordSensorEventService implements RecordSensorEventUseCase {
                                 .formatted(o.roomName(), rule.thresholdPpm(), rule.consecutive())))
                 .toList();
         return new Outcome(Result.STORED, inbox.store(items, now));
+    }
+
+    /** 선택 값: 없으면 통과, 있으면 범위 안 (NaN·무한대는 거절) */
+    private static boolean in(Double v, double min, double max) {
+        return v == null || (v >= min && v <= max);
     }
 
     /** 최근 n개(늦은 것부터)가 모두 기준 초과, 방금 값 포함, 이웃 간격 30~90초, 처음과 끝 100초 이상 */

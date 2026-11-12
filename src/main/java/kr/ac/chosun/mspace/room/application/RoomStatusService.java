@@ -11,7 +11,9 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import kr.ac.chosun.mspace.common.config.SensorPolicy;
+import kr.ac.chosun.mspace.room.application.RoomAvailabilityPort.BlockedTime;
 import kr.ac.chosun.mspace.room.application.RoomAvailabilityPort.RoomInfo;
+import kr.ac.chosun.mspace.room.application.RoomAvailabilityService.SlotBlock;
 import kr.ac.chosun.mspace.room.application.RoomStatusPort.ActiveReservation;
 import kr.ac.chosun.mspace.room.application.RoomStatusPort.PresenceRow;
 import org.springframework.stereotype.Service;
@@ -45,6 +47,7 @@ public class RoomStatusService {
     public RoomsStatus getStatus() {
         Instant now = clock.instant();
         List<ActiveReservation> active = port.findReservationsEndingAfter(now);
+        List<BlockedTime> blocks = rooms.findActiveBlocks(now, now.plusNanos(1));
         Map<Integer, PresenceRow> presence = port.findPresence().stream()
                 .collect(Collectors.toMap(PresenceRow::roomId, Function.identity()));
         Instant aliveAfter = now.minusSeconds(sensor.offlineAfterSeconds());
@@ -59,7 +62,9 @@ public class RoomStatusService {
                     .map(ActiveReservation::startAt)
                     .min(Instant::compareTo).orElse(null);
 
-            Status status = current == null ? Status.AVAILABLE : current.inUse() ? Status.IN_USE : Status.RESERVED;
+            SlotBlock block = RoomAvailabilityService.blockOf(blocks, room.id(), now, now.plusNanos(1));
+            Status status = current != null ? (current.inUse() ? Status.IN_USE : Status.RESERVED)
+                    : block != null ? Status.BLOCKED : Status.AVAILABLE;
             PresenceRow p = presence.get(room.id());
             Presence seen = p == null || !p.lastReceivedAt().isAfter(aliveAfter) ? Presence.UNKNOWN
                     : p.occupied() ? Presence.OCCUPIED : Presence.EMPTY;
@@ -67,7 +72,7 @@ public class RoomStatusService {
             result.add(new RoomStatus(room.id(), room.name(), room.minPeople(), room.maxPeople(), status,
                     current == null ? null : seoul(current.startAt()),
                     current == null ? null : seoul(current.endAt()),
-                    seoul(nextStart), seen));
+                    seoul(nextStart), seen, block));
         }
         int available = (int) result.stream().filter(r -> r.status() == Status.AVAILABLE).count();
         return new RoomsStatus(seoul(now), available, result.size(), result);
@@ -84,7 +89,9 @@ public class RoomStatusService {
         /** 예약 시간이지만 아직 입실 전 (노쇼 마감 전) */
         RESERVED,
         /** 입실해서 사용 중 */
-        IN_USE
+        IN_USE,
+        /** 걸린 예약은 없지만 관리자가 막아 둠 (공사·점검·대관, Q-23). 사유는 block */
+        BLOCKED
     }
 
     /** 센서가 본 재실 */
@@ -104,9 +111,10 @@ public class RoomStatusService {
      * @param currentStartAt 지금 걸린 예약의 시작. 없으면 null
      * @param currentEndAt   지금 걸린 예약의 끝 (언제 비는지). 없으면 null
      * @param nextStartAt    지금 이후 가장 가까운 예약 시작. 없으면 null
+     * @param block          지금 이 방을 막고 있는 관리자 막기 (사유·메모·끝). 없으면 null
      */
     public record RoomStatus(int roomId, String roomName, int minPeople, int maxPeople, Status status,
                              ZonedDateTime currentStartAt, ZonedDateTime currentEndAt, ZonedDateTime nextStartAt,
-                             Presence presence) {
+                             Presence presence, SlotBlock block) {
     }
 }

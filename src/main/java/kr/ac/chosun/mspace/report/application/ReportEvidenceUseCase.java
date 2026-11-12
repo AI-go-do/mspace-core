@@ -1,6 +1,7 @@
 package kr.ac.chosun.mspace.report.application;
 
 import java.time.Instant;
+import java.util.List;
 
 /**
  * 신고 판정용 증거 사진 (11/6 지영 요청). 관리자가 사실인지 바로 보게, 직전 이용 예약의 퇴실 사진과
@@ -20,7 +21,16 @@ public interface ReportEvidenceUseCase {
     record Evidence(long reportId, Previous previous, Side reporter, String note) {
     }
 
-    record Previous(long reservationId, Instant checkedInAt, Instant checkedOutAt, Photo photo) {
+    /** @param tidyCheck 그 예약이 끝난 뒤 방 카메라가 낸 정리 확인 결과. 카메라가 안 봤으면 null */
+    record Previous(long reservationId, Instant checkedInAt, Instant checkedOutAt, Photo photo, Tidy tidyCheck) {
+    }
+
+    /**
+     * 방 카메라 정리 확인 결과 (FR-DEV-105). 사진은 없고 글자만.
+     * @param result    CLEAN 또는 NEEDS_CLEANING
+     * @param leftItems 두고 간 귀중품 (BAG·PHONE·EARBUDS·LAPTOP)
+     */
+    record Tidy(String result, List<String> items, List<String> leftItems, Instant observedAt) {
     }
 
     record Side(long reservationId, Photo photo) {
