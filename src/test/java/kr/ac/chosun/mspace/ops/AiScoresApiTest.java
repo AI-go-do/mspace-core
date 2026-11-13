@@ -3,24 +3,46 @@ package kr.ac.chosun.mspace.ops;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.charset.StandardCharsets;
+import java.sql.Timestamp;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
 import kr.ac.chosun.mspace.TestcontainersConfiguration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
-/** AI 수습사원 카드 점수 GET /api/admin/ai-scores (11/13 지영). 회원 1 학생, 2 관리자. 시각은 지금 기준 몇 분 전 */
+/** AI 수습사원 카드 점수 GET /api/admin/ai-scores (11/13 지영). 회원 1 학생, 2 관리자. 시각은 고정 시각(NOW) 기준 몇 분 전 */
 @SpringBootTest(properties = "mspace.auth.dev-header=true")
 @AutoConfigureMockMvc
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, AiScoresApiTest.FixedClock.class})
 class AiScoresApiTest {
+
+    static final Instant NOW = Instant.parse("2026-11-13T03:00:00Z");
+
+    @TestConfiguration
+    static class FixedClock {
+        @Bean
+        @Primary
+        Clock fixedClock() {
+            return Clock.fixed(NOW, ZoneId.of("Asia/Seoul"));
+        }
+    }
+
+    static Timestamp ago(int min) {
+        return Timestamp.from(NOW.minusSeconds(min * 60L));
+    }
 
     @Autowired
     MockMvcTester mvc;
@@ -43,22 +65,22 @@ class AiScoresApiTest {
     void action(String kind, int room, int agoMin) {
         jdbc.sql("""
                 INSERT INTO ops_action (kind, room_id, started_at, detected_at, detail)
-                VALUES (:k, :room, now() - make_interval(mins => :ago + 10), now() - make_interval(mins => :ago), '시험')
-                """).param("k", kind).param("room", room).param("ago", agoMin).update();
+                VALUES (:k, :room, :start, :at, '시험')
+                """).param("k", kind).param("room", room).param("start", ago(agoMin + 10)).param("at", ago(agoMin)).update();
     }
 
     void co2(int room, int ppm, int agoMin) {
         jdbc.sql("""
                 INSERT INTO sensor_event (event_id, room_id, device_id, kind, ppm, observed_at, received_at)
-                VALUES (:id, :room, 'co2', 'CO2', :ppm, now() - make_interval(mins => :ago), now() - make_interval(mins => :ago))
-                """).param("id", "s-" + (++seq)).param("room", room).param("ppm", ppm).param("ago", agoMin).update();
+                VALUES (:id, :room, 'co2', 'CO2', :ppm, :at, :at)
+                """).param("id", "s-" + (++seq)).param("room", room).param("ppm", ppm).param("at", ago(agoMin)).update();
     }
 
     void presence(int room, boolean occupied, int agoMin) {
         jdbc.sql("""
                 INSERT INTO sensor_event (event_id, room_id, device_id, kind, occupied, observed_at, received_at)
-                VALUES (:id, :room, 'radar', 'OCCUPANCY', :o, now() - make_interval(mins => :ago), now() - make_interval(mins => :ago))
-                """).param("id", "s-" + (++seq)).param("room", room).param("o", occupied).param("ago", agoMin).update();
+                VALUES (:id, :room, 'radar', 'OCCUPANCY', :o, :at, :at)
+                """).param("id", "s-" + (++seq)).param("room", room).param("o", occupied).param("at", ago(agoMin)).update();
     }
 
     JsonNode item(JsonNode body, String kind) {
