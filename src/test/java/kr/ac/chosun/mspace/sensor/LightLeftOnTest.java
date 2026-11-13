@@ -83,7 +83,7 @@ class LightLeftOnTest {
 
     @BeforeEach
     void setUp() {
-        jdbc.sql("TRUNCATE reservation, reservation_participant, users, sensor_event, room_presence, notification "
+        jdbc.sql("TRUNCATE reservation, reservation_participant, users, sensor_event, room_presence, notification, ops_action "
                 + "RESTART IDENTITY CASCADE").update();
         for (int i = 1; i <= 7; i++) {
             jdbc.sql("INSERT INTO users (email, student_id, name, verified_at) VALUES (:e, :s, '홍길동', now())")
@@ -139,6 +139,15 @@ class LightLeftOnTest {
                 .query(Long.class).list();
     }
 
+    /** "AI가 처리한 일"에 남은 불 켜짐: 방, 예약, 시작 시각, 알린 사람 수, 근거 */
+    List<String> opsRows() {
+        return jdbc.sql("""
+                        SELECT room_id || '|' || coalesce(reservation_id::text, '-') || '|' || to_char(started_at AT TIME ZONE 'Asia/Seoul', 'HH24:MI') || '|' || notified
+                               || '|' || detail
+                        FROM ops_action WHERE kind = 'LIGHT_LEFT_ON' ORDER BY id
+                        """).query(String.class).list();
+    }
+
     Object leftOnSince(int room) throws java.io.UnsupportedEncodingException {
         var r = mvc.get().uri("/api/admin/rooms/environment?minutes=10").header("X-User-Id", String.valueOf(ADMIN))
                 .exchange();
@@ -168,6 +177,11 @@ class LightLeftOnTest {
         signal(1, false, 700);
         assertThat(light.check()).isZero();   // 예약마다 1번
         assertThat(notified()).hasSize(3);
+        assertThat(opsRows()).containsExactly(   // AI가 처리한 일에 켜짐마다 1줄 (11/13)
+                "1|" + id + "|10:01|3|빈 방 조도 700(기준 600), 10분 넘게 켜짐");
+        var ops = mvc.get().uri("/api/admin/ops-actions?date=2030-03-05").header("X-User-Id", String.valueOf(ADMIN))
+                .exchange();
+        assertThat(ops).hasStatusOk().bodyJson().extractingPath("$[0].kind").isEqualTo("LIGHT_LEFT_ON");
 
         now("10:13");
         signal(1, false, 100);
@@ -205,6 +219,7 @@ class LightLeftOnTest {
         assertThat(light.check()).isZero();
         assertThat(notified()).isEmpty();
         assertThat(leftOnSince(4).toString()).contains("since=2030-03-05T10:01:00+09:00");
+        assertThat(opsRows()).singleElement().asString().startsWith("4|-|").contains("|0|");   // 알린 팀 없이 기록만
     }
 
     @Test
