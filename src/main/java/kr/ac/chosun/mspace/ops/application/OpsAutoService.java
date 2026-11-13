@@ -93,7 +93,7 @@ class OpsAutoService implements OpsAutoUseCase {
         int done = 0;
         for (Team t : port.startingBy(now, now.plus(p.before()))) {
             List<Point> pts = temps.getOrDefault(t.roomId(), List.of());
-            if (OpsRules.roomHot(pts, now, p)) {
+            if (OpsRules.roomHot(pts, now, t.startAt(), p)) {
                 double c = pts.getFirst().value();
                 // 판단은 시작 시각 예측이라 "지금 더워요"가 아니라 예측과 마지막 측정을 나눠 적는다 (11/12 수연 리뷰)
                 String body = "%s 예약 시작할 때쯤 %.0f도를 넘을 것 같아요(마지막 측정 %.1f도, %d분 전). 들어가면 에어컨이나 창문으로 온도를 낮춰 주세요."

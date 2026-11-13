@@ -111,7 +111,7 @@ final class OpsCases {
                 double v = now + trend * t + gauss(r, sd) + (r.nextDouble() < 0.06 ? u(r, 2, 4) : 0);
                 seen.add(new Point(at(t), Math.round(v * 10) / 10.0));
             }
-            out.add(new Sample(truth, p -> OpsRules.roomHot(seen, T0, p.hot()),
+            out.add(new Sample(truth, p -> OpsRules.roomHot(seen, T0, T0.plus(p.hot().before()), p.hot()),
                     (stale > 0 ? "stale " : "") + "now=%.1f trend=%.2f sd=%.1f".formatted(now, trend, sd)));
         }
         return out;

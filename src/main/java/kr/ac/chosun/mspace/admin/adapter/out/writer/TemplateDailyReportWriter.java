@@ -50,8 +50,13 @@ class TemplateDailyReportWriter implements DailyReportWriter {
         }
         Usage t = f.total();
         if (t.sensor().co2Readings() > 0) {
-            lines.add("CO2는 평균 %dppm, 가장 높을 때 %dppm, 환기 알림 %d번이에요.".formatted(t.sensor().co2AvgPpm(),
-                    t.sensor().co2MaxPpm(), t.sensor().ventilationAlerts()));
+            String co2 = "CO2는 평균 %dppm, 가장 높을 때 %dppm, 환기 알림 %d번이에요.".formatted(t.sensor().co2AvgPpm(),
+                    t.sensor().co2MaxPpm(), t.sensor().ventilationAlerts());
+            if (lines.size() < 5) {
+                lines.add(co2);
+            } else {
+                lines.set(4, lines.get(4) + " " + co2);   // 철회·고장 줄과 AI 줄이 다 있으면 6줄이 돼서 마지막 줄에 붙인다
+            }
         }
         // 이용 한 줄 + 방 한 줄 + 신고·경고 한 줄은 늘 있어 3줄 아래로 내려가지 않는다 (V34 CHECK 3–5)
         return new Written(List.copyOf(lines.subList(0, Math.min(5, lines.size()))), NAME, VERSION);
