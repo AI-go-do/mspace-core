@@ -145,6 +145,11 @@ class NoShowExcuseEval {
     }
 
     /** 응답과 따로 도는 무르기·1분 정리까지 끝난 뒤 무름 여부 */
+    boolean excused(long id) {
+        return jdbc.sql("SELECT no_show_excused_at IS NOT NULL FROM reservation WHERE id = :id")
+                .param("id", id).query((rs, n) -> rs.getBoolean(1)).single();
+    }
+
     boolean excusedAfterSettle(long id, String sweepTime) {
         try {
             Thread.sleep(300);
@@ -152,8 +157,7 @@ class NoShowExcuseEval {
             Thread.currentThread().interrupt();
         }
         sweepAt(sweepTime);
-        return jdbc.sql("SELECT no_show_excused_at IS NOT NULL FROM reservation WHERE id = :id")
-                .param("id", id).query((rs, n) -> rs.getBoolean(1)).single();
+        return excused(id);
     }
 
     record Case(String id, String what, boolean unfair, Supplier<Boolean> run) {}
@@ -221,7 +225,7 @@ class NoShowExcuseEval {
             long id = book(); sweepAt("10:20"); fault(1, "10:00", "10:20", old + "@10:05");
             return excusedAfterSettle(id, "10:21"); }));
         c.add(new Case("N06", "고장이 예약 전(08:00–08:30)에 끝남, 그때 이 번호", false, () -> {
-            long id = book(); sweepAt("10:20");
+            now("07:50"); long id = book(1, 1, "10:00", "11:00"); sweepAt("10:20");   // 번호가 08:10 전에 있어야 함
             fault(1, "08:00", "08:30", code(id) + "@08:10");
             return excusedAfterSettle(id, "10:21"); }));
         c.add(new Case("N07", "번호 유효 전 09:40에만 누르고 돌아감", false, () -> {
@@ -230,7 +234,8 @@ class NoShowExcuseEval {
         c.add(new Case("N08", "다른 팀이 같은 시간 2번 방 예약, 1번 방 고장에 그 팀 번호", false, () -> {
             long id = book(); now("09:01"); long other = book(4, 2, "10:00", "11:00");
             sweepAt("10:20"); fault(1, "10:00", "10:20", code(other) + "@10:05");
-            return excusedAfterSettle(id, "10:21"); }));
+            // 두 팀 다 안 왔으니 둘 중 하나라도 무르면 틀림 (다른 방 팀을 잘못 무르는 것도 잡음)
+            return excusedAfterSettle(id, "10:21") | excused(other); }));
         c.add(new Case("N09", "고장 구간 안에 마감 뒤 10:16에만 누름", false, () -> {
             long id = book(); sweepAt("10:20"); fault(1, "10:00", "10:20", code(id) + "@10:16");
             return excusedAfterSettle(id, "10:21"); }));
