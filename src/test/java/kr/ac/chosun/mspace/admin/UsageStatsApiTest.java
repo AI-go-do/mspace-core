@@ -69,7 +69,7 @@ class UsageStatsApiTest {
 
     @BeforeEach
     void setUp() {
-        jdbc.sql("TRUNCATE sensor_event, notification, reservation, reservation_participant, users RESTART IDENTITY CASCADE")
+        jdbc.sql("TRUNCATE sensor_event, room_presence, notification, reservation, reservation_participant, users RESTART IDENTITY CASCADE")
                 .update();
         for (int i = 1; i <= 7; i++) {
             jdbc.sql("INSERT INTO users (email, student_id, name, verified_at) VALUES (:e, :s, '회원', now())")
@@ -229,6 +229,22 @@ class UsageStatsApiTest {
 
         // 1440 − 입실 10:10–11:00(50) − 12:00–13:00(60)
         json.extractingPath("$.rooms[1].sensor.occupiedWithoutReservationMinutes").isEqualTo(1330);
+    }
+
+    @Test
+    @DisplayName("센서가 끊기면 마지막 \"있음\"은 마지막 신호 + 끊김 기준(1분)까지만 센다")
+    void staleSensorStopsAtLastSignal() {
+        // 2번 방 센서가 이날 12:00에 마지막으로 신호를 보내고 끊김. 예전에는 하루 끝까지 "있음"으로 셌다
+        jdbc.sql("""
+                        INSERT INTO room_presence (room_id, occupied, changed_at, trusted_from, last_observed_at, last_received_at)
+                        VALUES (2, true, :t0, :t0, :t, :t)
+                        """).param("t0", before(22)).param("t", at(12, 0)).update();
+
+        var json = assertThat(day()).bodyJson();
+
+        // 00:00–12:01(721분, 끊김 기준 1분 포함) − 입실 10:10–11:00(50분)
+        json.extractingPath("$.rooms[1].sensor.occupiedMinutes").isEqualTo(721);
+        json.extractingPath("$.rooms[1].sensor.occupiedWithoutReservationMinutes").isEqualTo(671);
     }
 
     long reservationId(int room, Timestamp start) {
