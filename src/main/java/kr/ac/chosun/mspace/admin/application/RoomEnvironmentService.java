@@ -106,7 +106,7 @@ class RoomEnvironmentService implements RoomEnvironmentUseCase {
                     series.getOrDefault(room.id(), List.of()).stream()
                             .map(r -> new Point(seoul(r.at()), r.ppm(), r.temperatureC(), r.humidityPct())).toList(),
                     current == null ? null : new Current(current.id(), seoul(current.startAt()), seoul(current.endAt()),
-                            current.headcount()),
+                            current.headcount(), current.checkedIn()),
                     next == null ? null : new Next(seoul(next.startAt()), next.headcount()));
         }).toList();
         return new RoomsEnvironment(seoul(now), m, rooms);

@@ -10,8 +10,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param lockSeconds       몇 초 잠그나 (60)
  * @param deviceToken       예전 공용 장치 토큰(모든 방). 장치별 토큰으로 옮기는 동안만 쓴다. 비우면 받지 않는다
  * @param devices           장치별 토큰 "deviceId:roomId:토큰"을 쉼표로 이은 한 줄(MSPACE_DEVICES). 토큰이 그 방에 묶인다
+ * @param adminCheckIn      관리자 화면 테스트용 입실 확인 버튼을 받을지 (11/13 지영). 시연·개발 서버만 켠다
  */
 @ConfigurationProperties("mspace.access")
 public record AccessPolicy(int openBeforeMinutes, int lockAfterFailures, int lockSeconds, String deviceToken,
-                           String devices) {
+                           String devices, boolean adminCheckIn) {
 }
