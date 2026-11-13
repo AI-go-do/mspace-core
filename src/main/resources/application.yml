@@ -139,6 +139,16 @@ mspace:
       after: PT10M                 # "있음"이 10분 이어져야
       early-grace: PT10M           # 예약 10분 전부터는 그 팀
       late-grace: PT30M            # 예약 끝나고 30분까지는 그 팀
+  ai-score:                  # AI 수습사원 카드 시작 점수 = 측정값 (11/13 지영 "측정값 + 실제 운영 더하기"). 실제로 맞힐 때마다 여기에 더해짐
+    base:
+      VENT_SOON: {right: 96, total: 99}       # 미리 환기 11판, 실습실 실제 기록 확인 기간
+      SENSOR_DOWN: {right: 298, total: 300}   # 센서 고장 3판, 처음 보는 가짜 사례
+      ROOM_HOT: {right: 267, total: 300}      # 예약 전 더움 7판
+      OVERTIME: {right: 282, total: 300}      # 시간 넘김 2판
+      UNBOOKED: {right: 290, total: 300}      # 예약 없는 사용 5판
+      NO_SHOW_EXCUSE: {right: 19, total: 21}  # 억울한 노쇼 무르기, 가짜 사례 21개 (NoShowExcuseEval)
+      REPORT_JUDGE: {right: 89, total: 90}    # 신고 판정 3판, 처음 보는 사례 30개 × 3번
+      APPEAL_REVIEW: {right: 108, total: 111} # 경고 철회 판단 9판, 37개 × 3번 (97.3%)
   rules:                     # 이용 규칙 GET /api/rules (FR-WEB-003). 화면과 비서가 같은 내용을 쓴다. 원본은 docs 요구사항 3.1
     no-show-minutes: 15        # 미리 예약은 시작 15분 안에 입실. DB 트리거(V1 checkin_deadline)와 같은 값이라 바꾸면 Flyway도
     instant-no-show-minutes: 10  # 즉시 시작은 10분. 위와 같음

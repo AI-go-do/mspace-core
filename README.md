@@ -263,6 +263,12 @@ curl 'localhost:8080/api/admin/ops-actions?date=2026-11-12' -H 'X-User-Id: 4'
 #     "reservationId":12,"startedAt","detectedAt","detail":"CO2 910ppm, 최근 5분 790→910ppm","notified":3}]
 #    SENSOR_DOWN·UNBOOKED는 관리자 기록만이라 reservationId null, notified 0
 
+# AI 수습사원 카드 점수 (11/13). 측정값(base) + 실제 처리 채점(live). 화면은 몇 초마다 불러 늘면 올라가게 보여 줌
+curl localhost:8080/api/admin/ai-scores -H 'X-User-Id: 4'
+# → {"at":"…+09:00","items":[{"kind":"VENT_SOON","right":97,"total":100,"base":{"right":96,"total":99},
+#     "live":{"right":1,"total":1,"pending":0}}, …]}  종류 8개: VENT_SOON SENSOR_DOWN ROOM_HOT OVERTIME UNBOOKED
+#     NO_SHOW_EXCUSE(측정값만) REPORT_JUDGE APPEAL_REVIEW. 맞음 기준은 결정 45, 시작 점수는 application.yml mspace.ai-score.base
+
 # 신고 증거 사진: 직전 이용자의 퇴실 사진, 신고자의 입실 사진
 curl localhost:8080/api/reports/7/evidence -H 'X-User-Id: 4'
 # → {"reportId":7,"previous":{"reservationId":11,"checkedInAt","checkedOutAt",
