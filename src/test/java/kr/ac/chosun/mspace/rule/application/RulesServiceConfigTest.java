@@ -24,7 +24,7 @@ class RulesServiceConfigTest {
                         "시작 {noShowMinutes}분 안에 키패드로 입실해요(지금 바로 쓰기는 {instantNoShowMinutes}분)",
                         "{penaltyWindowDays}일 안에 {penaltyCount}번이면 {suspendDays}일 동안 예약·참여 모두 못 해요"),
                 new RulesProperties.Conduct("BELONGINGS", "소지품", "퇴실 전에 챙겨요",
-                        "{leftItemsWithin} 뒤에도 남아 있으면 대표자에게 경고 1번")));
+                        "{leftItemsWithin} 뒤에도 남아 있으면 한 번 더 알려요")));
 
         // when
         RulesService.Rules rules = new RulesService(new ReservationPolicy(7, 30, 120), new ExtensionPolicy(1, 10, 120, 30),
@@ -38,6 +38,6 @@ class RulesServiceConfigTest {
         assertThat(rules.reservation().noShowMinutes()).isEqualTo(20);
         assertThat(rules.reservation().instantNoShowMinutes()).isEqualTo(5);
         // 시간으로 나누어떨어지지 않는 기한도 시간·분으로 (알림 문구와 같은 TidyPolicy.recheckAfterText)
-        assertThat(rules.conduct().get(1).penalty()).isEqualTo("2시간 30분 뒤에도 남아 있으면 대표자에게 경고 1번");
+        assertThat(rules.conduct().get(1).penalty()).isEqualTo("2시간 30분 뒤에도 남아 있으면 한 번 더 알려요");
     }
 }
