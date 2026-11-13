@@ -31,11 +31,22 @@ public final class OpsRules {
             return false;
         }
         double latest = p.smooth() && pts.size() >= 3 ? median(pts.subList(0, 3)) : pts.getFirst().value();
-        if (pts.getFirst().value() > p.thresholdPpm() || latest > p.thresholdPpm() || latest < p.floorPpm()) {
+        if (pts.getFirst().value() > p.thresholdPpm() || latest > p.thresholdPpm()) {
             return false;
         }
         double slope = p.fit() ? fitSlope(pts) : twoPointSlope(pts);
-        return slope > 0 && latest + slope * p.lookahead().toSeconds() >= p.thresholdPpm();
+        if (slope <= 0) {
+            return false;
+        }
+        // 1000 바로 아래(nearPpm 이상)에서 오르는 중이면 길게(nearLookahead) 본다. 큰 방은 천천히 올라서 8분 예측으로는 늦다 (실습실 기록 11/12)
+        if (p.nearPpm() > 0 && latest >= p.nearPpm()) {
+            return latest + slope * p.nearLookahead().toSeconds() >= p.thresholdPpm();
+        }
+        // 그 아래에서는 빨리 오를 때만 짧게(lookahead) 예측한다. 천천히 1000 근처를 오르내리는 방의 헛알림을 막는다
+        if (latest < p.floorPpm() || slope * 60 <= p.fastPerMin()) {   // "넘게": 딱 20이면 안 봄
+            return false;
+        }
+        return latest + slope * p.lookahead().toSeconds() >= p.thresholdPpm();
     }
 
     /**

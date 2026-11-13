@@ -45,7 +45,7 @@ class OpsRulesEval {
     static OpsPolicy.VentSoon vent(int minPoints, int floor, boolean fit, int windowMin, int lookaheadMin,
                                    boolean smooth) {
         return new OpsPolicy.VentSoon(1000, Duration.ofMinutes(lookaheadMin), Duration.ofMinutes(windowMin), minPoints,
-                floor, fit, smooth);
+                floor, fit, smooth, 0, null, 0);
     }
 
     static OpsPolicy.Hot hot(int median, Duration fresh, boolean trend) {
@@ -105,6 +105,15 @@ class OpsRulesEval {
 
     static final OpsPolicy V6 = with(V5, vent(2, 800, true, 5, 8, true));
     static final OpsPolicy V7 = with(V6, vent(2, 750, true, 5, 8, true));
+    static OpsPolicy.VentSoon near(int nearPpm, int nearMin, double fastPerMin) {
+        return new OpsPolicy.VentSoon(1000, Duration.ofMinutes(8), Duration.ofMinutes(5), 2, 800, true, true, nearPpm,
+                Duration.ofMinutes(nearMin), fastPerMin);
+    }
+
+    static final OpsPolicy V8 = with(V6, near(960, 30, 0));
+    static final OpsPolicy V9 = with(V8, near(960, 30, 10));
+    static final OpsPolicy V10 = with(V8, near(960, 30, 15));
+    static final OpsPolicy V11 = with(V8, near(960, 30, 20));
 
     static OpsPolicy with(OpsPolicy p, Object part) {
         return new OpsPolicy(p.interval(),
@@ -147,7 +156,11 @@ class OpsRulesEval {
             new Round("예약 전 더움", "6판", "마지막 값이 오래됐으면 그 시각부터 시작까지 예측 (5판 기준)", H6),
             new Round("예약 전 더움", "7판", "믿는 값 15분 → 60분 (5판에서 놓친 것 대부분이 센서 멈춘 방)", H7),
             new Round("미리 환기", "6판", "지금 값을 최근 3개의 가운데 값으로 (5판 기준. 헛알림 중 마지막 값이 튄 것)", V6),
-            new Round("미리 환기", "7판", "800 → 750 아래면 안 봄 (6판 기준. 놓친 것 중 빨리 오르는데 800 아래)", V7));
+            new Round("미리 환기", "7판", "800 → 750 아래면 안 봄 (6판 기준. 놓친 것 중 빨리 오르는데 800 아래)", V7),
+            new Round("미리 환기", "8판", "지금 값이 960 이상이고 오르면 30분 앞까지 예측 (6판 기준. 큰 방은 천천히 올라 8분 예측이 늦음)", V8),
+            new Round("미리 환기", "9판", "960 아래는 1분에 10 넘게 오를 때만 8분 예측 (8판 기준. 1000 근처를 천천히 오르내릴 때 헛알림 막기)", V9),
+            new Round("미리 환기", "10판", "1분에 10 → 15 (9판 기준)", V10),
+            new Round("미리 환기", "11판", "1분에 15 → 20 (10판 기준)", V11));
 
     // ───────────── 재기 ─────────────
 
@@ -192,7 +205,7 @@ class OpsRulesEval {
     }
 
     /** 고른 판 (application.yml mspace.ops와 같음). 같은 점수면 잘못 알림이 적은 쪽, 1개 차이면 단순한 쪽 */
-    static final java.util.Map<String, String> ADOPTED = java.util.Map.of("미리 환기", "6판", "예약 전 더움", "7판",
+    static final java.util.Map<String, String> ADOPTED = java.util.Map.of("미리 환기", "11판", "예약 전 더움", "7판",
             "센서 고장", "3판", "시간 넘김", "2판", "예약 없는 사용", "5판");
 
     @Test
