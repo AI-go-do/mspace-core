@@ -35,6 +35,6 @@ public interface RoomEnvironmentPort {
     record MinuteRow(int roomId, Instant at, Integer ppm, Double temperatureC, Double humidityPct) {
     }
 
-    record Booking(long id, int roomId, Instant startAt, Instant endAt, int headcount) {
+    record Booking(long id, int roomId, Instant startAt, Instant endAt, int headcount, boolean checkedIn) {
     }
 }

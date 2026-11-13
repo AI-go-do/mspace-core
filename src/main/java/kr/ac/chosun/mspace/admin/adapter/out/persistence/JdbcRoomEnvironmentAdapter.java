@@ -89,14 +89,14 @@ class JdbcRoomEnvironmentAdapter implements RoomEnvironmentPort {
     @Override
     public List<Booking> bookingsEndingAfter(Instant at) {
         return jdbc.sql("""
-                        SELECT id, room_id, start_at, end_at, headcount FROM reservation
+                        SELECT id, room_id, start_at, end_at, headcount, status FROM reservation
                         WHERE status IN ('BOOKED', 'IN_USE') AND end_at > :at
                         ORDER BY start_at, id
                         """)
                 .param("at", Timestamp.from(at))
                 .query((rs, n) -> new Booking(rs.getLong("id"), rs.getInt(ROOM_ID),
                         rs.getTimestamp("start_at").toInstant(), rs.getTimestamp("end_at").toInstant(),
-                        rs.getInt("headcount")))
+                        rs.getInt("headcount"), "IN_USE".equals(rs.getString("status"))))
                 .list();
     }
 

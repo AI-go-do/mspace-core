@@ -251,6 +251,7 @@ class RoomEnvironmentApiTest {
         var json = assertThat(r).bodyJson();
         json.extractingPath("$.rooms[0].current.reservationId").isEqualTo((int) current);
         json.extractingPath("$.rooms[0].current.people").isEqualTo(3);
+        json.extractingPath("$.rooms[0].current.checkedIn").isEqualTo(false);
         json.extractingPath("$.rooms[0].current.endAt").asString().startsWith("2030-03-05T12:30:00+09:00");
         json.extractingPath("$.rooms[0].next.startAt").asString().startsWith("2030-03-05T13:00:00+09:00");
         json.extractingPath("$.rooms[0].next.people").isEqualTo(3);

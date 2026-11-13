@@ -27,7 +27,7 @@ class KeypadEntryServiceTest {
     final Clock clock = Clock.fixed(Instant.parse("2026-11-04T04:55:00Z"), ZoneId.of("Asia/Seoul"));
     final Instant start = Instant.parse("2026-11-04T05:00:00Z");
     final Instant end = Instant.parse("2026-11-04T07:00:00Z");
-    final AccessPolicy policy = new AccessPolicy(10, 5, 60, "t", "");
+    final AccessPolicy policy = new AccessPolicy(10, 5, 60, "t", "", false);
 
     /** findActiveByCode가 부를 때마다 차례로 답한다 */
     static class FakeQueries implements ReservationQueryPort {

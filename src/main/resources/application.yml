@@ -242,6 +242,9 @@ mspace:
     devices: ${MSPACE_DEVICES:}
     # 예전 공용 토큰(모든 방). 장치를 하나씩 옮기는 동안만 두고, 다 옮기면 비운다. 둘 다 비면 장치 요청은 모두 401
     device-token: ${MSPACE_DEVICE_TOKEN:}
+    # 관리자 화면 테스트용 입실 확인 버튼 (11/13 지영: QR 대신 눌러 입실). QR 입실과 같은 처리로 IN_USE가 된다.
+    # 지금은 시연·개발 서버뿐이라 켜 둔다. 실제 학교 운영을 시작하면 false로
+    admin-check-in: ${MSPACE_ADMIN_CHECK_IN:true}
   auth:
     # 임시: 로그인이 붙기 전까지 X-User-Id 헤더로 회원을 받는다. 운영에서는 꼭 false
     dev-header: ${MSPACE_DEV_HEADER:false}

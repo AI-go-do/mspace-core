@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 class DeviceTokenVerifierTest {
 
     static DeviceTokenVerifier verifier(String shared, String devices) {
-        return new DeviceTokenVerifier(new AccessPolicy(10, 5, 60, shared, devices));
+        return new DeviceTokenVerifier(new AccessPolicy(10, 5, 60, shared, devices, false));
     }
 
     static ErrorCode codeOf(Runnable call) {

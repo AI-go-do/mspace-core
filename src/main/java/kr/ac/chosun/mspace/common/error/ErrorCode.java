@@ -71,6 +71,9 @@ public enum ErrorCode {
 
     // 퇴실 (FR-RSV-008). 이름은 영준 비서(mspace-assistant #30)와 맞춤
     RESERVATION_NOT_IN_USE(HttpStatus.CONFLICT, "입실한(사용 중) 예약만 퇴실할 수 있습니다"),
+    // 관리자 테스트용 입실 확인 (11/13 지영: QR 대신 관리자 화면 버튼으로 입실)
+    ADMIN_CHECK_IN_OFF(HttpStatus.FORBIDDEN, "테스트용 입실 확인이 꺼져 있습니다"),
+    RESERVATION_NOT_CHECKABLE(HttpStatus.CONFLICT, "지금 입실할 수 있는 예약이 아닙니다"),
 
     // "아직 있어요" (FR-DEV-103). 기본으로 켜져 있고, 설정으로 끄면 없는 기능처럼 404
     STILL_HERE_DISABLED(HttpStatus.NOT_FOUND, "지금은 쓸 수 없는 기능입니다"),

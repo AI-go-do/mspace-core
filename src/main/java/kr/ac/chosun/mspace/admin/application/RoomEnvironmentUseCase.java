@@ -54,7 +54,8 @@ public interface RoomEnvironmentUseCase {
     record Point(ZonedDateTime at, Integer ppm, Double temperatureC, Double humidityPct) {
     }
 
-    record Current(long reservationId, ZonedDateTime startAt, ZonedDateTime endAt, int people) {
+    /** @param checkedIn 입실했으면(IN_USE) true. 아직 입실 전(BOOKED)이면 false라 관리자 화면이 테스트용 입실 확인 버튼을 보인다 */
+    record Current(long reservationId, ZonedDateTime startAt, ZonedDateTime endAt, int people, boolean checkedIn) {
     }
 
     record Next(ZonedDateTime startAt, int people) {

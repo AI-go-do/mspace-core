@@ -28,7 +28,7 @@ class RulesServiceConfigTest {
 
         // when
         RulesService.Rules rules = new RulesService(new ReservationPolicy(7, 30, 120), new ExtensionPolicy(1, 10, 120, 30),
-                new AccessPolicy(10, 5, 60, "token", ""), new NoShowPenaltyPolicy(3, 60, 7), props,
+                new AccessPolicy(10, 5, 60, "token", "", false), new NoShowPenaltyPolicy(3, 60, 7), props,
                 new TidyPolicy(150, 0.8, 10, true)).rules();
 
         // then
