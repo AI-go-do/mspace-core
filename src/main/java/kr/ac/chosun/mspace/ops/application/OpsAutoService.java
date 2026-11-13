@@ -161,7 +161,9 @@ class OpsAutoService implements OpsAutoUseCase {
     }
 
     private boolean offline(Room r, Instant now) {
-        return r.lastReceivedAt() == null || !now.isBefore(r.lastReceivedAt().plusSeconds(sensor.offlineAfterSeconds()));
+        // 재실 신호만 본다: CO2만 들어와도 오래된 "있음"을 믿지 않게
+        return r.presenceReceivedAt() == null
+                || !now.isBefore(r.presenceReceivedAt().plusSeconds(sensor.offlineAfterSeconds()));
     }
 
     /** 기록하고 처음이면 알림. 처리했으면 1 */

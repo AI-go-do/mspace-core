@@ -247,4 +247,17 @@ class OpsAutoTest {
         assertThat(jdbc.sql("SELECT detail FROM ops_action").query((rs, n) -> rs.getString(1)).single())
                 .isEqualTo("마지막 신호 6분 전");
     }
+    @Test
+    @DisplayName("재실 신호가 끊긴 방은 CO2만 들어와도 오래된 \"있음\"으로 예약 없는 사용을 남기지 않는다")
+    void co2AloneDoesNotTrustStalePresence() {
+        now("10:00");
+        presence(2, true, -15, -3);      // 재실은 3분째 신호 없음
+        jdbc.sql("""
+                INSERT INTO sensor_event (event_id, room_id, device_id, kind, ppm, observed_at, received_at)
+                VALUES ('co2-now', 2, 'co2', 'CO2', 700, :t, :t)
+                """).param("t", min(0)).update();    // CO2는 방금 받음
+
+        assertThat(ops.check()).isZero();
+        assertThat(recorded()).isEmpty();
+    }
 }

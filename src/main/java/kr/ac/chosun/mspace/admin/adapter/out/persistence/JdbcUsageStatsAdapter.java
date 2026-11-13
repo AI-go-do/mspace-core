@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import kr.ac.chosun.mspace.admin.application.UsageStatsPort;
+import kr.ac.chosun.mspace.common.config.SensorPolicy;
 import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
@@ -19,9 +20,11 @@ import org.springframework.stereotype.Component;
 class JdbcUsageStatsAdapter implements UsageStatsPort {
 
     private final JdbcClient jdbc;
+    private final SensorPolicy sensor;
 
-    JdbcUsageStatsAdapter(JdbcClient jdbc) {
+    JdbcUsageStatsAdapter(JdbcClient jdbc, SensorPolicy sensor) {
         this.jdbc = jdbc;
+        this.sensor = sensor;
     }
 
     @Override
@@ -117,21 +120,25 @@ class JdbcUsageStatsAdapter implements UsageStatsPort {
                                 WHERE room_id = rm.id AND kind = 'OCCUPANCY' AND observed_at < :from
                                 ORDER BY observed_at DESC LIMIT 1) last
                         ), seg AS (
-                            SELECT room_id, occupied,
-                                   greatest(observed_at, CAST(:from AS timestamptz)) AS a,
-                                   coalesce(lead(observed_at) OVER (PARTITION BY room_id ORDER BY observed_at, id),
-                                            CAST(:cap AS timestamptz)) AS b
-                            FROM ev
+                            -- 마지막 상태는 마지막 신호 + 끊김 기준(offline-after-seconds)까지만 센다. 끊긴 센서의 마지막
+                            -- "있음"이 지금까지 이어져 "예약 없이 있던 시간"이 부풀던 것을 막는다 (신호 기록이 없으면 :cap까지)
+                            SELECT ev.room_id, ev.occupied,
+                                   greatest(ev.observed_at, CAST(:from AS timestamptz)) AS a,
+                                   coalesce(lead(ev.observed_at) OVER (PARTITION BY ev.room_id ORDER BY ev.observed_at, ev.id),
+                                            least(CAST(:cap AS timestamptz),
+                                                  coalesce(rp.last_received_at + make_interval(secs => :offline),
+                                                           CAST(:cap AS timestamptz)))) AS b
+                            FROM ev LEFT JOIN room_presence rp ON rp.room_id = ev.room_id
                         ), occ AS (
                             SELECT room_id, range_agg(tstzrange(a, b)) AS r FROM seg
                             WHERE occupied AND b > a GROUP BY room_id
                         ), used AS (
                             SELECT room_id, range_agg(tstzrange(greatest(checked_in_at, CAST(:from AS timestamptz)),
-                                                                least(coalesce(checked_out_at, :cap), :cap))) AS r
+                                                                least(coalesce(checked_out_at, end_at), :cap))) AS r
                             FROM reservation
                             WHERE checked_in_at IS NOT NULL AND checked_in_at < :cap
-                              AND coalesce(checked_out_at, :cap) > :from
-                              AND least(coalesce(checked_out_at, :cap), :cap) > greatest(checked_in_at, CAST(:from AS timestamptz))
+                              AND coalesce(checked_out_at, end_at) > :from
+                              AND least(coalesce(checked_out_at, end_at), :cap) > greatest(checked_in_at, CAST(:from AS timestamptz))
                             GROUP BY room_id
                         ), co2 AS (
                             SELECT room_id, count(*) AS n, coalesce(sum(ppm), 0) AS s, max(ppm) AS mx,
@@ -159,6 +166,7 @@ class JdbcUsageStatsAdapter implements UsageStatsPort {
                         """)
                 .param("from", Timestamp.from(from))
                 .param("cap", Timestamp.from(cap))
+                .param("offline", sensor.offlineAfterSeconds())
                 .param("threshold", thresholdPpm)
                 .query(rs -> {
                     int max = rs.getInt("co2_max");

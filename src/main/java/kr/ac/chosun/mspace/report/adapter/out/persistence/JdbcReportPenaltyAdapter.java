@@ -28,7 +28,8 @@ class JdbcReportPenaltyAdapter implements ReportPenaltyPort {
 
     @Override
     public Optional<Violator> findViolator(long reportId) {
-        // 신고 시각 전에 그 방에 입실(checked_in_at)한 예약 중 가장 늦은 것. 사용 중이든 퇴실했든 같다
+        // 신고 시각 전에 그 방에 입실(checked_in_at)한 예약 중 가장 늦은 것. 사용 중이든 퇴실했든 같다.
+        // 신고자 본인이 대표인 예약은 모두 뺀다: 연장하면 신고 근거는 새 예약이라 연장 전 예약이 남아 본인이 잡혔다 (#83)
         return jdbc.sql("""
                         SELECT r.owner_id, r.id
                         FROM report p
@@ -36,6 +37,7 @@ class JdbcReportPenaltyAdapter implements ReportPenaltyPort {
                         WHERE p.id = :id
                           AND (p.target_reservation_id IS NULL OR r.id = p.target_reservation_id)
                           AND r.id IS DISTINCT FROM p.reporter_reservation_id
+                          AND r.owner_id IS DISTINCT FROM p.reporter_id
                           AND r.checked_in_at IS NOT NULL
                           AND r.checked_in_at <= p.created_at
                         ORDER BY r.checked_in_at DESC, r.id DESC
