@@ -24,7 +24,7 @@ public class WarningAppealService implements WarningAppealUseCase {
     static final int TEXT_MAX = 500;
     static final Set<String> EVIDENCE = Set.of("CHECKIN_PHOTO", "CHECKOUT_PHOTO", "TIDY_CHECK");
     /** 숫자 7개 이상이 이어지면(띄어쓰기·하이픈 허용) 학번·전화번호로 본다. 사유는 판단기(AI)에게 넘어간다 */
-    private static final Pattern LONG_NUMBER = Pattern.compile("\\d(?:[\\s-]?\\d){6,}");
+    private static final Pattern LONG_NUMBER = Pattern.compile("\\d(?:[\\s-]?+\\d){6,}+");
     private static final int MAX_DAYS = 90;
 
     private final WarningAppealPort port;

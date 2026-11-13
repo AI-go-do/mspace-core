@@ -35,6 +35,9 @@ class GeminiWarningReviewerTest {
     final AtomicReference<String> sentKey = new AtomicReference<>();
     volatile int status = 200;
     volatile String reply = "";
+    /** 처음 몇 번은 503으로 답한다 (Gemini 과부하 흉내) */
+    final java.util.concurrent.atomic.AtomicInteger busy = new java.util.concurrent.atomic.AtomicInteger();
+    final java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
 
     @BeforeEach
     void start() throws IOException {
@@ -42,9 +45,12 @@ class GeminiWarningReviewerTest {
         server.createContext("/", ex -> {
             sentKey.set(ex.getRequestHeaders().getFirst("x-goog-api-key"));
             sentBody.set(new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            byte[] out = (ex.getRequestURI().getPath().equals(PATH) ? reply : "{}").getBytes(StandardCharsets.UTF_8);
+            calls.incrementAndGet();
+            boolean overloaded = busy.getAndDecrement() > 0;
+            byte[] out = (ex.getRequestURI().getPath().equals(PATH) && !overloaded ? reply : "{}")
+                    .getBytes(StandardCharsets.UTF_8);
             ex.getResponseHeaders().add("Content-Type", "application/json");
-            ex.sendResponseHeaders(ex.getRequestURI().getPath().equals(PATH) ? status : 404, out.length);
+            ex.sendResponseHeaders(!ex.getRequestURI().getPath().equals(PATH) ? 404 : overloaded ? 503 : status, out.length);
             ex.getResponseBody().write(out);
             ex.close();
         });
@@ -59,7 +65,9 @@ class GeminiWarningReviewerTest {
     GeminiWarningReviewer reviewer() {
         var props = new GeminiReviewerProperties("http://127.0.0.1:" + server.getAddress().getPort(), null,
                 "test-key", Duration.ofSeconds(2));
-        return new GeminiWarningReviewer(props, TIDY, new RuleWarningReviewer(TIDY));
+        GeminiWarningReviewer r = new GeminiWarningReviewer(props, TIDY, new RuleWarningReviewer(TIDY));
+        r.retryWaitMillis = 1;
+        return r;
     }
 
     static String answer(String json) {
@@ -107,7 +115,7 @@ class GeminiWarningReviewerTest {
         assertThat(r.reasons()).containsExactly("다시 확인 때 우산이 남아 있었어요.", "3시간 안에 가져가지 않았어요.");
         assertThat(r.evidenceUsed()).containsExactly("TIDY_CHECK");
         assertThat(r.reviewer()).isEqualTo("gemini:gemini-3.5-flash-lite");
-        assertThat(r.promptVersion()).isEqualTo("gemini-v1");
+        assertThat(r.promptVersion()).isEqualTo("gemini-v6");
     }
 
     @Test
@@ -123,6 +131,79 @@ class GeminiWarningReviewerTest {
         // then: 규칙 판단기 = 확신도 0.93 ≥ 0.8 → 유지
         assertThat(r.reviewer()).isEqualTo("rules");
         assertThat(r.decision()).isEqualTo(Decision.KEPT);
+    }
+
+    @Test
+    @DisplayName("503(Gemini 과부하)은 두 번까지 다시 해서 Gemini 답을 쓴다")
+    void retriesOverload() {
+        // given: 처음 두 번 503, 세 번째 정상
+        busy.set(2);
+        reply = answer("""
+                {"decision":"WITHDRAWN","confidence":0.9,"reasons":["다시 봤어요."],"evidenceUsed":["TIDY_CHECK"]}""");
+
+        // when
+        Review r = reviewer().review(CAMERA);
+
+        // then
+        assertThat(calls.get()).isEqualTo(3);
+        assertThat(r.reviewer()).isEqualTo("gemini:gemini-3.5-flash-lite");
+        assertThat(r.decision()).isEqualTo(Decision.WITHDRAWN);
+    }
+
+    @Test
+    @DisplayName("503이 세 번 이어지면 규칙 판단기로 본다. 429는 다시 하지 않는다")
+    void overloadThenRules() {
+        // given
+        busy.set(3);
+        reply = "{}";
+
+        // when
+        Review r = reviewer().review(CAMERA);
+
+        // then
+        assertThat(calls.get()).isEqualTo(3);
+        assertThat(r.reviewer()).isEqualTo("rules");
+
+        // given: 429
+        calls.set(0);
+        status = 429;
+
+        // when
+        reviewer().review(CAMERA);
+
+        // then
+        assertThat(calls.get()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("다시 시도 대기 중 인터럽트되면 규칙 판단기로 정하지 않고 실패로 남긴다")
+    void interruptedDoesNotFallBack() throws Exception {
+        // given: 503이 이어지고, 첫 503 뒤 다시 시도 대기(10초) 중에 인터럽트
+        busy.set(3);
+        reply = "{}";
+        GeminiWarningReviewer r = reviewer();
+        r.retryWaitMillis = 10_000;
+        java.util.concurrent.CountDownLatch waiting = new java.util.concurrent.CountDownLatch(1);
+        r.beforeRetryWait = waiting::countDown;
+        java.util.concurrent.atomic.AtomicReference<Throwable> thrown = new java.util.concurrent.atomic.AtomicReference<>();
+        Thread worker = new Thread(() -> {
+            try {
+                r.review(CAMERA);
+            } catch (Throwable t) {
+                thrown.set(t);
+            }
+        });
+
+        // when: 첫 요청이 503을 받은 뒤 대기에 들어가면 인터럽트
+        worker.start();
+        assertThat(waiting.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        worker.interrupt();
+        worker.join(5_000);
+
+        // then: 다시 보내지 않고, 규칙 판단기로 정하지 않고 예외
+        assertThat(worker.isAlive()).isFalse();
+        assertThat(calls.get()).isEqualTo(1);
+        assertThat(thrown.get()).isInstanceOf(IllegalStateException.class);
     }
 
     @Test
