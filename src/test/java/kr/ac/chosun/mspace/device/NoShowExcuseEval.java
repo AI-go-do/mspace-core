@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -90,8 +91,9 @@ class NoShowExcuseEval {
                          reservation_participant, users RESTART IDENTITY CASCADE
                 """).update();
         for (int i = 1; i <= 6; i++) {
-            jdbc.sql("INSERT INTO users (email, student_id, name, verified_at) VALUES (:e, :s, '홍길동', now())")
-                    .param("e", "e" + i + "@chosun.ac.kr").param("s", "2023300" + i).update();
+            jdbc.sql("INSERT INTO users (email, student_id, name, verified_at) VALUES (:e, :s, '홍길동', :v)")
+                    .param("e", "e" + i + "@chosun.ac.kr").param("s", "2023300" + i)
+                    .param("v", Timestamp.from(OffsetDateTime.parse("2030-03-01T09:00:00+09:00").toInstant())).update();
         }
     }
 
@@ -245,6 +247,7 @@ class NoShowExcuseEval {
         int right = 0;
         int unfairMissed = 0;
         int wrongExcuse = 0;
+        int errors = 0;   // 사례 실행이 실패한 것. 맞음·틀림 어느 쪽에도 안 셈
         List<Case> all = cases();
         for (Case k : all) {
             reset();
@@ -257,8 +260,10 @@ class NoShowExcuseEval {
                 excused = false;
                 err = " (오류: " + t.getClass().getSimpleName() + ")";
             }
-            boolean ok = excused == k.unfair();
-            if (ok) {
+            boolean ok = err.isEmpty() && excused == k.unfair();
+            if (!err.isEmpty()) {
+                errors++;
+            } else if (ok) {
                 right++;
             } else if (k.unfair()) {
                 unfairMissed++;
@@ -266,12 +271,13 @@ class NoShowExcuseEval {
                 wrongExcuse++;
             }
             rows.add("| %s | %s | %s | %s | %s |".formatted(k.id(), k.what(), k.unfair() ? "무름" : "안 무름",
-                    (excused ? "무름" : "안 무름") + err, ok ? "맞음" : "틀림"));
+                    err.isEmpty() ? (excused ? "무름" : "안 무름") : err.strip(), err.isEmpty() ? (ok ? "맞음" : "틀림") : "오류"));
         }
         StringBuilder md = new StringBuilder();
         md.append("# 억울한 노쇼 무르기 정확도 (가짜 사례 ").append(all.size()).append("개)\n\n");
-        md.append("맞음 %d/%d (%.1f%%) · 억울한데 못 무름 %d · 진짜 노쇼를 무름 %d\n\n"
-                .formatted(right, all.size(), right * 100.0 / all.size(), unfairMissed, wrongExcuse));
+        md.append("맞음 %d/%d (%.1f%%) · 억울한데 못 무름 %d · 진짜 노쇼를 무름 %d%s\n\n"
+                .formatted(right, all.size(), right * 100.0 / all.size(), unfairMissed, wrongExcuse,
+                        errors > 0 ? " · 실행 오류 " + errors + " (다시 재야 함)" : ""));
         md.append("| 사례 | 상황 | 정답 | core 결과 | 판정 |\n|---|---|---|---|---|\n");
         rows.forEach(r -> md.append(r).append('\n'));
         Path out = Path.of("target/eval/noshow-excuse-eval.md");
