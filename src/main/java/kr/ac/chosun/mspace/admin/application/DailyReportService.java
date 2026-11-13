@@ -54,7 +54,8 @@ class DailyReportService implements DailyReportUseCase {
         Instant from = day.atStartOfDay(SEOUL).toInstant();
         Instant to = day.plusDays(1).atStartOfDay(SEOUL).toInstant();
         Facts facts = new Facts(day.equals(today), usage.total(), usage.rooms(), port.reports(from, to),
-                port.autoJudged(from, to), port.warnings(from, to), port.appeals(from, to), port.deviceFaults(from, to));
+                port.autoJudged(from, to), port.warnings(from, to), port.appeals(from, to), port.deviceFaults(from, to),
+                port.aiActions(from, to));
 
         String hash = Integer.toHexString(facts.hashCode());
 

@@ -27,7 +27,7 @@ import tools.jackson.databind.json.JsonMapper;
  */
 class GeminiDailyReportWriter implements DailyReportWriter {
 
-    static final String VERSION = "daily-gemini-v1";
+    static final String VERSION = "daily-gemini-v2";
     static final String FALLBACK = DailyReportWriter.FALLBACK;
 
     private static final Logger log = LoggerFactory.getLogger(GeminiDailyReportWriter.class);
@@ -114,12 +114,16 @@ class GeminiDailyReportWriter implements DailyReportWriter {
     static final String PROMPT = """
             너는 조선대 M-SPACE 스터디룸(방 5개)을 사람 없이 운영하는 AI다. 관리자가 관제 화면에서 하루를 한눈에 보도록 운영 보고를 쓴다.
             입력은 JSON 하나다. facts.total은 전체, facts.rooms는 방별 이용 통계, reports는 신고 종류→판정→건수, warnings는 경고,
-            appeals는 경고 철회 요청 결과, deviceFaults는 장치 고장이다. dayNotOverYet이 true면 하루가 아직 안 끝난 숫자다.
+            appeals는 경고 철회 요청 결과, deviceFaults는 장치 고장이다. aiActions는 AI가 숫자 규칙으로 스스로 처리한 일이다:
+            VENT_SOON 미리 환기 알림, ROOM_HOT 예약 전 더움 안내, OVERTIME 시간 넘김 안내, SENSOR_DOWN 센서 고장 기록,
+            UNBOOKED 예약 없는 사용 기록. dayNotOverYet이 true면 하루가 아직 안 끝난 숫자다.
 
             쓰는 법
             1. 한국어 해요체 문장 3~5개. 한 문장은 80자 안.
             2. 첫 문장은 하루 이용을 한 줄로(예약·이용·노쇼). 나머지는 관리자가 알아야 할 것을 중요한 순서로: 노쇼가 많은 방,
                대기 중인 신고, 경고·정지, 장치 고장, CO2가 기준을 자주 넘은 방.
+               aiActions가 있으면 한 문장으로 "오늘 AI가 미리 환기 3번, 더움 안내 2번 했어요"처럼 종류와 횟수를 쓴다.
+               센서 고장·예약 없는 사용은 관리자가 확인할 일이라 그 문장에 같이 쓴다.
             3. 입력에 있는 숫자만 쓴다. 숫자를 지어내거나 계산이 필요한 비율을 새로 만들지 않는다. 비율은 rates에 있는 값만 %로 바꿔 쓴다.
             4. 별일 없으면 별일 없다고 쓴다. 과장하지 않는다.
             5. 사람 이름·학번은 입력에 없고, 쓰지도 않는다.

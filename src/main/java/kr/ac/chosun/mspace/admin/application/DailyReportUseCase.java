@@ -32,8 +32,11 @@ public interface DailyReportUseCase {
      * @param warnings     경고 이유(VIOLATION·FALSE_REPORT) → 건수
      * @param appeals      그날 정해진 경고 철회 요청 결과(WITHDRAWN·KEPT) → 건수, 대기(PENDING)는 그날 들어온 것
      * @param deviceFaults 장치 고장 종류 → 건수
+     * @param aiActions    AI 자동 처리 종류(VENT_SOON 미리 환기 · ROOM_HOT 예약 전 더움 · SENSOR_DOWN 센서 고장 ·
+     *                     OVERTIME 시간 넘김 · UNBOOKED 예약 없는 사용) → 건수 (GET /api/admin/ops-actions)
      */
     record Facts(boolean partial, Usage total, List<Usage> rooms, Map<String, Map<String, Long>> reports,
-                 long autoJudged, Map<String, Long> warnings, Map<String, Long> appeals, Map<String, Long> deviceFaults) {
+                 long autoJudged, Map<String, Long> warnings, Map<String, Long> appeals, Map<String, Long> deviceFaults,
+                 Map<String, Long> aiActions) {
     }
 }

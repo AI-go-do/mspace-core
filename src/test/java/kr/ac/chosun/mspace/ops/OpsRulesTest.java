@@ -49,10 +49,18 @@ class OpsRulesTest {
     @Test
     @DisplayName("예약 전 더움: 29도로 그대로면 알리고, 에어컨으로 식는 중이거나 값이 60분보다 오래됐으면 안 알린다")
     void roomHot() {
-        assertThat(OpsRules.roomHot(series(29, 29.1, 28.9, 29, 29.2, 29, 28.9), NOW, HOT)).isTrue();
-        assertThat(OpsRules.roomHot(series(28.4, 28.9, 29.4, 29.9, 30.4, 30.9, 31.4), NOW, HOT)).isFalse();
-        assertThat(OpsRules.roomHot(series(29, 33, 29.1, 28.9, 29, 29.1), NOW, HOT)).isTrue();   // 튀는 값 하나
-        assertThat(OpsRules.roomHot(List.of(new Point(NOW.minusSeconds(61 * 60), 30)), NOW, HOT)).isFalse();
+        assertThat(OpsRules.roomHot(series(29, 29.1, 28.9, 29, 29.2, 29, 28.9), NOW, NOW.plus(HOT.before()), HOT)).isTrue();
+        assertThat(OpsRules.roomHot(series(28.4, 28.9, 29.4, 29.9, 30.4, 30.9, 31.4), NOW, NOW.plus(HOT.before()), HOT)).isFalse();
+        assertThat(OpsRules.roomHot(series(29, 33, 29.1, 28.9, 29, 29.1), NOW, NOW.plus(HOT.before()), HOT)).isTrue();   // 튀는 값 하나
+        assertThat(OpsRules.roomHot(List.of(new Point(NOW.minusSeconds(61 * 60), 30)), NOW, NOW.plus(HOT.before()), HOT)).isFalse();
+    }
+
+    @Test
+    @DisplayName("예약 전 더움: 분당 0.1도씩 오르는 27.5도 방은 10분 뒤 시작이면 알리고, 1분 뒤 시작이면 안 알린다 (예측은 실제 시작 시각까지)")
+    void roomHotUsesStart() {
+        List<Point> rising = series(27.5, 27.4, 27.3, 27.2, 27.1, 27.0, 26.9);
+        assertThat(OpsRules.roomHot(rising, NOW, min(10), HOT)).isTrue();
+        assertThat(OpsRules.roomHot(rising, NOW, min(1), HOT)).isFalse();
     }
 
     @Test

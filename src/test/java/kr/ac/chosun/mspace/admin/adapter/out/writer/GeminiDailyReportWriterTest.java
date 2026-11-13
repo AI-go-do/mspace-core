@@ -35,7 +35,7 @@ class GeminiDailyReportWriterTest {
             new Rates(0.333, 0.667, 0.1), new Minutes(240, 150, 75L), 0, 6,
             new Sensor(100, 820, 1350, 0.12, 1000, 2, 150, 0), new Alerts(1, 1, 1.0, 2, 1, 0.5, 10));
     static final Facts FACTS = new Facts(false, ROOM, List.of(ROOM), Map.of("MESSY", Map.of("OPEN", 1L)), 0,
-            Map.of("VIOLATION", 1L), Map.of(), Map.of("CAMERA_DOWN", 1L));
+            Map.of("VIOLATION", 1L), Map.of(), Map.of("CAMERA_DOWN", 1L), Map.of());
 
     HttpServer server;
     final AtomicReference<String> sentBody = new AtomicReference<>();
@@ -121,7 +121,7 @@ class GeminiDailyReportWriterTest {
         // given: 이용도 신고도 없는 날
         Usage none = new Usage(1, "1번 방", new Reservations(0, 0, 0, 0, 0, 0, 0, 0), new Rates(null, null, null),
                 new Minutes(0, 0, null), 0, 0, new Sensor(0, null, null, null, 1000, 0, 0, 0), new Alerts(0, 0, null, 0, 0, null, 10));
-        Facts quiet = new Facts(false, none, List.of(none), Map.of(), 0, Map.of(), Map.of(), Map.of());
+        Facts quiet = new Facts(false, none, List.of(none), Map.of(), 0, Map.of(), Map.of(), Map.of(), Map.of());
 
         // when / then
         assertThat(new TemplateDailyReportWriter().write(DAY, quiet).lines()).containsExactly(
@@ -129,11 +129,30 @@ class GeminiDailyReportWriterTest {
 
         // given: 전날 들어온 요청 2건을 오늘 처리, 오늘 새로 1건 대기
         Facts appeals = new Facts(false, none, List.of(none), Map.of(), 0, Map.of(),
-                Map.of("WITHDRAWN", 1L, "KEPT", 1L, "PENDING", 1L), Map.of());
+                Map.of("WITHDRAWN", 1L, "KEPT", 1L, "PENDING", 1L), Map.of(), Map.of());
 
         // when / then
         assertThat(new TemplateDailyReportWriter().write(DAY, appeals).lines())
                 .contains("경고 철회 요청 처리 2건(철회 1, 유지 1), 새로 들어와 대기 1건, 장치 고장 0건이에요.");
+
+        // given: AI 자동 처리 (11/12 지영 "오늘 AI가 미리 환기 3번 했어요")
+        Facts ai = new Facts(false, none, List.of(none), Map.of(), 0, Map.of(), Map.of(), Map.of(),
+                Map.of("VENT_SOON", 3L, "ROOM_HOT", 2L, "UNBOOKED", 1L));
+
+        // when / then
+        assertThat(new TemplateDailyReportWriter().write(DAY, ai).lines())
+                .contains("AI가 미리 환기 3번, 더움 안내 2번, 시간 넘김 안내 0번 했고 센서 고장 0건, 예약 없는 사용 1건을 남겼어요.");
+
+        // given: 철회 요청·AI 처리·CO2가 다 있는 날 (6줄이 되면 CO2 문장이 잘리던 것)
+        Facts all = new Facts(false, ROOM, List.of(ROOM), Map.of(), 0, Map.of(), Map.of("WITHDRAWN", 1L), Map.of(),
+                Map.of("VENT_SOON", 3L));
+
+        // when
+        List<String> lines = new TemplateDailyReportWriter().write(DAY, all).lines();
+
+        // then: 5줄 안에 AI 문장과 CO2 문장이 둘 다 남는다
+        assertThat(lines).hasSizeLessThanOrEqualTo(5);
+        assertThat(String.join("\n", lines)).contains("AI가 미리 환기 3번").contains("CO2는 평균 820ppm");
     }
 
     @Test
