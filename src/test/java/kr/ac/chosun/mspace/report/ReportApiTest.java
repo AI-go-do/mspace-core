@@ -301,14 +301,27 @@ class ReportApiTest {
     }
 
     @Test
-    @DisplayName("비품 고장·창문·소음은 입실 사진·5분 제한 없이 사용 중이면 언제든 201")
+    @DisplayName("비품 고장·창문·소음(옆 방)은 입실 사진·5분 제한 없이 사용 중이면 언제든 201")
     void otherCategoriesUnchanged() {
         checkedInMinutesAgo(room1, 50);
 
         assertThat(report(1, 1, "BROKEN")).hasStatus(201);
         assertThat(report(1, 1, "WINDOW_OPEN")).hasStatus(201);
         assertThat(report(1, """
-                {"roomId":1,"category":"NOISE","noiseConfirmed":true}""")).hasStatus(201);
+                {"roomId":2,"category":"NOISE","noiseConfirmed":true}""")).hasStatus(201);
+    }
+
+    @Test
+    @DisplayName("소음: 내 방은 400 REPORT_NOISE_NEIGHBOR_ONLY, 옆 방은 201")
+    void noiseNeighborOnly() {
+        MvcTestResult own = report(1, """
+                {"roomId":1,"category":"NOISE","noiseConfirmed":true}""");
+
+        assertThat(own).hasStatus(400);
+        assertThat(own).bodyJson().extractingPath("$.code").isEqualTo("REPORT_NOISE_NEIGHBOR_ONLY");
+        assertThat(reportCount()).isZero();
+        assertThat(report(1, """
+                {"roomId":2,"category":"NOISE","noiseConfirmed":true}""")).hasStatus(201);
     }
 
     @Test

@@ -91,7 +91,7 @@ curl -X POST localhost:8080/api/reservations/1/continue -H 'X-User-Id: 1' -H 'Co
 
 ### 신고 (FR-RPT-101)
 
-지금 사용 중(`IN_USE`)인 예약의 대표자나 참여자가 그 방이나 옆 방을 신고해요. 옆 방은 V8에 넣은 1–2, 2–3, 3–4, 4–5예요(docs Q-05, 현장 확인 필요). 종류는 비품 고장 `BROKEN`, 창문 열림 `WINDOW_OPEN`, 어질러짐 `MESSY`, 소음 `NOISE`예요. 소음은 `"noiseConfirmed": true`가 없으면 `400 REPORT_NOISE_NOT_CONFIRMED`, 없는 방이면 `404 ROOM_NOT_FOUND`(사용 중지된 방은 신고할 수 있어요), 신고할 수 없는 사람이면 `403 REPORT_NOT_ALLOWED`예요. 메모는 선택이고 500자까지예요. **어질러짐 `MESSY`만 더 좁게 받아요(11/8):** 자기 방만(`403 REPORT_MESSY_OWN_ROOM_ONLY`), 입실 뒤 5분 안만(`409 REPORT_MESSY_TOO_LATE`, 연장으로 생긴 예약도 이 코드), 그 예약에 입실 사진이 있어야(`409 REPORT_CHECKIN_PHOTO_REQUIRED`). 5분은 `mspace.report.messy.window-minutes`.
+지금 사용 중(`IN_USE`)인 예약의 대표자나 참여자가 그 방이나 옆 방을 신고해요. 옆 방은 V8에 넣은 1–2, 2–3, 3–4, 4–5예요(docs Q-05, 현장 확인 필요). 종류는 비품 고장 `BROKEN`, 창문 열림 `WINDOW_OPEN`, 어질러짐 `MESSY`, 소음 `NOISE`예요. 소음은 `"noiseConfirmed": true`가 없으면 `400 REPORT_NOISE_NOT_CONFIRMED`, 없는 방이면 `404 ROOM_NOT_FOUND`(사용 중지된 방은 신고할 수 있어요), 신고할 수 없는 사람이면 `403 REPORT_NOT_ALLOWED`예요. 메모는 선택이고 500자까지예요. **어질러짐 `MESSY`만 더 좁게 받아요(11/8):** 자기 방만(`403 REPORT_MESSY_OWN_ROOM_ONLY`), 입실 뒤 5분 안만(`409 REPORT_MESSY_TOO_LATE`, 연장으로 생긴 예약도 이 코드), 그 예약에 입실 사진이 있어야(`409 REPORT_CHECKIN_PHOTO_REQUIRED`). 5분은 `mspace.report.messy.window-minutes`. **소음 `NOISE`는 옆 방만 받아요(11/13):** 내 방은 우리 팀만 쓰니 `400 REPORT_NOISE_NEIGHBOR_ONLY`예요.
 
 ```bash
 curl -X POST localhost:8080/api/reports -H 'X-User-Id: 1' -H 'Content-Type: application/json' \

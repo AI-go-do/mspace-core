@@ -82,6 +82,7 @@ public enum ErrorCode {
 
     // 신고 (FR-RPT-101)
     REPORT_NOISE_NOT_CONFIRMED(HttpStatus.BAD_REQUEST, "소음 신고는 \"정말 소란인가요?\"를 체크해야 보낼 수 있습니다"),
+    REPORT_NOISE_NEIGHBOR_ONLY(HttpStatus.BAD_REQUEST, "소음은 옆 방만 신고할 수 있습니다. 소리가 나는 방을 골라 주세요"),
     REPORT_NOT_ALLOWED(HttpStatus.FORBIDDEN, "지금 그 방이나 옆 방을 사용 중인 예약자만 신고할 수 있습니다"),
     REPORT_MESSY_OWN_ROOM_ONLY(HttpStatus.FORBIDDEN, "어질러짐은 지금 쓰고 있는 방만 신고할 수 있습니다"),
     REPORT_MESSY_TOO_LATE(HttpStatus.CONFLICT, "어질러짐은 입실한 뒤 바로만 신고할 수 있습니다"),
