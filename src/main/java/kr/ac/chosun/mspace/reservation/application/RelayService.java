@@ -10,6 +10,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import kr.ac.chosun.mspace.common.config.RelayPolicy;
@@ -204,7 +205,7 @@ class RelayService implements RelayUseCase {
             return n;
         });
         inbox.publish(stored);
-        return passed == null ? 0 : passed;
+        return Objects.requireNonNullElse(passed, 0);
     }
 
     /**

@@ -127,11 +127,11 @@ class JdbcUsageStatsAdapter implements UsageStatsPort {
                             WHERE occupied AND b > a GROUP BY room_id
                         ), used AS (
                             SELECT room_id, range_agg(tstzrange(greatest(checked_in_at, CAST(:from AS timestamptz)),
-                                                                least(coalesce(checked_out_at, :cap), :cap))) AS r
+                                                                least(coalesce(checked_out_at, end_at), :cap))) AS r
                             FROM reservation
                             WHERE checked_in_at IS NOT NULL AND checked_in_at < :cap
-                              AND coalesce(checked_out_at, :cap) > :from
-                              AND least(coalesce(checked_out_at, :cap), :cap) > greatest(checked_in_at, CAST(:from AS timestamptz))
+                              AND coalesce(checked_out_at, end_at) > :from
+                              AND least(coalesce(checked_out_at, end_at), :cap) > greatest(checked_in_at, CAST(:from AS timestamptz))
                             GROUP BY room_id
                         ), co2 AS (
                             SELECT room_id, count(*) AS n, coalesce(sum(ppm), 0) AS s, max(ppm) AS mx,

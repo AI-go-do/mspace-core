@@ -141,6 +141,35 @@ class ReportPenaltyTest {
     }
 
     @Test
+    @DisplayName("연장한 뒤 신고해도 신고자의 연장 전 예약은 경고 대상이 아니다: 그 전 이용자가 경고를 받는다 (#83)")
+    void extendedReporterIsNotViolator() {
+        // 회원 1이 연장: 지금 예약(B)은 지금 퇴실, 지금부터 새 예약(C, continued_from_id = B)이 이어진다. 신고 근거는 C
+        long extended = tx.execute(st -> {
+            jdbc.sql("UPDATE reservation SET status = 'CHECKED_OUT', checked_out_at = now() WHERE id = :id")
+                    .param("id", current).update();
+            return insertWithPeople("""
+                    INSERT INTO reservation (room_id, owner_id, start_at, end_at, headcount, access_code, status,
+                                             checked_in_at, continued_from_id, is_instant)
+                    SELECT 1, 1, now(), date_trunc('hour', now()) + interval '2 hours', 3, '333333', 'IN_USE', now(),
+                           %d, true
+                    RETURNING id
+                    """.formatted(current), REPORTER, 3, 4);
+        });
+        long reportId = jdbc.sql("""
+                        INSERT INTO report (room_id, reporter_id, reporter_reservation_id, category)
+                        VALUES (1, 1, :rid, 'MESSY') RETURNING id
+                        """)
+                .param("rid", extended).query(Long.class).single();
+
+        assertThat(judge(reportId, "CONFIRMED")).hasStatusOk();
+
+        assertThat(warnings()).singleElement().satisfies(w -> {
+            assertThat(w.get("user_id")).isEqualTo(PREVIOUS_OWNER);
+            assertThat(w.get("reservation_id")).isEqualTo(previous);
+        });
+    }
+
+    @Test
     @DisplayName("확인 불가면 벌칙 없이 신고자에게 결과만")
     void unverifiedNoPenalty() {
         assertThat(judge(report("WINDOW_OPEN"), "UNVERIFIED")).hasStatusOk();
