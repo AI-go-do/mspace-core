@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -90,8 +91,9 @@ class NoShowExcuseEval {
                          reservation_participant, users RESTART IDENTITY CASCADE
                 """).update();
         for (int i = 1; i <= 6; i++) {
-            jdbc.sql("INSERT INTO users (email, student_id, name, verified_at) VALUES (:e, :s, '홍길동', now())")
-                    .param("e", "e" + i + "@chosun.ac.kr").param("s", "2023300" + i).update();
+            jdbc.sql("INSERT INTO users (email, student_id, name, verified_at) VALUES (:e, :s, '홍길동', :v)")
+                    .param("e", "e" + i + "@chosun.ac.kr").param("s", "2023300" + i)
+                    .param("v", Timestamp.from(OffsetDateTime.parse("2030-03-01T09:00:00+09:00").toInstant())).update();
         }
     }
 
@@ -143,6 +145,11 @@ class NoShowExcuseEval {
     }
 
     /** 응답과 따로 도는 무르기·1분 정리까지 끝난 뒤 무름 여부 */
+    boolean excused(long id) {
+        return jdbc.sql("SELECT no_show_excused_at IS NOT NULL FROM reservation WHERE id = :id")
+                .param("id", id).query((rs, n) -> rs.getBoolean(1)).single();
+    }
+
     boolean excusedAfterSettle(long id, String sweepTime) {
         try {
             Thread.sleep(300);
@@ -150,8 +157,7 @@ class NoShowExcuseEval {
             Thread.currentThread().interrupt();
         }
         sweepAt(sweepTime);
-        return jdbc.sql("SELECT no_show_excused_at IS NOT NULL FROM reservation WHERE id = :id")
-                .param("id", id).query((rs, n) -> rs.getBoolean(1)).single();
+        return excused(id);
     }
 
     record Case(String id, String what, boolean unfair, Supplier<Boolean> run) {}
@@ -219,7 +225,7 @@ class NoShowExcuseEval {
             long id = book(); sweepAt("10:20"); fault(1, "10:00", "10:20", old + "@10:05");
             return excusedAfterSettle(id, "10:21"); }));
         c.add(new Case("N06", "고장이 예약 전(08:00–08:30)에 끝남, 그때 이 번호", false, () -> {
-            long id = book(); sweepAt("10:20");
+            now("07:50"); long id = book(1, 1, "10:00", "11:00"); sweepAt("10:20");   // 번호가 08:10 전에 있어야 함
             fault(1, "08:00", "08:30", code(id) + "@08:10");
             return excusedAfterSettle(id, "10:21"); }));
         c.add(new Case("N07", "번호 유효 전 09:40에만 누르고 돌아감", false, () -> {
@@ -228,7 +234,8 @@ class NoShowExcuseEval {
         c.add(new Case("N08", "다른 팀이 같은 시간 2번 방 예약, 1번 방 고장에 그 팀 번호", false, () -> {
             long id = book(); now("09:01"); long other = book(4, 2, "10:00", "11:00");
             sweepAt("10:20"); fault(1, "10:00", "10:20", code(other) + "@10:05");
-            return excusedAfterSettle(id, "10:21"); }));
+            // 두 팀 다 안 왔으니 둘 중 하나라도 무르면 틀림 (다른 방 팀을 잘못 무르는 것도 잡음)
+            return excusedAfterSettle(id, "10:21") | excused(other); }));
         c.add(new Case("N09", "고장 구간 안에 마감 뒤 10:16에만 누름", false, () -> {
             long id = book(); sweepAt("10:20"); fault(1, "10:00", "10:20", code(id) + "@10:16");
             return excusedAfterSettle(id, "10:21"); }));
@@ -245,6 +252,7 @@ class NoShowExcuseEval {
         int right = 0;
         int unfairMissed = 0;
         int wrongExcuse = 0;
+        int errors = 0;   // 사례 실행이 실패한 것. 맞음·틀림 어느 쪽에도 안 셈
         List<Case> all = cases();
         for (Case k : all) {
             reset();
@@ -257,8 +265,10 @@ class NoShowExcuseEval {
                 excused = false;
                 err = " (오류: " + t.getClass().getSimpleName() + ")";
             }
-            boolean ok = excused == k.unfair();
-            if (ok) {
+            boolean ok = err.isEmpty() && excused == k.unfair();
+            if (!err.isEmpty()) {
+                errors++;
+            } else if (ok) {
                 right++;
             } else if (k.unfair()) {
                 unfairMissed++;
@@ -266,12 +276,13 @@ class NoShowExcuseEval {
                 wrongExcuse++;
             }
             rows.add("| %s | %s | %s | %s | %s |".formatted(k.id(), k.what(), k.unfair() ? "무름" : "안 무름",
-                    (excused ? "무름" : "안 무름") + err, ok ? "맞음" : "틀림"));
+                    err.isEmpty() ? (excused ? "무름" : "안 무름") : err.strip(), err.isEmpty() ? (ok ? "맞음" : "틀림") : "오류"));
         }
         StringBuilder md = new StringBuilder();
         md.append("# 억울한 노쇼 무르기 정확도 (가짜 사례 ").append(all.size()).append("개)\n\n");
-        md.append("맞음 %d/%d (%.1f%%) · 억울한데 못 무름 %d · 진짜 노쇼를 무름 %d\n\n"
-                .formatted(right, all.size(), right * 100.0 / all.size(), unfairMissed, wrongExcuse));
+        md.append("맞음 %d/%d (%.1f%%) · 억울한데 못 무름 %d · 진짜 노쇼를 무름 %d%s\n\n"
+                .formatted(right, all.size(), right * 100.0 / all.size(), unfairMissed, wrongExcuse,
+                        errors > 0 ? " · 실행 오류 " + errors + " (다시 재야 함)" : ""));
         md.append("| 사례 | 상황 | 정답 | core 결과 | 판정 |\n|---|---|---|---|---|\n");
         rows.forEach(r -> md.append(r).append('\n'));
         Path out = Path.of("target/eval/noshow-excuse-eval.md");

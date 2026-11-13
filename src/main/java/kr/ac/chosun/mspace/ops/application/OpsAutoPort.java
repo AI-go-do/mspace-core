@@ -11,7 +11,10 @@ public interface OpsAutoPort {
 
     boolean isAdmin(long userId);
 
-    /** 사용 중인 방과 재실 상태. 재실 신호가 한 번도 없던 방은 occupied=false, since·lastReceivedAt=null */
+    /**
+     * 사용 중인 방과 재실 상태. 재실 신호가 한 번도 없던 방은 occupied=false, since·presenceReceivedAt=null.
+     * lastReceivedAt = 재실·CO2 중 늦게 받은 것(센서 고장 판단), presenceReceivedAt = 재실만(예약 없는 사용 판단)
+     */
     List<Room> rooms();
 
     /** 방마다 [from, now] CO2 값 (최신이 앞) */
@@ -20,7 +23,7 @@ public interface OpsAutoPort {
     /** 방마다 [from, now] 온도 값 (최신이 앞) */
     Map<Integer, List<Point>> temperature(Instant from);
 
-    /** 방마다 [from, to)에 걸치는 예약 (BOOKED·IN_USE·CHECKED_OUT·AUTO_CHECKED_OUT). end = 먼저 퇴실했으면 퇴실 시각 */
+    /** 방마다 [from, to]에 걸치는 예약 (BOOKED·IN_USE·CHECKED_OUT·AUTO_CHECKED_OUT). end = 먼저 퇴실했으면 퇴실 시각 */
     Map<Integer, List<Span>> bookings(Instant from, Instant to);
 
     /** 지금 사용 중(IN_USE) 예약 */
@@ -42,7 +45,8 @@ public interface OpsAutoPort {
 
     List<Row> actions(Instant from, Instant to);
 
-    record Room(int id, String name, boolean occupied, Instant since, Instant lastReceivedAt) {
+    record Room(int id, String name, boolean occupied, Instant since, Instant lastReceivedAt,
+                Instant presenceReceivedAt) {
     }
 
     /** @param userIds 대표자가 맨 앞 */

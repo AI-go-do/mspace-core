@@ -69,7 +69,7 @@ class UsageStatsApiTest {
 
     @BeforeEach
     void setUp() {
-        jdbc.sql("TRUNCATE sensor_event, notification, reservation, reservation_participant, users RESTART IDENTITY CASCADE")
+        jdbc.sql("TRUNCATE sensor_event, room_presence, notification, reservation, reservation_participant, users RESTART IDENTITY CASCADE")
                 .update();
         for (int i = 1; i <= 7; i++) {
             jdbc.sql("INSERT INTO users (email, student_id, name, verified_at) VALUES (:e, :s, '회원', now())")
@@ -217,6 +217,34 @@ class UsageStatsApiTest {
         json.extractingPath("$.rooms[1].sensor.occupiedWithoutReservationMinutes").isEqualTo(1390);
         json.extractingPath("$.rooms[2].sensor.co2AvgPpm").isNull();
         json.extractingPath("$.total.sensor.co2Readings").isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("종료 시각이 지났는데 아직 자동 퇴실 전(IN_USE)인 예약은 종료 시각까지만 이용으로 본다 (#83)")
+    void inUsePastEndCountsUntilEnd() {
+        // 2번 방 12:00–13:00 입실, 퇴실 기록 없음. 예전에는 기간 끝(24:00)까지 이용으로 봐서 "예약 없이" 시간이 줄었다
+        reservation(2, 4, at(12, 0), at(13, 0), "IN_USE", at(12, 0), null, null);
+
+        var json = assertThat(day()).bodyJson();
+
+        // 1440 − 입실 10:10–11:00(50) − 12:00–13:00(60)
+        json.extractingPath("$.rooms[1].sensor.occupiedWithoutReservationMinutes").isEqualTo(1330);
+    }
+
+    @Test
+    @DisplayName("센서가 끊기면 마지막 \"있음\"은 마지막 신호 + 끊김 기준(1분)까지만 센다")
+    void staleSensorStopsAtLastSignal() {
+        // 2번 방 센서가 이날 12:00에 마지막으로 신호를 보내고 끊김. 예전에는 하루 끝까지 "있음"으로 셌다
+        jdbc.sql("""
+                        INSERT INTO room_presence (room_id, occupied, changed_at, trusted_from, last_observed_at, last_received_at)
+                        VALUES (2, true, :t0, :t0, :t, :t)
+                        """).param("t0", before(22)).param("t", at(12, 0)).update();
+
+        var json = assertThat(day()).bodyJson();
+
+        // 00:00–12:01(721분, 끊김 기준 1분 포함) − 입실 10:10–11:00(50분)
+        json.extractingPath("$.rooms[1].sensor.occupiedMinutes").isEqualTo(721);
+        json.extractingPath("$.rooms[1].sensor.occupiedWithoutReservationMinutes").isEqualTo(671);
     }
 
     long reservationId(int room, Timestamp start) {

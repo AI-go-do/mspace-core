@@ -43,14 +43,18 @@ public final class OpsRules {
             return latest + slope * p.nearLookahead().toSeconds() >= p.thresholdPpm();
         }
         // 그 아래에서는 빨리 오를 때만 짧게(lookahead) 예측한다. 천천히 1000 근처를 오르내리는 방의 헛알림을 막는다
-        if (latest < p.floorPpm() || slope * 60 < p.fastPerMin()) {
+        if (latest < p.floorPpm() || slope * 60 <= p.fastPerMin()) {   // "넘게": 딱 20이면 안 봄
             return false;
         }
         return latest + slope * p.lookahead().toSeconds() >= p.thresholdPpm();
     }
 
-    /** 예약 전 더움: 믿을 만한(fresh) 최근 값 median개의 가운데 값이 기준 이상 */
-    public static boolean roomHot(List<Point> temps, Instant now, OpsPolicy.Hot p) {
+    /**
+     * 예약 전 더움: 믿을 만한(fresh) 최근 값 median개의 가운데 값(trend면 start 시각 예측값)이 기준 이상
+     *
+     * @param start 예약 시작 시각. 예측은 지금(sinceLast면 마지막 측정 시각)부터 start까지
+     */
+    public static boolean roomHot(List<Point> temps, Instant now, Instant start, OpsPolicy.Hot p) {
         List<Point> fresh = temps.stream()
                 .filter(x -> !x.at().isBefore(now.minus(p.fresh())) && !x.at().isAfter(now)).toList();
         double[] v = fresh.stream().limit(Math.max(1, p.median())).mapToDouble(Point::value).sorted().toArray();
@@ -59,8 +63,7 @@ public final class OpsRules {
         }
         double at = v[v.length / 2];
         if (p.trend() && fresh.size() >= (p.robust() ? 6 : 3)) {
-            long ahead = p.before().toSeconds()
-                    + (p.sinceLast() ? Duration.between(fresh.getFirst().at(), now).toSeconds() : 0);
+            long ahead = Duration.between(p.sinceLast() ? fresh.getFirst().at() : now, start).toSeconds();
             at += (p.robust() ? robustSlope(fresh) : fitSlope(fresh)) * ahead;
         }
         return at >= p.thresholdC();

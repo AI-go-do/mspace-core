@@ -142,6 +142,17 @@ class GeminiDailyReportWriterTest {
         // when / then
         assertThat(new TemplateDailyReportWriter().write(DAY, ai).lines())
                 .contains("AI가 미리 환기 3번, 더움 안내 2번, 시간 넘김 안내 0번 했고 센서 고장 0건, 예약 없는 사용 1건을 남겼어요.");
+
+        // given: 철회 요청·AI 처리·CO2가 다 있는 날 (6줄이 되면 CO2 문장이 잘리던 것)
+        Facts all = new Facts(false, ROOM, List.of(ROOM), Map.of(), 0, Map.of(), Map.of("WITHDRAWN", 1L), Map.of(),
+                Map.of("VENT_SOON", 3L));
+
+        // when
+        List<String> lines = new TemplateDailyReportWriter().write(DAY, all).lines();
+
+        // then: 5줄 안에 AI 문장과 CO2 문장이 둘 다 남는다
+        assertThat(lines).hasSizeLessThanOrEqualTo(5);
+        assertThat(String.join("\n", lines)).contains("AI가 미리 환기 3번").contains("CO2는 평균 820ppm");
     }
 
     @Test
