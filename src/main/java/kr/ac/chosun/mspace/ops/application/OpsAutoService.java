@@ -31,10 +31,11 @@ import org.springframework.transaction.support.TransactionOperations;
  *   <li>재실 신호가 끊긴 방(offline-after-seconds)은 "있음"을 믿을 수 없어 시간 넘김·예약 없는 사용을 보지 않는다
  *       (끊기기 전 "있음"이 계속 남아 있어서)</li>
  *   <li>기록(ops_action UNIQUE)과 알림 저장은 한 트랜잭션. 서버 두 대가 같이 봐도 먼저 넣은 쪽만 알린다</li>
+ *   <li>다른 기능이 처리한 일도 {@link OpsActionRecorder}로 같은 기록에 남는다 (불 켜짐 LIGHT_LEFT_ON, 11/13)</li>
  * </ul>
  */
 @Service
-class OpsAutoService implements OpsAutoUseCase {
+class OpsAutoService implements OpsAutoUseCase, OpsActionRecorder {
 
     static final String VENT_SOON = "VENT_SOON";
     static final String ROOM_HOT = "ROOM_HOT";
@@ -183,6 +184,16 @@ class OpsAutoService implements OpsAutoUseCase {
         }
         sent.addAll(stored);
         return 1;
+    }
+
+    @Override
+    public boolean record(String kind, int roomId, Long reservationId, Instant startedAt, Instant now, String detail) {
+        return port.record(kind, roomId, reservationId, startedAt, now, detail);
+    }
+
+    @Override
+    public void notified(String kind, int roomId, Instant startedAt, int count) {
+        port.notified(kind, roomId, startedAt, count);
     }
 
     @Override

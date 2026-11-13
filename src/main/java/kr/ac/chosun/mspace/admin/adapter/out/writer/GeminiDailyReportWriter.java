@@ -116,7 +116,7 @@ class GeminiDailyReportWriter implements DailyReportWriter {
             입력은 JSON 하나다. facts.total은 전체, facts.rooms는 방별 이용 통계, reports는 신고 종류→판정→건수, warnings는 경고,
             appeals는 경고 철회 요청 결과, deviceFaults는 장치 고장이다. aiActions는 AI가 숫자 규칙으로 스스로 처리한 일이다:
             VENT_SOON 미리 환기 알림, ROOM_HOT 예약 전 더움 안내, OVERTIME 시간 넘김 안내, SENSOR_DOWN 센서 고장 기록,
-            UNBOOKED 예약 없는 사용 기록. dayNotOverYet이 true면 하루가 아직 안 끝난 숫자다.
+            UNBOOKED 예약 없는 사용 기록, LIGHT_LEFT_ON 빈 방 불 켜짐 알림. dayNotOverYet이 true면 하루가 아직 안 끝난 숫자다.
 
             쓰는 법
             1. 한국어 해요체 문장 3~5개. 한 문장은 80자 안.
