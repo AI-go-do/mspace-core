@@ -74,6 +74,10 @@ public class SubmitReportService implements SubmitReportUseCase {
         if (report.category() == ReportCategory.MESSY) {
             checkMessy(basis, report.roomId());
         }
+        // 내 방은 우리 팀만 쓴다. 화면이 내 방을 미리 골라 두면 소음이 내 방으로 잘못 들어가서 막는다 (11/13 지영)
+        if (report.category() == ReportCategory.NOISE && basis.roomId() == report.roomId()) {
+            throw new BusinessException(ErrorCode.REPORT_NOISE_NEIGHBOR_ONLY);
+        }
         ReportPort.Saved saved = reports.save(report.roomId(), userId, basis.reservationId(), report.category(), content);
         return new Submitted(saved.id(), report.roomId(), report.category(), ReportVerdict.OPEN, saved.createdAt());
     }
