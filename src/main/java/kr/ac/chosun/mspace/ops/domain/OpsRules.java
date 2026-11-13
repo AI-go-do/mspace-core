@@ -43,7 +43,7 @@ public final class OpsRules {
             return latest + slope * p.nearLookahead().toSeconds() >= p.thresholdPpm();
         }
         // 그 아래에서는 빨리 오를 때만 짧게(lookahead) 예측한다. 천천히 1000 근처를 오르내리는 방의 헛알림을 막는다
-        if (latest < p.floorPpm() || slope * 60 < p.fastPerMin()) {
+        if (latest < p.floorPpm() || slope * 60 <= p.fastPerMin()) {   // "넘게": 딱 20이면 안 봄
             return false;
         }
         return latest + slope * p.lookahead().toSeconds() >= p.thresholdPpm();

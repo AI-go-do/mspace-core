@@ -62,6 +62,8 @@ class OpsRulesTest {
         assertThat(OpsRules.ventSoon(series(940, 930, 920, 910, 900, 890), NOW, VENT11)).isFalse();
         // 960 아래에서 1분에 30씩 빨리 오르면 알린다
         assertThat(OpsRules.ventSoon(series(910, 880, 850, 820, 790, 760), NOW, VENT11)).isTrue();
+        // 딱 1분에 20이면 "넘게"가 아니라 안 알린다 (8분 예측은 1080이어도)
+        assertThat(OpsRules.ventSoon(series(940, 920, 900, 880, 860, 840), NOW, VENT11)).isFalse();
     }
 
     @Test
