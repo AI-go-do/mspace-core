@@ -257,6 +257,12 @@ curl 'localhost:8080/api/penalties?days=30' -H 'X-User-Id: 4'
 # → {"days":30,"warnings":[{"id","member":{"id","studentId","name"},"reason":"VIOLATION|FALSE_REPORT","reportId","reservationId","createdAt"}],
 #     "suspensions":[{"scope":"USE|REPORT","id","member","reason":"NO_SHOW|WARNINGS|FALSE_REPORT","startsAt","endsAt","active"}]}
 
+# AI가 처리한 일 (자동 처리 5개, 11/12). 날짜는 서울, 빼면 오늘. 최근 것부터
+curl 'localhost:8080/api/admin/ops-actions?date=2026-11-12' -H 'X-User-Id: 4'
+# → [{"id":3,"kind":"VENT_SOON|ROOM_HOT|SENSOR_DOWN|OVERTIME|UNBOOKED","roomId":1,"roomName":"1번 방",
+#     "reservationId":12,"startedAt","detectedAt","detail":"CO2 910ppm, 최근 5분 790→910ppm","notified":3}]
+#    SENSOR_DOWN·UNBOOKED는 관리자 기록만이라 reservationId null, notified 0
+
 # 신고 증거 사진: 직전 이용자의 퇴실 사진, 신고자의 입실 사진
 curl localhost:8080/api/reports/7/evidence -H 'X-User-Id: 4'
 # → {"reportId":7,"previous":{"reservationId":11,"checkedInAt","checkedOutAt",
