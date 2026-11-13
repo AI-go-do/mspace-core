@@ -35,17 +35,19 @@ class JdbcOpsAutoAdapter implements OpsAutoPort {
         // 마지막 신호 = 재실·CO2 중 늦게 받은 것 (관리자 "지금" 탭 끊김과 같은 기준)
         return jdbc.sql("""
                         SELECT rm.id, rm.name, coalesce(pr.occupied, false) AS occupied, pr.changed_at,
-                               nullif(greatest(pr.last_received_at, co2.received_at), 'epoch'::timestamptz) AS last_at
+                               nullif(greatest(pr.last_received_at, co2.received_at), 'epoch'::timestamptz) AS last_at,
+                               pr.last_received_at AS presence_at
                         FROM rooms rm
                         LEFT JOIN room_presence pr ON pr.room_id = rm.id
                         LEFT JOIN LATERAL (SELECT received_at FROM sensor_event
                                            WHERE room_id = rm.id AND kind = 'CO2'
-                                           ORDER BY observed_at DESC LIMIT 1) co2 ON true
+                                           ORDER BY received_at DESC LIMIT 1) co2 ON true
                         WHERE rm.is_active
                         ORDER BY rm.id
                         """)
                 .query((rs, n) -> new Room(rs.getInt("id"), rs.getString("name"), rs.getBoolean("occupied"),
-                        instant(rs.getTimestamp("changed_at")), instant(rs.getTimestamp("last_at"))))
+                        instant(rs.getTimestamp("changed_at")), instant(rs.getTimestamp("last_at")),
+                        instant(rs.getTimestamp("presence_at"))))
                 .list();
     }
 
@@ -56,7 +58,7 @@ class JdbcOpsAutoAdapter implements OpsAutoPort {
                         SELECT room_id, start_at, least(end_at, coalesce(checked_out_at, end_at)) AS end_at
                         FROM reservation
                         WHERE status IN ('BOOKED', 'IN_USE', 'CHECKED_OUT', 'AUTO_CHECKED_OUT')
-                          AND start_at < :to AND least(end_at, coalesce(checked_out_at, end_at)) > :from
+                          AND start_at <= :to AND least(end_at, coalesce(checked_out_at, end_at)) > :from
                         """)
                 .param("from", Timestamp.from(from)).param("to", Timestamp.from(to))
                 .query(rs -> {
