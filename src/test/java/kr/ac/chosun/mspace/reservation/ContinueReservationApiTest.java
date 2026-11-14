@@ -261,6 +261,22 @@ class ContinueReservationApiTest {
     }
 
     @Test
+    @DisplayName("내 예약 목록은 연장으로 생긴 예약에 continued true를 줘서 화면이 연장 버튼을 숨길 수 있다")
+    void myListMarksContinued() {
+        // given
+        now("13:55");
+        long next = id(extend(ours, "15:00"));
+
+        // when
+        MvcTestResult r = mvc.get().uri("/api/reservations/me").header("X-User-Id", "1").exchange();
+
+        // then
+        assertThat(r).hasStatus(200);
+        assertThat(r).bodyJson().extractingPath("$[?(@.id == %d)].continued".formatted(next)).asArray().containsExactly(true);
+        assertThat(r).bodyJson().extractingPath("$[?(@.id == %d)].continued".formatted(ours)).asArray().containsExactly(false);
+    }
+
+    @Test
     @DisplayName("우회 막기: 연장까지 쓴 뒤 30분 안에 시작하는 새 예약은 409, 30분이 지나면 된다")
     void noBypassByNewBooking() {
         now("13:55");

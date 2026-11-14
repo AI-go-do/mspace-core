@@ -16,11 +16,12 @@ import kr.ac.chosun.mspace.reservation.domain.AccessQr;
  * @param cancelableUntil 이 시각 전까지(BOOKED·대표자) 취소할 수 있다. 미리 예약은 시작, 즉시 시작은 누른 뒤 5분(설정값)
  * @param checkedInAt     입실한 시각. 입실 안 했으면(노쇼·취소·예약됨) null
  * @param checkedOutAt    퇴실한 시각(퇴실 버튼·시간 끝나 자동·자리 비움). 아직 안 나갔으면 null
+ * @param continued       연장으로 생긴 예약인지. 연장은 1회라 true면 화면이 연장 버튼을 숨긴다
  */
 record MyReservationResponse(long id, Room room, ZonedDateTime startAt, ZonedDateTime endAt, String status,
                              boolean owner, String accessCode, ZonedDateTime checkinDeadline,
                              ZonedDateTime cancelableUntil, List<Person> participants, String qrText,
-                             ZonedDateTime checkedInAt, ZonedDateTime checkedOutAt) {
+                             ZonedDateTime checkedInAt, ZonedDateTime checkedOutAt, boolean continued) {
 
     record Room(int id, String name) {
     }
@@ -33,6 +34,6 @@ record MyReservationResponse(long id, Room room, ZonedDateTime startAt, ZonedDat
         return new MyReservationResponse(r.id(), new Room(r.roomId(), r.roomName()), r.startAt(), r.endAt(),
                 r.status().name(), r.owner(), r.accessCode(), r.checkinDeadline(), r.cancelableUntil(),
                 r.participants().stream().map(p -> new Person(p.name(), p.owner())).toList(),
-                AccessQr.text(r.roomId(), r.accessCode()), r.checkedInAt(), r.checkedOutAt());
+                AccessQr.text(r.roomId(), r.accessCode()), r.checkedInAt(), r.checkedOutAt(), r.continued());
     }
 }
