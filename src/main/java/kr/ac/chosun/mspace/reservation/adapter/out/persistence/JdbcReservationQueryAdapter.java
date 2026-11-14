@@ -35,6 +35,7 @@ class JdbcReservationQueryAdapter implements ReservationQueryPort {
         jdbc.sql("""
                         SELECT r.id, r.room_id, rm.name AS room_name, r.start_at, r.end_at, r.status, r.owner_id,
                                r.access_code, r.checkin_deadline, r.checked_in_at, r.checked_out_at, p.user_id,
+                               r.continued_from_id IS NOT NULL AS continued,
                                CASE WHEN r.is_instant THEN least(r.start_at + make_interval(mins => :instantMinutes), r.checkin_deadline)
                                     ELSE r.start_at END AS cancelable_until, u.name AS person_name, p.is_owner
                         FROM reservation r
@@ -55,7 +56,8 @@ class JdbcReservationQueryAdapter implements ReservationQueryPort {
                                 ReservationStatus.valueOf(rs.getString("status")), rs.getLong("owner_id"),
                                 rs.getString("access_code"), rs.getTimestamp("checkin_deadline").toInstant(),
                                 rs.getTimestamp("cancelable_until").toInstant(), new ArrayList<>(),
-                                instant(rs.getTimestamp("checked_in_at")), instant(rs.getTimestamp("checked_out_at")));
+                                instant(rs.getTimestamp("checked_in_at")), instant(rs.getTimestamp("checked_out_at")),
+                                rs.getBoolean("continued"));
                         rows.put(id, row);
                     }
                     row.participants().add(new ParticipantRow(rs.getLong("user_id"), rs.getString("person_name"),
